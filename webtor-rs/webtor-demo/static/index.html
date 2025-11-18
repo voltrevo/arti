@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webtor-rs Demo - Tor Client in Rust/WASM</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        
+        .section h3 {
+            margin-top: 0;
+            color: #444;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        button.secondary {
+            background-color: #6c757d;
+        }
+        
+        button.secondary:hover:not(:disabled) {
+            background-color: #545b62;
+        }
+        
+        .status {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .output {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-top: 10px;
+            min-height: 60px;
+            font-family: monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .output.loading {
+            color: #0066cc;
+        }
+        
+        .output.success {
+            color: #28a745;
+        }
+        
+        .output.error {
+            color: #dc3545;
+        }
+        
+        .output.info {
+            color: #666666;
+        }
+        
+        .log-output {
+            width: 100%;
+            height: 200px;
+            font-family: monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+        
+        .request-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .request-item {
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        
+        .isolated-request {
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+        
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .feature {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .feature h4 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        
+        @media (max-width: 768px) {
+            .request-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧅 Webtor-rs Demo</h1>
+        <p class="subtitle">Tor client implementation in Rust, compiled to WebAssembly for web browsers</p>
+        
+        <div class="warning">
+            <strong>⚠️ Use at Your Own Risk:</strong> This is experimental software. The underlying Tor implementation is experimental.
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <h4>🔄 Persistent Circuits</h4>
+                <p>Reuses Tor circuits for better performance</p>
+            </div>
+            <div class="feature">
+                <h4>🔃 Auto Updates</h4>
+                <p>Configurable circuit refresh with graceful transitions</p>
+            </div>
+            <div class="feature">
+                <h4>🌨️ Snowflake</h4>
+                <p>Uses Snowflake bridge for WebSocket-based access</p>
+            </div>
+            <div class="feature">
+                <h4>🔒 Isolated Requests</h4>
+                <p>One-time circuits for maximum privacy</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>🔧 Configuration</h3>
+            <div class="input-group">
+                <label for="snowflakeUrl">Snowflake Bridge URL:</label>
+                <input type="text" id="snowflakeUrl" value="wss://snowflake.torproject.net/" placeholder="wss://snowflake.torproject.net/">
+            </div>
+            
+            <div>
+                <button id="openBtn">🔓 Open TorClient</button>
+                <button id="closeBtn" disabled>🛑 Close TorClient</button>
+                <button id="clearBtn" class="secondary">🗑️ Clear Output</button>
+            </div>
+            
+            <div class="status" id="status">
+                <strong>Circuit Status:</strong> Not initialized
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>🌐 Persistent Requests (Circuit Reuse)</h3>
+            <p>These requests use the same persistent Tor circuit for better performance.</p>
+            
+            <div class="request-grid">
+                <div class="request-item">
+                    <h4>Request 1</h4>
+                    <div class="input-group">
+                        <label for="url1">URL:</label>
+                        <input type="text" id="url1" value="https://httpbin.org/ip" placeholder="https://example.com">
+                    </div>
+                    <button id="btn1">🌐 Make Request 1</button>
+                    <div class="output" id="output1">Ready to make request...</div>
+                </div>
+                
+                <div class="request-item">
+                    <h4>Request 2</h4>
+                    <div class="input-group">
+                        <label for="url2">URL:</label>
+                        <input type="text" id="url2" value="https://httpbin.org/user-agent" placeholder="https://example.com">
+                    </div>
+                    <button id="btn2">🌐 Make Request 2</button>
+                    <div class="output" id="output2">Ready to make request...</div>
+                </div>
+                
+                <div class="request-item">
+                    <h4>Request 3</h4>
+                    <div class="input-group">
+                        <label for="url3">URL:</label>
+                        <input type="text" id="url3" value="https://httpbin.org/headers" placeholder="https://example.com">
+                    </div>
+                    <button id="btn3">🌐 Make Request 3</button>
+                    <div class="output" id="output3">Ready to make request...</div>
+                </div>
+                
+                <div class="request-item">
+                    <h4>Circuit Management</h4>
+                    <p>Manually trigger circuit updates and monitor status.</p>
+                    <button id="updateBtn">🔄 Trigger Circuit Update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="section isolated-request">
+            <h3>🔒 Isolated Request (Maximum Privacy)</h3>
+            <p>This request creates a temporary circuit that is disposed after completion.</p>
+            
+            <div class="input-group">
+                <label for="isolatedUrl">URL:</label>
+                <input type="text" id="isolatedUrl" value="https://httpbin.org/uuid" placeholder="https://example.com">
+            </div>
+            <button id="btnIsolated">🔒 Make Isolated Request</button>
+            <div class="output" id="outputIsolated">Ready to make isolated request...</div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>📋 Activity Log</h3>
+            <p>Detailed logging of all Tor operations and requests.</p>
+            <textarea id="output" class="log-output" readonly placeholder="Activity log will appear here..."></textarea>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>📊 Performance Information</h3>
+            <div class="features">
+                <div class="feature">
+                    <h4>⏱️ Initial Connection</h4>
+                    <p>20-60 seconds (first time)</p>
+                </div>
+                <div class="feature">
+                    <h4>🚀 Subsequent Requests</h4>
+                    <p>1-5 seconds (circuit reuse)</p>
+                </div>
+                <div class="feature">
+                    <h4>🔄 Circuit Updates</h4>
+                    <p>Automatic every 2 minutes</p>
+                </div>
+                <div class="feature">
+                    <h4>🌐 Browser Support</h4>
+                    <p>Chrome, Firefox, Safari, Edge</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module">
+        import init, { DemoApp } from './pkg/webtor_demo.js';
+        
+        async function run() {
+            console.log('Loading Webtor Demo...');
+            
+            try {
+                // Initialize the WASM module
+                await init();
+                console.log('WASM module loaded successfully');
+                
+                // Create and initialize the demo app
+                const app = new DemoApp();
+                await app.initUI();
+                console.log('Demo app initialized successfully');
+                
+                // Make app globally available for debugging
+                window.demoApp = app;
+                
+                console.log('Webtor Demo ready!');
+            } catch (error) {
+                console.error('Failed to initialize Webtor Demo:', error);
+                
+                // Show error to user
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = `
+                    background-color: #f8d7da;
+                    border: 1px solid #f5c6cb;
+                    color: #721c24;
+                    padding: 15px;
+                    border-radius: 4px;
+                    margin: 20px;
+                    font-family: monospace;
+                `;
+                errorDiv.innerHTML = `
+                    <strong>❌ Failed to initialize Webtor Demo</strong><br>
+                    Error: ${error.message}<br>
+                    <br>
+                    Please check the browser console for more details.
+                `;
+                document.body.insertBefore(errorDiv, document.body.firstChild);
+            }
+        }
+        
+        // Run when the page loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', run);
+        } else {
+            run();
+        }
+    </script>
+</body>
+</html>
