@@ -178,6 +178,8 @@ Flexible configuration in `webtor/src/config.rs`:
 ### Phase 1 (Immediate)
 - [x] Complete WebSocket implementation for native Rust (WASM supported)
 - [x] Integrate Arti (Tor) channel establishment
+- [x] Fix WASM bindings and linking (RLIB + Rust-friendly API)
+- [x] Fix CI build issues (vendored dependencies)
 - [ ] Implement full Tor circuit creation (CREATE_FAST/CREATE2)
 - [ ] Add consensus fetching from directory authorities
 - [ ] Integrate with real Tor network
