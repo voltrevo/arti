@@ -1,19 +1,19 @@
-# 🧅 Webtor-rs
+# webtor-rs
 
 A Rust implementation of a Tor client that compiles to WebAssembly and can be embedded in web pages. This project provides anonymous HTTP/HTTPS requests through the Tor network using Snowflake bridges.
 
-## 🚀 Features
+## Features
 
-- **🔄 Persistent Circuits**: Reuses Tor circuits for better performance
-- **🔃 Automatic Updates**: Configurable circuit refresh with graceful transitions  
-- **🌨️ Snowflake Support**: Uses Snowflake bridge to enable access over WebSockets
-- **🔒 Isolated Requests**: One-time circuits for maximum privacy
-- **⚡ Lazy Scheduling**: Smart updates only when circuits are actively used
-- **📊 Status Monitoring**: Real-time circuit status information
-- **🦀 Rust + WASM**: Memory-safe implementation compiled to WebAssembly
-- **🌐 Browser Native**: No external dependencies, runs entirely in the browser
+- **Persistent Circuits**: Reuses Tor circuits for better performance
+- **Automatic Updates**: Configurable circuit refresh with graceful transitions  
+- **Snowflake Support**: Uses Snowflake bridge to enable access over WebSockets
+- **Isolated Requests**: One-time circuits for maximum privacy
+- **Lazy Scheduling**: Smart updates only when circuits are actively used
+- **Status Monitoring**: Real-time circuit status information
+- **Rust + WASM**: Memory-safe implementation compiled to WebAssembly
+- **Browser Native**: No external dependencies, runs entirely in the browser
 
-## 📦 Architecture
+## Architecture
 
 The project is organized as a Rust workspace with three main components:
 
@@ -53,7 +53,7 @@ A complete demonstration webpage showing all features:
 - **Comprehensive Logging**: Detailed operation tracking
 - **Responsive Design**: Works on desktop and mobile browsers
 
-## 🛠️ Building
+## Building
 
 ### Prerequisites
 
@@ -76,7 +76,7 @@ cd webtor-wasm && wasm-pack build --target web && cd ..
 cd webtor-demo && wasm-pack build --target web && cd ..
 ```
 
-## 🚀 Usage
+## Usage
 
 ### Basic Usage (JavaScript)
 
@@ -125,7 +125,7 @@ const options = new TorClientOptions('wss://snowflake.torproject.net/')
 const tor = await TorClient.new(options);
 ```
 
-## 🌐 Running the Demo
+## Running the Demo
 
 After building the project:
 
@@ -146,7 +146,7 @@ The demo includes:
 - **Activity Log**: Detailed operation tracking
 - **Performance Metrics**: Connection times and throughput
 
-## 🔧 API Reference
+## API Reference
 
 ### TorClientOptions
 
@@ -179,7 +179,7 @@ Configuration options for the Tor client:
 |--------|---------|-------------|
 | `fetchOneTime(snowflakeUrl, url, options?)` | Promise&lt;Response&gt; | Make one-time isolated request |
 
-## 🧪 Testing
+## Testing
 
 Run the test suite:
 
@@ -197,7 +197,7 @@ cargo test --workspace -- --nocapture
 
 Note: Some tests may fail in native environments since they require WASM/browser APIs.
 
-## 🔍 Debugging
+## Debugging
 
 Enable detailed logging in the browser:
 
@@ -210,7 +210,7 @@ console.log = function(...args) {
 // The demo includes comprehensive logging by default
 ```
 
-## 📊 Performance
+## Performance
 
 Expected performance characteristics:
 
@@ -219,7 +219,7 @@ Expected performance characteristics:
 - **Circuit Updates**: 10-30 seconds (background operation)
 - **Memory Usage**: ~50-100MB (WASM + circuit state)
 
-## 🔒 Security Considerations
+## Security Considerations
 
 - **Experimental Software**: This implementation is experimental and should not be used for critical anonymity needs
 - **Browser Fingerprinting**: WebAssembly and JavaScript execution may be fingerprintable
@@ -227,14 +227,14 @@ Expected performance characteristics:
 - **DNS Leaks**: All DNS requests go through Tor circuits
 - **TLS Validation**: Proper certificate validation is performed for HTTPS requests
 
-## 🚧 Current Limitations
+## Current Limitations
 
 - **Tor Protocol**: Integration with `arti` (official Rust Tor implementation) is well underway. Channel establishment and handshake with Snowflake bridges are implemented. Full circuit construction and stream handling are the next steps.
 - **Relay Discovery**: Consensus fetching and relay selection needs improvement.
 - **Performance**: Initial connection times are longer than native Tor.
 - **Browser Support**: Requires modern browsers with WebAssembly support.
 
-## 🗺️ Roadmap
+## Roadmap
 
 ### Phase 1 (Current)
 - [x] Basic project structure and WASM bindings
@@ -260,7 +260,7 @@ Expected performance characteristics:
 - [ ] Mobile browser optimizations
 - [ ] Security audits
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please:
 
@@ -284,18 +284,18 @@ cargo watch -s "./build.sh"
 cargo watch -x "test --workspace"
 ```
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Tor Project**: For the Tor network and protocol specifications
 - **Rust WASM Working Group**: For excellent WASM tooling
 - **Original TypeScript Implementation**: Based on concepts from tor-hazae41
 - **Snowflake Project**: For WebSocket-based bridge technology
 
-## 📚 References
+## References
 
 - [Tor Protocol Specifications](https://gitweb.torproject.org/torspec.git/)
 - [Rust WASM Book](https://rustwasm.github.io/docs.html)
@@ -304,4 +304,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**⚠️ Disclaimer**: This software is experimental and should not be relied upon for strong anonymity. Use at your own risk.
+**Disclaimer**: This software is experimental and should not be relied upon for strong anonymity. Use at your own risk.
