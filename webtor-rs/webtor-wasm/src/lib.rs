@@ -8,31 +8,7 @@ use std::time::Duration;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 use webtor::{TorClient as NativeTorClient, TorClientOptions as NativeTorClientOptions};
-
-// Re-export for JavaScript
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-    
-    #[wasm_bindgen(js_namespace = console)]
-    fn error(s: &str);
-    
-    #[wasm_bindgen(js_namespace = console)]
-    fn warn(s: &str);
-}
-
-macro_rules! console_log {
-    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
-}
-
-macro_rules! console_error {
-    ($($t:tt)*) => (error(&format_args!($($t)*).to_string()))
-}
-
-macro_rules! console_warn {
-    ($($t:tt)*) => (warn(&format_args!($($t)*).to_string()))
-}
+use gloo_console::{log as console_log, error as console_error, warn as console_warn};
 
 /// JavaScript-friendly options for TorClient
 #[wasm_bindgen]
@@ -44,7 +20,7 @@ pub struct TorClientOptions {
 impl TorClientOptions {
     #[wasm_bindgen(constructor)]
     pub fn new(snowflake_url: String) -> Self {
-        console_log!("Creating TorClientOptions with snowflake URL: {}", snowflake_url);
+        console_log!(format!("Creating TorClientOptions with snowflake URL: {}", snowflake_url));
         
         Self {
             inner: NativeTorClientOptions::new(snowflake_url),
@@ -106,7 +82,7 @@ impl TorClient {
                     }))
                 }
                 Err(e) => {
-                    console_error!("Failed to create TorClient: {}", e);
+                    console_error!(format!("Failed to create TorClient: {}", e));
                     Err(JsValue::from_str(&format!("Failed to create TorClient: {}", e)))
                 }
             }
@@ -116,7 +92,7 @@ impl TorClient {
     /// Make a fetch request through Tor
     #[wasm_bindgen(js_name = fetch)]
     pub fn fetch(&self, url: String) -> js_sys::Promise {
-        console_log!("Starting fetch request to: {}", url);
+        console_log!(format!("Starting fetch request to: {}", url));
         
         let client = match &self.inner {
             Some(client) => client.clone(),
@@ -143,7 +119,7 @@ impl TorClient {
                     Ok(JsValue::from(js_response))
                 }
                 Err(e) => {
-                    console_error!("Fetch request failed: {}", e);
+                    console_error!(format!("Fetch request failed: {}", e));
                     Err(JsValue::from_str(&format!("Fetch request failed: {}", e)))
                 }
             }
@@ -158,7 +134,7 @@ impl TorClient {
         connection_timeout: Option<u32>,
         circuit_timeout: Option<u32>,
     ) -> js_sys::Promise {
-        console_log!("Making one-time fetch request to: {} via {}", url, snowflake_url);
+        console_log!(format!("Making one-time fetch request to: {} via {}", url, snowflake_url));
         
         future_to_promise(async move {
             match NativeTorClient::fetch_one_time(
@@ -180,7 +156,7 @@ impl TorClient {
                     Ok(JsValue::from(js_response))
                 }
                 Err(e) => {
-                    console_error!("One-time fetch request failed: {}", e);
+                    console_error!(format!("One-time fetch request failed: {}", e));
                     Err(JsValue::from_str(&format!("One-time fetch request failed: {}", e)))
                 }
             }
@@ -190,7 +166,7 @@ impl TorClient {
     /// Update the circuit
     #[wasm_bindgen(js_name = updateCircuit)]
     pub fn update_circuit(&self, deadline_ms: u32) -> js_sys::Promise {
-        console_log!("Updating circuit with {}ms deadline", deadline_ms);
+        console_log!(format!("Updating circuit with {}ms deadline", deadline_ms));
         
         let client = match &self.inner {
             Some(client) => client.clone(),
@@ -208,7 +184,7 @@ impl TorClient {
                     Ok(JsValue::UNDEFINED)
                 }
                 Err(e) => {
-                    console_error!("Circuit update failed: {}", e);
+                    console_error!(format!("Circuit update failed: {}", e));
                     Err(JsValue::from_str(&format!("Circuit update failed: {}", e)))
                 }
             }
@@ -236,7 +212,7 @@ impl TorClient {
                     Ok(JsValue::UNDEFINED)
                 }
                 Err(e) => {
-                    console_error!("Failed to wait for circuit: {}", e);
+                    console_error!(format!("Failed to wait for circuit: {}", e));
                     Err(JsValue::from_str(&format!("Failed to wait for circuit: {}", e)))
                 }
             }
