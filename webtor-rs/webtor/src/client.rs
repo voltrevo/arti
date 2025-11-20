@@ -39,9 +39,12 @@ impl TorClient {
         // Initialize WASM modules (placeholder for now)
         Self::init_wasm_modules().await?;
         
+        // Channel storage
+        let channel = Arc::new(RwLock::new(None));
+        
         // Create relay manager with empty relay list (will be populated later)
         let relay_manager = RelayManager::new(Vec::new());
-        let circuit_manager = CircuitManager::new(relay_manager);
+        let circuit_manager = CircuitManager::new(relay_manager, channel.clone());
         let http_client = TorHttpClient::new(circuit_manager.clone());
         
         let client = Self {
@@ -49,7 +52,7 @@ impl TorClient {
             circuit_manager: Arc::new(RwLock::new(circuit_manager)),
             http_client: Arc::new(http_client),
             is_initialized: Arc::new(RwLock::new(false)),
-            channel: Arc::new(RwLock::new(None)),
+            channel,
             update_task: Arc::new(RwLock::new(None)),
         };
         
