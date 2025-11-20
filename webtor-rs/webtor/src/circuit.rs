@@ -216,7 +216,7 @@ impl CircuitManager {
         // or the ntor key if it wasn't known.
         // For visual consistency in the circuit list, we create a placeholder if needed.
         let bridge_relay = Relay::new(
-            bridge_fingerprint,
+            bridge_fingerprint.clone(),
             "Bridge".to_string(),
             "0.0.0.0".to_string(), // Placeholder
             0,
@@ -228,7 +228,11 @@ impl CircuitManager {
         let relay_manager = self.relay_manager.read().await;
         
         // Middle
-        let middle = relay_manager.select_relay(&crate::relay::selection::middle_relays())?;
+        // Ensure we don't select the bridge as middle
+        let middle = relay_manager.select_relay(
+            &crate::relay::selection::middle_relays()
+                .without_fingerprint(&bridge_fingerprint)
+        )?;
         let middle_target = middle.as_circ_target()?;
         
         info!("Extending to middle: {}", middle.nickname);
@@ -240,7 +244,12 @@ impl CircuitManager {
             .map_err(|e| TorError::Internal(format!("Failed to extend to middle: {}", e)))?;
             
         // Exit
-        let exit = relay_manager.select_relay(&crate::relay::selection::exit_relays())?;
+        // Ensure we don't select bridge or middle as exit
+        let exit = relay_manager.select_relay(
+            &crate::relay::selection::exit_relays()
+                .without_fingerprint(&bridge_fingerprint)
+                .without_fingerprint(&middle.fingerprint)
+        )?;
         let exit_target = exit.as_circ_target()?;
         
         info!("Extending to exit: {}", exit.nickname);

@@ -121,6 +121,7 @@ impl Relay {
 pub struct RelayCriteria {
     pub need_flags: HashSet<String>,
     pub exclude_flags: HashSet<String>,
+    pub exclude_fingerprints: HashSet<String>,
     pub min_bandwidth: u64,
     pub max_selection: usize,
 }
@@ -130,6 +131,7 @@ impl Default for RelayCriteria {
         Self {
             need_flags: HashSet::new(),
             exclude_flags: HashSet::new(),
+            exclude_fingerprints: HashSet::new(),
             min_bandwidth: 0,
             max_selection: 10,
         }
@@ -148,6 +150,18 @@ impl RelayCriteria {
     
     pub fn without_flag(mut self, flag: &str) -> Self {
         self.exclude_flags.insert(flag.to_string());
+        self
+    }
+    
+    pub fn without_fingerprint(mut self, fingerprint: &str) -> Self {
+        self.exclude_fingerprints.insert(fingerprint.to_string());
+        self
+    }
+    
+    pub fn without_fingerprints(mut self, fingerprints: Vec<String>) -> Self {
+        for fp in fingerprints {
+            self.exclude_fingerprints.insert(fp);
+        }
         self
     }
     
@@ -176,6 +190,11 @@ impl RelayManager {
     pub fn select_relays(&self, criteria: &RelayCriteria) -> Result<Vec<Relay>> {
         let mut candidates: Vec<&Relay> = self.relays.iter()
             .filter(|relay| {
+                // Check excluded fingerprints
+                if criteria.exclude_fingerprints.contains(&relay.fingerprint) {
+                    return false;
+                }
+
                 // Check required flags
                 for flag in &criteria.need_flags {
                     if !relay.flags.contains(flag) {
@@ -219,15 +238,20 @@ impl RelayManager {
     
     /// Select a single relay randomly from candidates
     pub fn select_relay(&self, criteria: &RelayCriteria) -> Result<Relay> {
+        use rand::seq::SliceRandom;
+        
         let candidates = self.select_relays(criteria)?;
         
         if candidates.is_empty() {
             return Err(TorError::relay_selection("No suitable relays found"));
         }
         
-        // For now, just select the first one (highest consensus weight)
-        // In a real implementation, we'd add some randomization
-        Ok(candidates[0].clone())
+        // Select a random relay from the top candidates to avoid deterministic paths
+        // and ensure load balancing
+        let mut rng = rand::thread_rng();
+        candidates.choose(&mut rng)
+            .cloned()
+            .ok_or_else(|| TorError::relay_selection("Failed to choose random relay"))
     }
     
     /// Get relay by fingerprint
