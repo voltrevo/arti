@@ -57,10 +57,6 @@ wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
 httparse = "1.10.1"
 tor-checkable = "0.36.0"
-tokio-rustls = "0.25"
-rustls = "0.22"
-webpki-roots = "0.26"
-tokio-util = { version = "0.7", features = ["compat"] }
 
 # KCP reliable transport
 kcp = { workspace = true }

@@ -24,8 +24,8 @@ jobs:
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-    - name: Build webtor
-      run: cargo build --lib -p webtor --target wasm32-unknown-unknown
-
     - name: Build webtor-wasm
-      run: cd webtor-wasm && wasm-pack build --target web
+      run: wasm-pack build webtor-wasm --target web
+
+    - name: Build webtor-demo
+      run: wasm-pack build webtor-demo --target web
