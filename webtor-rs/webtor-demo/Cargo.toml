@@ -35,7 +35,8 @@ serde_json = "1.0"
 wasm-bindgen-test = { workspace = true }
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+# Disable wasm-opt to avoid binaryen download failures in CI
+wasm-opt = false
 
 [package.metadata.wasm-pack.profile.dev]
 wasm-opt = false
