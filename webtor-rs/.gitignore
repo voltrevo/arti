@@ -2,3 +2,17 @@ target/
 **/*.rs.bk
 vendor/
 node_modules/
+
+# AI/Agent artifacts
+.cargo/
+.claude/
+.claude-collective/
+.taskmaster/
+CLAUDE.md
+GEMINI.md
+
+# Debug screenshots
+screenshot-*.png
+
+# Test artifacts
+touch

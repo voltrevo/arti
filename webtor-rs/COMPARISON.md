@@ -11,7 +11,7 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 | **Security** | Production-grade TLS validation | ❌ No TLS certificate validation |
 | **Transport** | WebTunnel + Snowflake (WebRTC) | Snowflake (WebSocket) + Meek |
 | **Maturity** | Built on Arti (official Rust Tor) | Experimental, early-stage |
-| **Performance** | Native WASM, zero-copy where possible | Zero-copy TypeScript |
+| **TLS** | TLS 1.3 via SubtleCrypto | TLS 1.2 via @hazae41/cadenas |
 
 ## Architecture Comparison
 
@@ -26,7 +26,7 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 │    │     ├── Channel (Tor handshake, cell processing)               │
 │    │     ├── Circuit (CREATE2, EXTEND2, ntor-v3)                    │
 │    │     └── Stream (RELAY cells, flow control)                     │
-│    ├── futures-rustls (TLS 1.2/1.3 with cert validation)            │
+│    ├── subtle-tls (TLS 1.3 with SubtleCrypto + cert validation)     │
 │    └── Transport Layer                                               │
 │          ├── WebTunnel (HTTPS + HTTP Upgrade)                       │
 │          └── Snowflake (WebRTC → Turbo → KCP → SMUX)                │
@@ -71,18 +71,19 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
 | **Certificate Validation** | ✅ Full validation with webpki-roots | ❌ None (unsafe) |
-| **TLS Version** | TLS 1.2/1.3 | TLS 1.2 only |
-| **Implementation** | rustls (memory-safe) | @hazae41/cadenas |
+| **TLS Version** | TLS 1.3 | TLS 1.2 only |
+| **Implementation** | subtle-tls (SubtleCrypto) | @hazae41/cadenas |
 | **MITM Protection** | ✅ Yes | ❌ No |
+| **Curve Support** | P-256, P-384, P-521 | Unknown |
 
 **Why webtor-rs is better:**
 ```rust
-// webtor-rs: Proper TLS validation
-let mut root_store = rustls::RootCertStore::empty();
-root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-let config = rustls::ClientConfig::builder()
-    .with_root_certificates(root_store)  // ✅ Validates certs
-    .with_no_client_auth();
+// webtor-rs: Proper TLS validation via SubtleCrypto
+async fn verify_certificate_chain(&self, certs: &[Certificate]) -> Result<()> {
+    // Extracts public key, verifies signature chain
+    // Uses browser's trusted root store
+    let result = subtle_crypto.verify(algorithm, public_key, signature, data).await?;
+}
 ```
 
 ```typescript
@@ -172,7 +173,7 @@ let kcp = Kcp::new_stream(config.conv, output);  // ✅ Stream mode
 
 | Algorithm | webtor-rs | echalote |
 |-----------|-----------|----------|
-| **AES-128-CTR** | `ring` crate (audited) | @hazae41/aes.wasm |
+| **AES-128-CTR** | SubtleCrypto (WASM) / ring (native) | @hazae41/aes.wasm |
 | **SHA-1** | `sha1` crate | @hazae41/sha1 |
 | **X25519** | `x25519-dalek` | @hazae41/x25519 |
 | **Ed25519** | `ed25519-dalek` | @hazae41/ed25519 |
@@ -208,21 +209,23 @@ pub async fn connect(&self) -> Result<SnowflakeStream> {
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
 | **Consensus Parsing** | `tor-netdoc` crate | Custom parser |
+| **Microdescriptors** | ✅ Full support | Unknown |
 | **Relay Flags** | Full flag support | Basic flags |
 | **Exit Policy** | ✅ Parsed and enforced | Limited |
 | **Bandwidth Weights** | ✅ Supported | Not mentioned |
-| **Caching** | ✅ With expiration | Unknown |
+| **Caching** | ✅ With expiration (1hr) | Unknown |
 
 ```rust
-// webtor-rs: Proper consensus handling
-pub async fn get_relays(&self) -> Result<Vec<RelayInfo>> {
-    let consensus_text = self.fetch_consensus().await?;
-    let consensus = MicrodescConsensus::parse(&consensus_text)?;
+// webtor-rs: Proper consensus handling via DirectoryManager
+pub async fn fetch_and_process_consensus(&self, channel: Arc<Channel>) -> Result<()> {
+    let consensus_body = self.fetch_consensus_body(channel.clone()).await?;
+    let consensus = MdConsensus::parse(&consensus_body)?;
     
-    for relay in consensus.relays() {
-        if relay.flags().contains(RelayFlags::GUARD) { /* ... */ }
-        if relay.flags().contains(RelayFlags::EXIT) { /* ... */ }
-    }
+    // Fetch microdescriptors for relay details
+    let microdescs = self.fetch_microdescriptors_body(channel, &digests).await?;
+    
+    // Update relay manager
+    self.relay_manager.write().await.update_relays(relays);
 }
 ```
 
@@ -234,9 +237,12 @@ pub async fn get_relays(&self) -> Result<Vec<RelayInfo>> {
 // One-line setup
 let client = TorClient::new(TorClientOptions::snowflake()).await?;
 
+// Bootstrap (fetch consensus)
+client.bootstrap().await?;
+
 // Make requests
-let response = client.get("https://check.torproject.org/").await?;
-println!("IP: {}", response.text()?);
+let response = client.get("https://example.com/").await?;
+println!("Response: {}", response.text()?);
 
 // Cleanup
 client.close().await;
@@ -280,7 +286,7 @@ const tls = new TlsClientDuplex({ host_name: "example.com" });
 ## Security Summary
 
 ### webtor-rs ✅
-- ✅ TLS certificate validation
+- ✅ TLS 1.3 certificate validation via SubtleCrypto
 - ✅ Uses official Tor protocol crate
 - ✅ Modern ntor-v3 handshake
 - ✅ CREATE2 circuit creation
@@ -337,7 +343,8 @@ let client = TorClient::new(
     TorClientOptions::webtunnel(url, fingerprint)
 ).await?;
 
-// Make request
+// Bootstrap and make request
+client.bootstrap().await?;
 let response = client.get("https://example.com").await?;
 ```
 
