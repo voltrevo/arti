@@ -54,10 +54,10 @@ async function testHttpOnly() {
     console.log('Output:', output1);
     
     if (output1.includes('Success')) {
-      console.log('\n✅ HTTP (non-HTTPS) request SUCCEEDED!');
+      console.log('\n HTTP (non-HTTPS) request SUCCEEDED!');
       console.log('This confirms the Tor circuit is working.');
     } else if (output1.includes('failed') || output1.includes('error')) {
-      console.log('\n❌ HTTP request FAILED');
+      console.log('\n HTTP request FAILED');
     } else {
       console.log('\n⏳ Request may still be in progress');
     }
@@ -73,9 +73,9 @@ async function testHttpOnly() {
     console.log('Output:', output2);
     
     if (output2.includes('Success')) {
-      console.log('\n✅ HTTPS request SUCCEEDED!');
+      console.log('\n HTTPS request SUCCEEDED!');
     } else if (output2.includes('failed') || output2.includes('error')) {
-      console.log('\n❌ HTTPS request FAILED (TLS issue)');
+      console.log('\n HTTPS request FAILED (TLS issue)');
     }
     
     // Screenshot

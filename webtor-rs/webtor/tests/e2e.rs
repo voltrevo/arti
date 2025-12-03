@@ -88,7 +88,7 @@ async fn test_webtunnel_https_request() {
     assert!(!json.ip.is_empty(), "IP should not be empty");
     assert!(json.ip.contains('.') || json.ip.contains(':'), "Should be valid IPv4 or IPv6");
     
-    println!("\n✅ E2E test passed! Successfully made HTTPS request through Tor via WebTunnel.");
+    println!("\n E2E test passed! Successfully made HTTPS request through Tor via WebTunnel.");
     
     // Cleanup
     client.close().await;
@@ -120,7 +120,7 @@ async fn test_webtunnel_connection_only() {
     assert!(status == "Ready" || status.contains("Ready"), "Circuit should be ready");
     
     client.close().await;
-    println!("✅ WebTunnel connection test passed!");
+    println!(" WebTunnel connection test passed!");
 }
 
 #[tokio::test]
@@ -145,12 +145,12 @@ async fn test_try_multiple_bridges() {
         
         match TorClient::new(options).await {
             Ok(client) => {
-                println!("✅ Successfully connected to bridge!");
+                println!(" Successfully connected to bridge!");
                 client.close().await;
                 return; // Success!
             }
             Err(e) => {
-                println!("❌ Failed: {}", e);
+                println!(" Failed: {}", e);
                 continue;
             }
         }
@@ -195,7 +195,7 @@ async fn test_snowflake_connection() {
     
     match bridge.connect().await {
         Ok(mut stream) => {
-            println!("✅ Snowflake connection established!");
+            println!(" Snowflake connection established!");
             println!("Protocol stack initialized: WebRTC → Turbo → KCP → SMUX");
             
             // Try to close gracefully
@@ -203,11 +203,11 @@ async fn test_snowflake_connection() {
                 println!("Warning: Error during close: {}", e);
             }
             
-            println!("✅ Snowflake connection test passed!");
+            println!(" Snowflake connection test passed!");
         }
         Err(e) => {
             // On native, this is expected to fail
-            println!("❌ Failed to connect: {}", e);
+            println!(" Failed to connect: {}", e);
             println!("This is expected on native builds - Snowflake requires WebRTC (WASM only).");
             println!("Use WebTunnel bridge for native testing.");
         }
@@ -245,7 +245,7 @@ async fn test_snowflake_alternate_broker() {
             client.close().await;
         }
         Err(e) => {
-            println!("❌ Failed: {}", e);
+            println!(" Failed: {}", e);
             println!("This is expected on native - Snowflake requires WebRTC (WASM only).");
         }
     }
@@ -308,12 +308,12 @@ async fn test_snowflake_tor_circuit() {
     
             assert!(!json.ip.is_empty(), "IP should not be empty");
     
-            println!("\n✅ E2E test passed! Successfully made HTTPS request through Tor via Snowflake.");
+            println!("\n E2E test passed! Successfully made HTTPS request through Tor via Snowflake.");
     
             client.close().await;
         }
         Err(e) => {
-            println!("❌ Failed: {}", e);
+            println!(" Failed: {}", e);
             println!("This is expected on native - Snowflake requires WebRTC (WASM only).");
         }
     }

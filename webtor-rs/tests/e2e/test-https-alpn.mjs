@@ -66,9 +66,9 @@ async function testHttpsWithAlpn() {
     console.log('Output:', output);
     
     if (output.includes('Success')) {
-      console.log('\n✅ HTTPS request SUCCEEDED! ALPN fix worked!');
+      console.log('\n HTTPS request SUCCEEDED! ALPN fix worked!');
     } else if (output.includes('TLS') && output.includes('failed')) {
-      console.log('\n❌ HTTPS TLS handshake still failing');
+      console.log('\n HTTPS TLS handshake still failing');
       console.log('TLS logs:', tlsLogs.slice(-10).join('\n'));
     } else {
       console.log('\n⏳ Result unclear');

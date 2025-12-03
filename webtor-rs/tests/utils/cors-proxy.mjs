@@ -79,6 +79,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`🔄 CORS proxy running on http://localhost:${PORT}`);
+    console.log(` CORS proxy running on http://localhost:${PORT}`);
     console.log(`   Usage: http://localhost:${PORT}/?url=<encoded-url>`);
 });

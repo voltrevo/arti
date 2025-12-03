@@ -123,7 +123,7 @@ async function runTest() {
     
     try {
         // Start CORS proxy first
-        console.log('🔄 Starting CORS proxy...');
+        console.log(' Starting CORS proxy...');
         corsProxy = await startCorsProxy();
         
         // Start server
@@ -151,8 +151,8 @@ async function runTest() {
             
             // Print important logs
             if (type === 'error') {
-                console.log(`❌ [console.error] ${text}`);
-            } else if (text.includes('✅') || text.includes('❌') || text.includes('🎉')) {
+                console.log(` [console.error] ${text}`);
+            } else if (text.includes('') || text.includes('') || text.includes('')) {
                 console.log(`   ${text}`);
             } else if (text.includes('relays') || text.includes('circuit') || text.includes('ntor') || 
                        text.includes('Creating') || text.includes('Extending') || text.includes('INFO') ||
@@ -163,7 +163,7 @@ async function runTest() {
         
         // Track page errors
         page.on('pageerror', error => {
-            console.log(`❌ [page error] ${error.message}`);
+            console.log(` [page error] ${error.message}`);
             logs.push({ type: 'pageerror', text: error.message, time: new Date().toISOString() });
         });
         
@@ -175,7 +175,7 @@ async function runTest() {
         // Wait for WASM to initialize
         console.log('⏳ Waiting for WASM initialization...');
         await page.waitForFunction(() => window.demoApp !== undefined, { timeout: 30000 });
-        console.log('✅ WASM initialized');
+        console.log(' WASM initialized');
         
         // Enable debug logging
         console.log('🔧 Enabling debug logs...');
@@ -224,7 +224,7 @@ async function runTest() {
         }
         
         const connectionTime = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`✅ Circuit ready in ${connectionTime}s`);
+        console.log(` Circuit ready in ${connectionTime}s`);
         
         // Make a test request
         console.log('🌐 Making test request to httpbin.org/ip...');
@@ -235,7 +235,7 @@ async function runTest() {
         await page.waitForFunction(
             () => {
                 const output = document.getElementById('output1');
-                return output && (output.textContent.includes('✅') || output.textContent.includes('❌'));
+                return output && (output.textContent.includes('') || output.textContent.includes(''));
             },
             { timeout: 60000 }
         );
@@ -243,7 +243,7 @@ async function runTest() {
         const output1 = await page.$eval('#output1', el => el.textContent);
         console.log(`   Result: ${output1}`);
         
-        if (output1.includes('❌')) {
+        if (output1.includes('')) {
             throw new Error(`Request failed: ${output1}`);
         }
         
@@ -254,13 +254,13 @@ async function runTest() {
         console.log(logTextarea);
         
         console.log('');
-        console.log('🎉 TEST PASSED');
+        console.log(' TEST PASSED');
         
         return { success: true, logs, connectionTime };
         
     } catch (error) {
         console.log('');
-        console.log(`❌ TEST FAILED: ${error.message}`);
+        console.log(` TEST FAILED: ${error.message}`);
         return { success: false, error: error.message, logs: [] };
         
     } finally {

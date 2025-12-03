@@ -1,6 +1,6 @@
 # Webtor-rs Project Summary
 
-## 🎯 Project Overview
+##  Project Overview
 
 Webtor-rs is a complete Rust implementation of a Tor client designed to be compiled to WebAssembly and embedded in web pages. It provides anonymous HTTP/HTTPS requests through the Tor network using pluggable transports (Snowflake and WebTunnel bridges).
 
@@ -139,9 +139,9 @@ webtor-rs/
    - Uses browser's SubtleCrypto for cryptographic operations
    - Proper certificate chain validation
 
-## ✅ Completed Features
+## Yes Completed Features
 
-### Phase 1 - Foundation ✅
+### Phase 1 - Foundation Yes
 - [x] Project structure with Cargo workspace
 - [x] WASM bindings with wasm-bindgen
 - [x] Error handling with custom types
@@ -149,7 +149,7 @@ webtor-rs/
 - [x] WebSocket implementation (WASM + Native)
 - [x] Demo webpage
 
-### Phase 2 - Tor Protocol ✅
+### Phase 2 - Tor Protocol Yes
 - [x] Arti integration (tor-proto, tor-netdoc, tor-llcrypto)
 - [x] Channel establishment with Tor handshake
 - [x] Circuit creation (CREATE2 with ntor-v3)
@@ -159,14 +159,14 @@ webtor-rs/
 - [x] Microdescriptor fetching
 - [x] Relay selection (guard, middle, exit)
 
-### Phase 3 - HTTP/TLS ✅
+### Phase 3 - HTTP/TLS Yes
 - [x] HTTP request/response through Tor streams
 - [x] TLS 1.3 support via SubtleCrypto (WASM)
 - [x] TLS support via rustls (Native)
 - [x] Proper certificate validation (P-256, P-384 curves)
 - [x] Request routing through exit relays
 
-### Phase 4 - Transports ✅
+### Phase 4 - Transports Yes
 - [x] **WebTunnel bridge** - Full implementation
   - [x] HTTPS connection with HTTP Upgrade
   - [x] TLS with SNI support
@@ -202,7 +202,7 @@ webtor-rs/
 - [ ] Documentation improvements
 - [ ] Mobile browser optimizations
 
-## ⚠️ Known Limitations
+## Warning Known Limitations
 
 ### TLS 1.3 Only
 The WASM TLS implementation (`subtle-tls`) only supports TLS 1.3. Sites that only support TLS 1.2 (like httpbin.org) will fail with `close_notify` alert.
@@ -216,24 +216,24 @@ Adding TLS 1.2 support requires implementing different key exchange and cipher s
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Core Library | ✅ Complete | Full Tor protocol support |
-| WebTunnel | ✅ Complete | Works on WASM + Native |
-| Snowflake | ✅ Complete | WASM only (WebRTC) |
-| TLS/HTTPS | ✅ Complete | TLS 1.3 via SubtleCrypto |
-| Consensus | ✅ Complete | Fetching + parsing + caching |
-| Circuit Creation | ✅ Complete | 3-hop circuits |
-| HTTP Client | ✅ Complete | GET/POST support |
-| WASM Build | ✅ Working | ~2-3 MB bundle |
-| Demo App | ✅ Working | Interactive UI |
+| Core Library | Yes Complete | Full Tor protocol support |
+| WebTunnel | Yes Complete | Works on WASM + Native |
+| Snowflake | Yes Complete | WASM only (WebRTC) |
+| TLS/HTTPS | Yes Complete | TLS 1.3 via SubtleCrypto |
+| Consensus | Yes Complete | Fetching + parsing + caching |
+| Circuit Creation | Yes Complete | 3-hop circuits |
+| HTTP Client | Yes Complete | GET/POST support |
+| WASM Build | Yes Working | ~2-3 MB bundle |
+| Demo App | Yes Working | Interactive UI |
 
 ## 🔒 Security Features
 
-- ✅ **TLS Certificate Validation** - Using webpki-roots + SubtleCrypto
-- ✅ **ntor-v3 Handshake** - Modern key exchange
-- ✅ **CREATE2 Circuits** - Current Tor standard
-- ✅ **Memory Safety** - Rust guarantees
-- ✅ **Audited Crypto** - ring, dalek crates (native), SubtleCrypto (WASM)
-- ✅ **Correct Snowflake** - Proper WebRTC architecture via broker
+- Yes **TLS Certificate Validation** - Using webpki-roots + SubtleCrypto
+- Yes **ntor-v3 Handshake** - Modern key exchange
+- Yes **CREATE2 Circuits** - Current Tor standard
+- Yes **Memory Safety** - Rust guarantees
+- Yes **Audited Crypto** - ring, dalek crates (native), SubtleCrypto (WASM)
+- Yes **Correct Snowflake** - Proper WebRTC architecture via broker
 
 ## 📈 Performance Characteristics
 
@@ -254,9 +254,9 @@ See [COMPARISON.md](COMPARISON.md) for detailed comparison with echalote.
 |---------|-----------|----------|
 | Language | Rust → WASM | TypeScript |
 | Tor Protocol | Official Arti | Custom |
-| TLS Validation | ✅ Yes | ❌ No |
-| Snowflake | ✅ WebRTC (correct) | ❌ Direct WS (wrong) |
-| WebTunnel | ✅ Yes | ❌ No |
+| TLS Validation | Yes Yes | No No |
+| Snowflake | Yes WebRTC (correct) | No Direct WS (wrong) |
+| WebTunnel | Yes Yes | No No |
 | Security | Production-grade | Experimental |
 
 ## 🚀 Quick Start

@@ -17,7 +17,7 @@ AUTHORITIES=(
     "86.59.21.38:80"      # tor26
 )
 
-echo "🔄 Fetching Tor network consensus..."
+echo " Fetching Tor network consensus..."
 
 # Try each authority until one succeeds
 CONSENSUS_FETCHED=false
@@ -31,7 +31,7 @@ for AUTH in "${AUTHORITIES[@]}"; do
     if curl -s --connect-timeout 10 --max-time 60 -o "$OUTPUT_DIR/consensus.txt" "$URL"; then
         # Verify it looks like a consensus
         if head -1 "$OUTPUT_DIR/consensus.txt" | grep -q "network-status-version"; then
-            echo "✅ Fetched consensus from $HOST"
+            echo " Fetched consensus from $HOST"
             CONSENSUS_FETCHED=true
             break
         else
@@ -44,7 +44,7 @@ for AUTH in "${AUTHORITIES[@]}"; do
 done
 
 if [ "$CONSENSUS_FETCHED" = false ]; then
-    echo "❌ Failed to fetch consensus from any directory authority"
+    echo " Failed to fetch consensus from any directory authority"
     exit 1
 fi
 
@@ -54,7 +54,7 @@ RELAY_COUNT=$(grep -c "^r " "$OUTPUT_DIR/consensus.txt" || echo "0")
 echo "   Consensus size: $CONSENSUS_SIZE bytes, $RELAY_COUNT relays"
 
 # Now fetch microdescriptors for the first ~500 relays (we only need a subset)
-echo "🔄 Fetching microdescriptors..."
+echo " Fetching microdescriptors..."
 
 # Extract microdescriptor digests from consensus (m lines)
 # Format: m <digest1>,<digest2>,...
@@ -111,13 +111,13 @@ fi
 
 MICRO_SIZE=$(wc -c < "$OUTPUT_DIR/microdescriptors.txt" | tr -d ' ')
 MICRO_COUNT=$(grep -c "^onion-key" "$OUTPUT_DIR/microdescriptors.txt" || echo "0")
-echo "✅ Fetched $MICRO_COUNT microdescriptors ($MICRO_SIZE bytes)"
+echo " Fetched $MICRO_COUNT microdescriptors ($MICRO_SIZE bytes)"
 
 # Create timestamp file
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OUTPUT_DIR/fetched_at.txt"
 
 # Compress with Brotli for smaller WASM binary (better than gzip)
-echo "🗜️  Compressing with Brotli..."
+echo "  Compressing with Brotli..."
 
 # Check if brotli is available
 if command -v brotli &> /dev/null; then
@@ -130,7 +130,7 @@ else
     elif command -v brew &> /dev/null; then
         brew install brotli
     else
-        echo "❌ Please install brotli: apt-get install brotli OR brew install brotli"
+        echo " Please install brotli: apt-get install brotli OR brew install brotli"
         exit 1
     fi
     brotli -9 -k -f "$OUTPUT_DIR/consensus.txt"
@@ -143,5 +143,5 @@ echo "   Compressed consensus: $COMPRESSED_CONSENSUS bytes"
 echo "   Compressed microdescriptors: $COMPRESSED_MICRO bytes"
 
 echo ""
-echo "✅ Done! Cached files in $OUTPUT_DIR/"
+echo " Done! Cached files in $OUTPUT_DIR/"
 ls -la "$OUTPUT_DIR/"

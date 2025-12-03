@@ -46,9 +46,9 @@ jobs:
         run: |
           mkdir -p webtor-demo/static/pkg
           cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
-          # Copy consensus files for lazy loading
-          cp webtor/src/cached/consensus.txt.br webtor-demo/static/
-          cp webtor/src/cached/microdescriptors.txt.br webtor-demo/static/
+          # Copy consensus files for lazy loading (uncompressed - GitHub Pages handles compression)
+          cp webtor/src/cached/consensus.txt webtor-demo/static/
+          cp webtor/src/cached/microdescriptors.txt webtor-demo/static/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

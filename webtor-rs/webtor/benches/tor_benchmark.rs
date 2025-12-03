@@ -20,7 +20,7 @@ mod benchmark_utils {
 
     impl BenchmarkResult {
         pub fn print(&self) {
-            let status = if self.success { "✅" } else { "❌" };
+            let status = if self.success { "" } else { "" };
             println!("{} {} - {:?} ({} iterations)", status, self.name, self.duration, self.iterations);
             if !self.details.is_empty() {
                 println!("   Details: {}", self.details);
@@ -120,7 +120,7 @@ async fn run_benchmarks() {
     match TorClient::new(options).await {
         Ok(client) => {
             let connect_time = start.elapsed();
-            println!("✅ Connection established in {:?}", connect_time);
+            println!(" Connection established in {:?}", connect_time);
 
             // Benchmark 3: HTTP fetch through Tor
             println!("\n--- Benchmark: HTTP Fetch ---");
@@ -128,7 +128,7 @@ async fn run_benchmarks() {
             match client.fetch("https://api64.ipify.org?format=json").await {
                 Ok(response) => {
                     let fetch_time = fetch_start.elapsed();
-                    println!("✅ Fetch completed in {:?}", fetch_time);
+                    println!(" Fetch completed in {:?}", fetch_time);
                     println!("   Status: {}", response.status);
                     println!("   Body: {}", String::from_utf8_lossy(&response.body));
                     
@@ -153,14 +153,14 @@ async fn run_benchmarks() {
                     println!("   Total: {:?} ({}/3 successful)", multi_time, success_count);
                 }
                 Err(e) => {
-                    println!("❌ Fetch failed: {}", e);
+                    println!(" Fetch failed: {}", e);
                 }
             }
 
             client.close().await;
         }
         Err(e) => {
-            println!("❌ Connection failed: {}", e);
+            println!(" Connection failed: {}", e);
         }
     }
 

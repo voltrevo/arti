@@ -8,7 +8,7 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 |--------|-----------|----------|
 | **Language** | Rust → WASM | TypeScript + WASM modules |
 | **Tor Protocol** | Uses battle-tested `tor-proto` crate | Custom implementation |
-| **Security** | Production-grade TLS validation | ❌ No TLS certificate validation |
+| **Security** | Production-grade TLS validation | No No TLS certificate validation |
 | **Transport** | WebTunnel + Snowflake (WebRTC) | Snowflake (WebSocket) + Meek |
 | **Maturity** | Built on Arti (official Rust Tor) | Experimental, early-stage |
 | **TLS** | TLS 1.3 via SubtleCrypto | TLS 1.2 via @hazae41/cadenas |
@@ -40,7 +40,7 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 │    │     ├── Handshake (VERSION, CERTS, NETINFO)                    │
 │    │     ├── Circuit (CREATE_FAST, EXTEND2, ntor)                   │
 │    │     └── Stream (RELAY cells, SENDME flow control)              │
-│    ├── @hazae41/cadenas (TLS - NO cert validation ⚠️)               │
+│    ├── @hazae41/cadenas (TLS - NO cert validation Warning)               │
 │    └── Transport Layer                                               │
 │          ├── Snowflake (WebSocket → Turbo → KCP → SMUX)             │
 │          └── Meek (HTTP batched transport)                          │
@@ -70,10 +70,10 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
-| **Certificate Validation** | ✅ Full validation with webpki-roots | ❌ None (unsafe) |
+| **Certificate Validation** | Yes Full validation with webpki-roots | No None (unsafe) |
 | **TLS Version** | TLS 1.3 | TLS 1.2 only |
 | **Implementation** | subtle-tls (SubtleCrypto) | @hazae41/cadenas |
-| **MITM Protection** | ✅ Yes | ❌ No |
+| **MITM Protection** | Yes Yes | No No |
 | **Curve Support** | P-256, P-384, P-521 | Unknown |
 
 **Why webtor-rs is better:**
@@ -99,9 +99,9 @@ async fn verify_certificate_chain(&self, certs: &[Certificate]) -> Result<()> {
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
 | **Connection Method** | WebRTC via broker | Direct WebSocket |
-| **Broker Support** | ✅ Full broker API | ❌ Hardcoded endpoints |
+| **Broker Support** | Yes Full broker API | No Hardcoded endpoints |
 | **Protocol Stack** | WebRTC → Turbo → KCP → SMUX | WebSocket → Turbo → KCP → SMUX |
-| **Correct Architecture** | ✅ Yes | ❌ No (bypasses volunteer proxies) |
+| **Correct Architecture** | Yes Yes | No No (bypasses volunteer proxies) |
 
 **Why webtor-rs is better:**
 
@@ -125,7 +125,7 @@ pub async fn connect(broker_url: &str, fingerprint: &str) -> Result<Self> {
     // 2. Exchange SDP via broker
     let offer_sdp = create_and_gather_offer(&pc).await?;
     let broker = BrokerClient::new(broker_url);
-    let answer_sdp = broker.negotiate(&offer_sdp).await?;  // ✅ Proper signaling
+    let answer_sdp = broker.negotiate(&offer_sdp).await?;  // Yes Proper signaling
     
     // 3. Complete WebRTC handshake
     pc.set_remote_description(&answer_init).await?;
@@ -136,9 +136,9 @@ pub async fn connect(broker_url: &str, fingerprint: &str) -> Result<Self> {
 
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
-| **WebTunnel Bridge** | ✅ Full support | ❌ Not implemented |
-| **HTTPS Upgrade** | ✅ RFC 9298 compliant | N/A |
-| **TLS SNI** | ✅ Configurable | N/A |
+| **WebTunnel Bridge** | Yes Full support | No Not implemented |
+| **HTTPS Upgrade** | Yes RFC 9298 compliant | N/A |
+| **TLS SNI** | Yes Configurable | N/A |
 
 **webtor-rs WebTunnel** provides an alternative transport that:
 - Works through corporate proxies
@@ -166,7 +166,7 @@ let kcp_config = KcpConfig {
     nc: true,          // Disable congestion control
     ..Default::default()
 };
-let kcp = Kcp::new_stream(config.conv, output);  // ✅ Stream mode
+let kcp = Kcp::new_stream(config.conv, output);  // Yes Stream mode
 ```
 
 ### 5. Cryptography
@@ -190,9 +190,9 @@ let kcp = Kcp::new_stream(config.conv, output);  // ✅ Stream mode
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
 | **Type Safety** | Rust's strict type system | TypeScript (weaker) |
-| **Memory Safety** | ✅ Guaranteed (no GC) | Depends on JS runtime |
+| **Memory Safety** | Yes Guaranteed (no GC) | Depends on JS runtime |
 | **Error Propagation** | `Result<T, E>` types | Exceptions/Promises |
-| **Null Safety** | ✅ `Option<T>` | Nullable types |
+| **Null Safety** | Yes `Option<T>` | Nullable types |
 
 ```rust
 // webtor-rs: Explicit error handling
@@ -209,11 +209,11 @@ pub async fn connect(&self) -> Result<SnowflakeStream> {
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
 | **Consensus Parsing** | `tor-netdoc` crate | Custom parser |
-| **Microdescriptors** | ✅ Full support | Unknown |
+| **Microdescriptors** | Yes Full support | Unknown |
 | **Relay Flags** | Full flag support | Basic flags |
-| **Exit Policy** | ✅ Parsed and enforced | Limited |
-| **Bandwidth Weights** | ✅ Supported | Not mentioned |
-| **Caching** | ✅ With expiration (1hr) | Unknown |
+| **Exit Policy** | Yes Parsed and enforced | Limited |
+| **Bandwidth Weights** | Yes Supported | Not mentioned |
+| **Caching** | Yes With expiration (1hr) | Unknown |
 
 ```rust
 // webtor-rs: Proper consensus handling via DirectoryManager
@@ -269,8 +269,8 @@ const tls = new TlsClientDuplex({ host_name: "example.com" });
 
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
-| **Unit Tests** | ✅ Comprehensive | Limited |
-| **E2E Tests** | ✅ Real network tests | Example app |
+| **Unit Tests** | Yes Comprehensive | Limited |
+| **E2E Tests** | Yes Real network tests | Example app |
 | **CI/CD** | GitHub Actions | Unknown |
 | **Documentation** | Doc comments + README | README + examples |
 
@@ -285,22 +285,22 @@ const tls = new TlsClientDuplex({ host_name: "example.com" });
 
 ## Security Summary
 
-### webtor-rs ✅
-- ✅ TLS 1.3 certificate validation via SubtleCrypto
-- ✅ Uses official Tor protocol crate
-- ✅ Modern ntor-v3 handshake
-- ✅ CREATE2 circuit creation
-- ✅ Proper Snowflake WebRTC architecture
-- ✅ Memory-safe Rust code
-- ✅ Audited crypto libraries
+### webtor-rs Yes
+- Yes TLS 1.3 certificate validation via SubtleCrypto
+- Yes Uses official Tor protocol crate
+- Yes Modern ntor-v3 handshake
+- Yes CREATE2 circuit creation
+- Yes Proper Snowflake WebRTC architecture
+- Yes Memory-safe Rust code
+- Yes Audited crypto libraries
 
-### echalote ⚠️
-- ❌ **No TLS certificate validation** (MITM vulnerable)
-- ❌ Custom Tor implementation (not audited)
-- ❌ Legacy CREATE_FAST (less secure)
-- ❌ Direct WebSocket to bridge (incorrect architecture)
-- ⚠️ Experimental, early-stage
-- ⚠️ TypeScript security depends on runtime
+### echalote Warning
+- No **No TLS certificate validation** (MITM vulnerable)
+- No Custom Tor implementation (not audited)
+- No Legacy CREATE_FAST (less secure)
+- No Direct WebSocket to bridge (incorrect architecture)
+- Warning Experimental, early-stage
+- Warning TypeScript security depends on runtime
 
 ## Conclusion
 
@@ -352,5 +352,5 @@ let response = client.get("https://example.com").await?;
 
 | Bridge | WASM | Native | Censorship Resistance |
 |--------|------|--------|----------------------|
-| Snowflake | ✅ | ❌ | High (WebRTC P2P) |
-| WebTunnel | ✅ | ✅ | Medium (HTTPS) |
+| Snowflake | Yes | No | High (WebRTC P2P) |
+| WebTunnel | Yes | Yes | Medium (HTTPS) |

@@ -483,8 +483,8 @@ impl TorClient {
             // Default logging
             match log_type {
                 LogType::Info => info!("{}", message),
-                LogType::Success => info!("✅ {}", message),
-                LogType::Error => error!("❌ {}", message),
+                LogType::Success => info!(" {}", message),
+                LogType::Error => error!(" {}", message),
             }
         }
     }

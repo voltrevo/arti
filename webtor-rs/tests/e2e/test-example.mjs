@@ -25,16 +25,16 @@ async function runTest() {
             const text = msg.text();
             const type = msg.type();
             if (type === 'error') {
-                console.log(`❌ [error] ${text}`);
+                console.log(` [error] ${text}`);
             } else if (text.includes('INFO') || text.includes('WARN') || text.includes('ERROR') ||
                        text.includes('circuit') || text.includes('Channel') || text.includes('consensus') ||
-                       text.includes('WebTunnel') || text.includes('✅') || text.includes('❌')) {
+                       text.includes('WebTunnel') || text.includes('') || text.includes('')) {
                 console.log(`   [log] ${text.substring(0, 200)}`);
             }
         });
         
         page.on('pageerror', error => {
-            console.log(`❌ [page error] ${error.message}`);
+            console.log(` [page error] ${error.message}`);
         });
         
         console.log(`📄 Loading ${CONFIG.url}...`);
@@ -42,7 +42,7 @@ async function runTest() {
         
         // Wait for page to load
         await page.waitForSelector('button:has-text("Enable Webtor")', { timeout: 10000 });
-        console.log('✅ Page loaded');
+        console.log(' Page loaded');
         
         // Click Enable Webtor button
         console.log('🔓 Clicking "Enable Webtor"...');
@@ -92,7 +92,7 @@ async function runTest() {
         }
         
         const connectionTime = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`✅ Connected in ${connectionTime}s`);
+        console.log(` Connected in ${connectionTime}s`);
         
         // Click Fetch button
         console.log('🌐 Clicking "Fetch My Tor IP"...');
@@ -105,14 +105,14 @@ async function runTest() {
         console.log(`   Result: ${alertText}`);
         
         if (alertText.includes('Exit IP')) {
-            console.log('\n🎉 TEST PASSED');
+            console.log('\n TEST PASSED');
             return { success: true };
         } else {
             throw new Error(`Unexpected result: ${alertText}`);
         }
         
     } catch (error) {
-        console.log(`\n❌ TEST FAILED: ${error.message}`);
+        console.log(`\n TEST FAILED: ${error.message}`);
         return { success: false, error: error.message };
         
     } finally {
