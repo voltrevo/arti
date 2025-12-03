@@ -3,388 +3,1188 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webtor-rs Demo - Tor Client in Rust/WASM</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://snowflake.torproject.net https:; img-src 'self' data:; font-src 'self'; base-uri 'self'; form-action 'none';">
+    <title>webtor-rs - Web Native Tor Client</title>
+    <link rel="icon" href="tor.svg" type="image/svg+xml">
     <style>
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 1200px;
+            padding: 0;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e8e8e8;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .site-header {
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 16px 20px;
+        }
+
+        .site-header-inner {
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
-        
-        .container {
-            background: white;
-            border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
+
+        .site-logo {
+            width: 40px;
+            height: 40px;
         }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
+
+        .site-title {
+            margin: 0;
+            font-size: 22px;
+            background: linear-gradient(135deg, #9a4fd1, #7d33b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 600;
         }
-        
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-        }
-        
-        .section {
-            margin-bottom: 30px;
-            padding: 20px;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-        }
-        
-        .section h3 {
-            margin-top: 0;
-            color: #444;
-        }
-        
-        .input-group {
-            margin-bottom: 15px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #555;
-        }
-        
-        input[type="text"], textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        
-        input[type="text"]:focus, textarea:focus {
-            outline: none;
-            border-color: #007bff;
-            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
-        }
-        
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-right: 10px;
-            margin-bottom: 10px;
-        }
-        
-        button:hover:not(:disabled) {
-            background-color: #0056b3;
-        }
-        
-        button:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
-        }
-        
-        button.secondary {
-            background-color: #6c757d;
-        }
-        
-        button.secondary:hover:not(:disabled) {
-            background-color: #545b62;
-        }
-        
-        .status {
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            font-family: monospace;
-            font-size: 14px;
-        }
-        
-        .output {
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            margin-top: 10px;
-            min-height: 60px;
-            font-family: monospace;
+
+        .site-subtitle {
+            color: #a0a0a0;
             font-size: 13px;
-            white-space: pre-wrap;
-            word-break: break-all;
+            margin-left: 12px;
+            padding-left: 12px;
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
         }
-        
-        .output.loading {
-            color: #0066cc;
-        }
-        
-        .output.success {
-            color: #28a745;
-        }
-        
-        .output.error {
-            color: #dc3545;
-        }
-        
-        .output.info {
-            color: #666666;
-        }
-        
-        .log-output {
-            width: 100%;
-            height: 200px;
-            font-family: monospace;
-            font-size: 12px;
-            resize: vertical;
-        }
-        
-        .request-grid {
+
+        .main-container {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            flex: 1;
+            width: 100%;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .section {
             margin-bottom: 20px;
         }
-        
-        .request-item {
-            padding: 15px;
-            border: 1px solid #e0e0e0;
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #9a4fd1;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-bar {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #6c757d;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.ready { background: #28a745; }
+        .status-dot.loading { background: #ffc107; }
+        .status-dot.error { background: #dc3545; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: linear-gradient(135deg, #7d33b8, #9a4fd1);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(122, 51, 184, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:focus-visible {
+            outline: 2px solid #fff;
+            outline-offset: 2px;
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        button.secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: none;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #c0c0c0;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-size: 13px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #e8e8e8;
+            transition: border-color 0.2s, outline 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: 2px solid #9a4fd1;
+            outline-offset: 2px;
+            border-color: #9a4fd1;
+        }
+
+        select {
+            cursor: pointer;
+        }
+
+        select option {
+            background: #1a1a2e;
+            color: #e8e8e8;
+        }
+
+        .input-group {
+            margin-bottom: 14px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #a0a0a0;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            background: none;
+            border-radius: 0;
+        }
+
+        .tab:hover {
+            color: #e8e8e8;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .tab.active {
+            color: #9a4fd1;
+            border-bottom-color: #9a4fd1;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .request-section {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .request-info {
+            font-size: 12px;
+            color: #a0a0a0;
+            margin-bottom: 14px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 6px;
         }
-        
-        .isolated-request {
-            background-color: #fff3cd;
-            border-color: #ffeaa7;
+
+        .output-box {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            min-height: 60px;
+            max-height: 120px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            color: #a0a0a0;
         }
-        
-        .warning {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
+
+        .output-box.success { color: #28a745; }
+        .output-box.error { color: #dc3545; }
+        .output-box.loading { color: #17a2b8; }
+
+        .log-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
-        
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
-        
-        .feature {
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            border-left: 4px solid #007bff;
+
+        .log-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
         }
-        
-        .feature h4 {
-            margin-top: 0;
-            color: #007bff;
+
+        /* Log Search */
+        .log-search {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
         }
-        
-        @media (max-width: 768px) {
-            .request-grid {
+
+        .log-search input {
+            flex: 1;
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .log-search-count {
+            font-size: 11px;
+            color: #808080;
+            min-width: 60px;
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .toggle-switch-track {
+            width: 36px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            position: relative;
+            transition: background 0.2s;
+        }
+
+        .toggle-switch-thumb {
+            width: 16px;
+            height: 16px;
+            background: #a0a0a0;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: all 0.2s;
+        }
+
+        .toggle-switch.active .toggle-switch-track {
+            background: rgba(154, 79, 209, 0.4);
+        }
+
+        .toggle-switch.active .toggle-switch-thumb {
+            left: 18px;
+            background: #9a4fd1;
+        }
+
+        .toggle-switch-label {
+            font-size: 12px;
+            color: #a0a0a0;
+        }
+
+        .toggle-switch.active .toggle-switch-label {
+            color: #9a4fd1;
+        }
+
+        .log-output {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            min-height: 400px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 2px;
+        }
+
+        .log-entry.hidden {
+            display: none;
+        }
+
+        .log-entry.highlight {
+            background: rgba(154, 79, 209, 0.2);
+            border-radius: 2px;
+        }
+
+        .log-time { color: #808080; }
+        .log-info { color: #28a745; }
+        .log-warn { color: #ffc107; }
+        .log-error { color: #dc3545; }
+        .log-debug { color: #808080; }
+
+        .empty-state {
+            color: #606060;
+            font-style: italic;
+        }
+
+        /* Circuit Display */
+        .circuit-display {
+            display: none;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 12px;
+        }
+
+        .circuit-display.visible {
+            display: block;
+        }
+
+        .circuit-path {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .circuit-relay {
+            flex: 1;
+            min-width: 120px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .circuit-target {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+        }
+
+        .circuit-target .circuit-relay-role {
+            color: #3b82f6;
+        }
+
+        .circuit-relay-role {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #9a4fd1;
+            margin-bottom: 4px;
+        }
+
+        .circuit-relay-nickname {
+            font-weight: 600;
+            color: #e8e8e8;
+            font-size: 12px;
+            margin-bottom: 2px;
+        }
+
+        .circuit-relay-address {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 11px;
+            color: #808080;
+        }
+
+        .circuit-arrow {
+            color: #9a4fd1;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 600px) {
+            .circuit-path {
+                flex-direction: column;
+            }
+            .circuit-arrow {
+                transform: rotate(90deg);
+            }
+        }
+
+        .site-footer {
+            background: rgba(0, 0, 0, 0.5);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 12px 20px;
+            text-align: center;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        .site-footer-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #808080;
+        }
+
+        .site-footer a {
+            color: #9a4fd1;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .site-footer a:hover {
+            color: #b87fe8;
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 16px;
+        }
+
+        @media (max-width: 900px) {
+            .main-container {
                 grid-template-columns: 1fr;
             }
-            
-            .features {
-                grid-template-columns: 1fr;
+
+            .log-output {
+                min-height: 200px;
+            }
+
+            .site-header-inner {
+                flex-wrap: wrap;
+            }
+
+            .site-subtitle {
+                width: 100%;
+                margin-left: 0;
+                padding-left: 0;
+                border-left: none;
+                margin-top: 4px;
+            }
+
+            .site-footer-inner {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .site-title { font-size: 18px; }
+            button { padding: 8px 14px; font-size: 12px; }
+
+            .log-header {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🧅 Webtor-rs Demo</h1>
-        <p class="subtitle">Tor client implementation in Rust, compiled to WebAssembly for web browsers</p>
-        
-        <div class="warning">
-            <strong>⚠️ Use at Your Own Risk:</strong> This is experimental software. The underlying Tor implementation is experimental.
+    <!-- Site Header -->
+    <header class="site-header">
+        <div class="site-header-inner">
+            <img src="tor.svg" alt="webtor-rs logo" class="site-logo">
+            <h1 class="site-title">webtor-rs</h1>
+            <span class="site-subtitle">web native Tor client in Rust/WASM</span>
         </div>
-        
-        <div class="features">
-            <div class="feature">
-                <h4>🔄 Persistent Circuits</h4>
-                <p>Reuses Tor circuits for better performance</p>
-            </div>
-            <div class="feature">
-                <h4>🔃 Auto Updates</h4>
-                <p>Configurable circuit refresh with graceful transitions</p>
-            </div>
-            <div class="feature">
-                <h4>🌨️ Snowflake</h4>
-                <p>Uses Snowflake bridge for WebSocket-based access</p>
-            </div>
-            <div class="feature">
-                <h4>🔒 Isolated Requests</h4>
-                <p>One-time circuits for maximum privacy</p>
-            </div>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div class="section">
-            <h3>🔧 Configuration</h3>
-            <div class="input-group">
-                <label for="snowflakeUrl">Snowflake Bridge URL:</label>
-                <input type="text" id="snowflakeUrl" value="wss://snowflake.torproject.net/" placeholder="wss://snowflake.torproject.net/">
-            </div>
-            
-            <div>
-                <button id="openBtn">🔓 Open TorClient</button>
-                <button id="closeBtn" disabled>🛑 Close TorClient</button>
-                <button id="clearBtn" class="secondary">🗑️ Clear Output</button>
-            </div>
-            
-            <div class="status" id="status">
-                <strong>Circuit Status:</strong> Not initialized
-            </div>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div class="section">
-            <h3>🌐 Persistent Requests (Circuit Reuse)</h3>
-            <p>These requests use the same persistent Tor circuit for better performance.</p>
-            
-            <div class="request-grid">
-                <div class="request-item">
-                    <h4>Request 1</h4>
-                    <div class="input-group">
-                        <label for="url1">URL:</label>
-                        <input type="text" id="url1" value="https://httpbin.org/ip" placeholder="https://example.com">
+    </header>
+
+    <div class="main-container">
+        <!-- Left Panel - Controls -->
+        <div class="panel" role="main">
+            <div class="section">
+                <div class="section-title" id="connectionLabel">Connection</div>
+                <div class="status-bar" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="connectionLabel">
+                    <div class="status-dot" id="statusDot" aria-hidden="true"></div>
+                    <span id="status">Not initialized</span>
+                </div>
+                <div class="btn-group" style="margin-top: 12px;">
+                    <button id="openBtn" aria-label="Open and initialize Tor client connection">Open TorClient</button>
+                    <button id="closeBtn" class="secondary" disabled aria-label="Close Tor client connection">Close</button>
+                    <button id="updateBtn" class="secondary" disabled aria-label="Refresh the current circuit">Refresh Circuit</button>
+                </div>
+
+                <!-- Circuit Path Display -->
+                <div class="circuit-display" id="circuitDisplay" aria-label="Current circuit path">
+                    <div class="circuit-path" id="circuitPath">
+                        <!-- Relay nodes will be populated by JavaScript -->
                     </div>
-                    <button id="btn1">🌐 Make Request 1</button>
-                    <div class="output" id="output1">Ready to make request...</div>
                 </div>
-                
-                <div class="request-item">
-                    <h4>Request 2</h4>
-                    <div class="input-group">
-                        <label for="url2">URL:</label>
-                        <input type="text" id="url2" value="https://httpbin.org/user-agent" placeholder="https://example.com">
+            </div>
+
+            <div class="section">
+                <div class="section-title">HTTP Request</div>
+
+                <!-- Tabs for Persistent / Isolated -->
+                <div class="tabs" role="tablist">
+                    <button class="tab active" role="tab" aria-selected="true" aria-controls="persistentTab" id="persistentTabBtn">Persistent</button>
+                    <button class="tab" role="tab" aria-selected="false" aria-controls="isolatedTab" id="isolatedTabBtn">Isolated</button>
+                </div>
+
+                <!-- Persistent Request Tab -->
+                <div class="tab-content active" id="persistentTab" role="tabpanel" aria-labelledby="persistentTabBtn">
+                    <div class="request-section">
+                        <div class="request-info">
+                            Reuses the existing circuit for faster requests.
+                        </div>
+
+                        <div class="input-group">
+                            <label for="presetSelect">Preset</label>
+                            <select id="presetSelect" name="preset">
+                                <optgroup label="Test Endpoints">
+                                    <option value="https://check.torproject.org/" selected>Tor Check</option>
+                                    <option value="https://api.ipify.org?format=json">IP Check (ipify)</option>
+                                </optgroup>
+                                <optgroup label="Ethereum RPC">
+                                    <option value="https://eth.llamarpc.com">Llama RPC</option>
+                                    <option value="https://rpc.flashbots.net/fast?originId=webtor">Flashbots RPC</option>
+                                    <option value="https://rpc.mevblocker.io">MEV Blocker RPC</option>
+                                </optgroup>
+                                <optgroup label="Custom">
+                                    <option value="custom">Custom URL...</option>
+                                </optgroup>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="url1">URL</label>
+                            <input type="url" id="url1" name="url1" value="https://check.torproject.org/" placeholder="https://..." autocomplete="url">
+                        </div>
+
+                        <button id="btn1" disabled aria-label="Send HTTP request using persistent circuit">Send Request</button>
+                        <div class="output-box" id="output1" role="region" aria-live="polite" aria-label="Request result">Ready...</div>
                     </div>
-                    <button id="btn2">🌐 Make Request 2</button>
-                    <div class="output" id="output2">Ready to make request...</div>
                 </div>
-                
-                <div class="request-item">
-                    <h4>Request 3</h4>
-                    <div class="input-group">
-                        <label for="url3">URL:</label>
-                        <input type="text" id="url3" value="https://httpbin.org/headers" placeholder="https://example.com">
+
+                <!-- Isolated Request Tab -->
+                <div class="tab-content" id="isolatedTab" role="tabpanel" aria-labelledby="isolatedTabBtn">
+                    <div class="request-section">
+                        <div class="request-info">
+                            Creates a new circuit for each request (slower but more private).
+                        </div>
+
+                        <div class="input-group">
+                            <label for="isolatedPresetSelect">Preset</label>
+                            <select id="isolatedPresetSelect" name="isolatedPreset">
+                                <optgroup label="Test Endpoints">
+                                    <option value="https://check.torproject.org/" selected>Tor Check</option>
+                                    <option value="https://api.ipify.org?format=json">IP Check (ipify)</option>
+                                </optgroup>
+                                <optgroup label="Ethereum RPC">
+                                    <option value="https://eth.llamarpc.com">Llama RPC</option>
+                                    <option value="https://rpc.flashbots.net/fast?originId=webtor">Flashbots RPC</option>
+                                    <option value="https://rpc.mevblocker.io">MEV Blocker RPC</option>
+                                </optgroup>
+                                <optgroup label="Custom">
+                                    <option value="custom">Custom URL...</option>
+                                </optgroup>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="isolatedUrl">URL</label>
+                            <input type="url" id="isolatedUrl" name="isolatedUrl" value="https://check.torproject.org/" placeholder="https://..." autocomplete="url">
+                        </div>
+
+                        <button id="btnIsolated" disabled aria-label="Send HTTP request using a new isolated circuit">Send Isolated</button>
+                        <div class="output-box" id="outputIsolated" role="region" aria-live="polite" aria-label="Isolated request result">Ready...</div>
                     </div>
-                    <button id="btn3">🌐 Make Request 3</button>
-                    <div class="output" id="output3">Ready to make request...</div>
-                </div>
-                
-                <div class="request-item">
-                    <h4>Circuit Management</h4>
-                    <p>Manually trigger circuit updates and monitor status.</p>
-                    <button id="updateBtn">🔄 Trigger Circuit Update</button>
                 </div>
             </div>
         </div>
-    </div>
-    
-    <div class="container">
-        <div class="section isolated-request">
-            <h3>🔒 Isolated Request (Maximum Privacy)</h3>
-            <p>This request creates a temporary circuit that is disposed after completion.</p>
-            
-            <div class="input-group">
-                <label for="isolatedUrl">URL:</label>
-                <input type="text" id="isolatedUrl" value="https://httpbin.org/uuid" placeholder="https://example.com">
+
+        <!-- Right Panel - Logs -->
+        <div class="panel log-panel" role="complementary">
+            <div class="log-header">
+                <div class="section-title" id="logsLabel">Connection Logs</div>
+                <div class="log-controls">
+                    <div id="verboseToggle" class="toggle-switch" role="switch" aria-checked="false" aria-label="Toggle verbose logging" tabindex="0">
+                        <div class="toggle-switch-track">
+                            <div class="toggle-switch-thumb"></div>
+                        </div>
+                        <span class="toggle-switch-label">Verbose</span>
+                    </div>
+                    <button id="clearBtn" class="secondary" style="padding: 6px 12px;" aria-label="Clear all log entries">Clear</button>
+                </div>
             </div>
-            <button id="btnIsolated">🔒 Make Isolated Request</button>
-            <div class="output" id="outputIsolated">Ready to make isolated request...</div>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div class="section">
-            <h3>📋 Activity Log</h3>
-            <p>Detailed logging of all Tor operations and requests.</p>
-            <textarea id="output" class="log-output" readonly placeholder="Activity log will appear here..."></textarea>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div class="section">
-            <h3>📊 Performance Information</h3>
-            <div class="features">
-                <div class="feature">
-                    <h4>⏱️ Initial Connection</h4>
-                    <p>20-60 seconds (first time)</p>
-                </div>
-                <div class="feature">
-                    <h4>🚀 Subsequent Requests</h4>
-                    <p>1-5 seconds (circuit reuse)</p>
-                </div>
-                <div class="feature">
-                    <h4>🔄 Circuit Updates</h4>
-                    <p>Automatic every 2 minutes</p>
-                </div>
-                <div class="feature">
-                    <h4>🌐 Browser Support</h4>
-                    <p>Chrome, Firefox, Safari, Edge</p>
-                </div>
+            <div class="log-search">
+                <input type="text" id="logSearch" placeholder="Search logs..." aria-label="Search logs">
+                <span class="log-search-count" id="logSearchCount"></span>
+            </div>
+            <div class="log-output" id="output" role="log" aria-live="off" aria-labelledby="logsLabel">
+                <div class="empty-state">Logs will appear here. Click "Open TorClient" to start.</div>
             </div>
         </div>
     </div>
-    
+
+    <!-- Site Footer -->
+    <footer class="site-footer">
+        <div class="site-footer-inner">
+            <span>v0.2.0</span>
+            <div class="footer-links">
+                <a href="https://github.com/voltrevo/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
+                <a href="https://github.com/voltrevo/webtor-rs/blob/main/docs/FEATURES.md" target="_blank" rel="noopener noreferrer">Features</a>
+            </div>
+        </div>
+    </footer>
+
     <script type="module">
-        import init, { DemoApp } from './pkg/webtor_demo.js';
-        
-        async function run() {
-            console.log('Loading Webtor Demo...');
-            
+        import init, { DemoApp, setLogCallback, setDebugEnabled } from './pkg/webtor_demo.js';
+
+        // Constants
+        const MAX_LOG_ENTRIES = 1000;
+        const TLS12_SITES = ['httpbin.org', 'httpbin.com'];
+
+        // URL validation
+        function validateUrl(url) {
+            if (!url || url.trim() === '') {
+                return { valid: false, error: 'URL cannot be empty' };
+            }
             try {
-                // Initialize the WASM module
-                await init();
-                console.log('WASM module loaded successfully');
-                
-                // Create and initialize the demo app
-                const app = new DemoApp();
-                await app.initUI();
-                console.log('Demo app initialized successfully');
-                
-                // Make app globally available for debugging
-                window.demoApp = app;
-                
-                console.log('Webtor Demo ready!');
-            } catch (error) {
-                console.error('Failed to initialize Webtor Demo:', error);
-                
-                // Show error to user
-                const errorDiv = document.createElement('div');
-                errorDiv.style.cssText = `
-                    background-color: #f8d7da;
-                    border: 1px solid #f5c6cb;
-                    color: #721c24;
-                    padding: 15px;
-                    border-radius: 4px;
-                    margin: 20px;
-                    font-family: monospace;
-                `;
-                errorDiv.innerHTML = `
-                    <strong>❌ Failed to initialize Webtor Demo</strong><br>
-                    Error: ${error.message}<br>
-                    <br>
-                    Please check the browser console for more details.
-                `;
-                document.body.insertBefore(errorDiv, document.body.firstChild);
+                const parsed = new URL(url);
+                if (!['https:', 'http:'].includes(parsed.protocol)) {
+                    return { valid: false, error: 'Only HTTP/HTTPS protocols are supported' };
+                }
+                // Block private IP ranges (SSRF protection)
+                const hostname = parsed.hostname;
+                if (hostname === 'localhost' ||
+                    hostname === '127.0.0.1' ||
+                    hostname.startsWith('192.168.') ||
+                    hostname.startsWith('10.') ||
+                    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname) ||
+                    hostname === '0.0.0.0') {
+                    return { valid: false, error: 'Private/local addresses are not allowed' };
+                }
+                return { valid: true, hostname };
+            } catch (e) {
+                return { valid: false, error: 'Invalid URL format' };
             }
         }
-        
-        // Run when the page loads
+
+        function isTls12Site(url) {
+            try {
+                const hostname = new URL(url).hostname;
+                return TLS12_SITES.some(site => hostname.includes(site));
+            } catch {
+                return false;
+            }
+        }
+
+        function formatTlsError(url, errorMessage) {
+            if (errorMessage.includes('close_notify') || errorMessage.includes('TLS handshake failed') || errorMessage.includes('AlertReceived')) {
+                try {
+                    const hostname = new URL(url).hostname;
+                    return `TLS Error: ${hostname} may require TLS 1.2 which is not supported.\n\nwebtor-rs only supports TLS 1.3.\n\nTry: check.torproject.org, google.com, cloudflare.com`;
+                } catch {
+                    return errorMessage;
+                }
+            }
+            return errorMessage;
+        }
+
+        // Safe log entry creation
+        function createLogEntry(level, message) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            const time = document.createElement('span');
+            time.className = 'log-time';
+            const now = new Date();
+            const ms = String(now.getMilliseconds()).padStart(3, '0');
+            time.textContent = `[${now.toLocaleTimeString('en-US', { hour12: false })}.${ms}] `;
+
+            const levelSpan = document.createElement('span');
+            let levelClass = 'log-info';
+            let prefix = 'INFO';
+            switch (level) {
+                case 'ERROR': levelClass = 'log-error'; prefix = 'ERR '; break;
+                case 'WARN': levelClass = 'log-warn'; prefix = 'WARN'; break;
+                case 'DEBUG': levelClass = 'log-debug'; prefix = 'DBG '; break;
+                case 'TRACE': levelClass = 'log-debug'; prefix = 'TRC '; break;
+            }
+            levelSpan.className = levelClass;
+            levelSpan.textContent = prefix + ' ';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = message;
+
+            entry.appendChild(time);
+            entry.appendChild(levelSpan);
+            entry.appendChild(messageSpan);
+
+            // Store the message for search
+            entry.dataset.message = message.toLowerCase();
+
+            return entry;
+        }
+
+        let currentSearchTerm = '';
+
+        function logCallback(level, target, message) {
+            const output = document.getElementById('output');
+            if (!output) return;
+
+            // Remove empty state message on first log
+            const emptyState = output.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            // Enforce max log entries (remove oldest from bottom)
+            while (output.children.length >= MAX_LOG_ENTRIES) {
+                output.removeChild(output.lastChild);
+            }
+
+            const entry = createLogEntry(level, message);
+
+            // Apply search filter if active
+            if (currentSearchTerm && !message.toLowerCase().includes(currentSearchTerm)) {
+                entry.classList.add('hidden');
+            }
+
+            // New messages at top
+            output.insertBefore(entry, output.firstChild);
+
+            updateSearchCount();
+        }
+
+        function updateSearchCount() {
+            const output = document.getElementById('output');
+            const countEl = document.getElementById('logSearchCount');
+            if (!output || !countEl) return;
+
+            const entries = output.querySelectorAll('.log-entry');
+            const visible = output.querySelectorAll('.log-entry:not(.hidden)');
+
+            if (currentSearchTerm) {
+                countEl.textContent = `${visible.length}/${entries.length}`;
+            } else {
+                countEl.textContent = '';
+            }
+        }
+
+        function filterLogs(searchTerm) {
+            currentSearchTerm = searchTerm.toLowerCase();
+            const output = document.getElementById('output');
+            if (!output) return;
+
+            const entries = output.querySelectorAll('.log-entry');
+            entries.forEach(entry => {
+                const message = entry.dataset.message || '';
+                if (!currentSearchTerm || message.includes(currentSearchTerm)) {
+                    entry.classList.remove('hidden');
+                    // Highlight matching entries
+                    if (currentSearchTerm) {
+                        entry.classList.add('highlight');
+                    } else {
+                        entry.classList.remove('highlight');
+                    }
+                } else {
+                    entry.classList.add('hidden');
+                    entry.classList.remove('highlight');
+                }
+            });
+
+            updateSearchCount();
+        }
+
+        // Global error handlers
+        window.addEventListener('error', (event) => {
+            console.error('Uncaught error:', event.error);
+            logCallback('ERROR', 'global', 'Uncaught error: ' + (event.error?.message || 'Unknown error'));
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled promise rejection:', event.reason);
+            logCallback('ERROR', 'global', 'Unhandled rejection: ' + (event.reason?.message || event.reason || 'Unknown error'));
+        });
+
+        async function run() {
+            const statusEl = document.getElementById('status');
+            const statusDot = document.getElementById('statusDot');
+            const openBtn = document.getElementById('openBtn');
+            const closeBtn = document.getElementById('closeBtn');
+            const updateBtn = document.getElementById('updateBtn');
+            const btn1 = document.getElementById('btn1');
+            const btnIsolated = document.getElementById('btnIsolated');
+            const presetSelect = document.getElementById('presetSelect');
+            const isolatedPresetSelect = document.getElementById('isolatedPresetSelect');
+            const url1Input = document.getElementById('url1');
+            const isolatedUrlInput = document.getElementById('isolatedUrl');
+            const output1 = document.getElementById('output1');
+            const outputIsolated = document.getElementById('outputIsolated');
+            const clearBtn = document.getElementById('clearBtn');
+            const verboseToggle = document.getElementById('verboseToggle');
+            const logSearch = document.getElementById('logSearch');
+
+            // Tab handling
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => {
+                        t.classList.remove('active');
+                        t.setAttribute('aria-selected', 'false');
+                    });
+                    tabContents.forEach(c => c.classList.remove('active'));
+
+                    tab.classList.add('active');
+                    tab.setAttribute('aria-selected', 'true');
+                    const targetId = tab.getAttribute('aria-controls');
+                    document.getElementById(targetId).classList.add('active');
+                });
+            });
+
+            // Preset selection handlers
+            presetSelect.addEventListener('change', () => {
+                const value = presetSelect.value;
+                if (value !== 'custom') {
+                    url1Input.value = value;
+                }
+            });
+
+            isolatedPresetSelect.addEventListener('change', () => {
+                const value = isolatedPresetSelect.value;
+                if (value !== 'custom') {
+                    isolatedUrlInput.value = value;
+                }
+            });
+
+            // Log search
+            let searchTimeout;
+            logSearch.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    filterLogs(logSearch.value);
+                }, 150);
+            });
+
+            // Clear logs
+            clearBtn.addEventListener('click', () => {
+                const output = document.getElementById('output');
+                output.innerHTML = '<div class="empty-state">Logs cleared. Click "Open TorClient" to start.</div>';
+                logSearch.value = '';
+                currentSearchTerm = '';
+                updateSearchCount();
+            });
+
+            try {
+                statusEl.textContent = 'Loading WASM...';
+                statusDot.className = 'status-dot loading';
+
+                await init();
+                logCallback('INFO', 'init', 'WASM module loaded');
+
+                setLogCallback(logCallback);
+
+                let verboseEnabled = false;
+                const toggleVerbose = () => {
+                    verboseEnabled = !verboseEnabled;
+                    verboseToggle.classList.toggle('active', verboseEnabled);
+                    verboseToggle.setAttribute('aria-checked', verboseEnabled);
+                    setDebugEnabled(verboseEnabled);
+                    logCallback('INFO', 'config', `Verbose logging ${verboseEnabled ? 'enabled' : 'disabled'}`);
+                };
+                verboseToggle.addEventListener('click', toggleVerbose);
+                verboseToggle.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleVerbose();
+                    }
+                });
+
+                statusEl.textContent = 'Not initialized';
+                statusDot.className = 'status-dot';
+
+                const circuitDisplay = document.getElementById('circuitDisplay');
+                const circuitPath = document.getElementById('circuitPath');
+
+                // Function to update circuit display
+                async function updateCircuitDisplay(appInstance, targetUrl = null) {
+                    if (!appInstance) {
+                        circuitDisplay.classList.remove('visible');
+                        return;
+                    }
+                    try {
+                        const relays = await appInstance.getCircuitRelays();
+                        if (relays && relays.length > 0) {
+                            circuitPath.innerHTML = '';
+                            relays.forEach((relay, index) => {
+                                // Add relay node
+                                const node = document.createElement('div');
+                                node.className = 'circuit-relay';
+                                node.innerHTML = `
+                                    <div class="circuit-relay-role">${escapeHtml(relay.role)}</div>
+                                    <div class="circuit-relay-nickname">${escapeHtml(relay.nickname)}</div>
+                                    <div class="circuit-relay-address">${escapeHtml(relay.address)}</div>
+                                `;
+                                circuitPath.appendChild(node);
+
+                                // Add arrow between nodes
+                                const arrow = document.createElement('div');
+                                arrow.className = 'circuit-arrow';
+                                arrow.textContent = '\u2192'; // Unicode arrow
+                                arrow.setAttribute('aria-hidden', 'true');
+                                circuitPath.appendChild(arrow);
+                            });
+
+                            // Add target node (destination website)
+                            const targetNode = document.createElement('div');
+                            targetNode.className = 'circuit-relay circuit-target';
+                            let targetHost = 'Internet';
+                            if (targetUrl) {
+                                try {
+                                    targetHost = new URL(targetUrl).hostname;
+                                } catch (e) {
+                                    targetHost = targetUrl;
+                                }
+                            }
+                            targetNode.innerHTML = `
+                                <div class="circuit-relay-role">Target</div>
+                                <div class="circuit-relay-nickname">${escapeHtml(targetHost)}</div>
+                                <div class="circuit-relay-address"></div>
+                            `;
+                            circuitPath.appendChild(targetNode);
+
+                            circuitDisplay.classList.add('visible');
+                        } else {
+                            circuitDisplay.classList.remove('visible');
+                        }
+                    } catch (e) {
+                        console.warn('Failed to get circuit relays:', e);
+                    }
+                }
+
+                // Helper to escape HTML
+                function escapeHtml(text) {
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
+                }
+
+                let app = null;
+
+                openBtn.addEventListener('click', async () => {
+                    openBtn.disabled = true;
+                    openBtn.setAttribute('aria-busy', 'true');
+                    statusEl.textContent = 'Connecting...';
+                    statusDot.className = 'status-dot loading';
+
+                    try {
+                        app = new DemoApp();
+
+                        app.setStatusCallback((status) => {
+                            statusEl.textContent = status;
+                            if (status.includes('Ready')) {
+                                statusDot.className = 'status-dot ready';
+                                btn1.disabled = false;
+                                btnIsolated.disabled = false;
+                                updateBtn.disabled = false;
+                                // Update circuit display when ready - show current target URL
+                                updateCircuitDisplay(app, url1.value);
+                            } else if (status.includes('Error') || status.includes('Failed')) {
+                                statusDot.className = 'status-dot error';
+                            } else {
+                                statusDot.className = 'status-dot loading';
+                            }
+                        });
+
+                        await app.open();
+                        closeBtn.disabled = false;
+
+                    } catch (e) {
+                        statusEl.textContent = 'Error: ' + (e.message || e);
+                        statusDot.className = 'status-dot error';
+                        openBtn.disabled = false;
+                        logCallback('ERROR', 'connection', 'Connection failed: ' + (e.message || e));
+                    }
+                    openBtn.removeAttribute('aria-busy');
+                });
+
+                closeBtn.addEventListener('click', async () => {
+                    if (app) {
+                        try {
+                            await app.close();
+                        } catch (e) {
+                            logCallback('ERROR', 'connection', 'Close error: ' + (e.message || e));
+                        }
+                        app = null;
+                    }
+                    statusEl.textContent = 'Not initialized';
+                    statusDot.className = 'status-dot';
+                    openBtn.disabled = false;
+                    closeBtn.disabled = true;
+                    updateBtn.disabled = true;
+                    btn1.disabled = true;
+                    btnIsolated.disabled = true;
+                    // Hide circuit display
+                    circuitDisplay.classList.remove('visible');
+                });
+
+                updateBtn.addEventListener('click', async () => {
+                    if (app) {
+                        updateBtn.disabled = true;
+                        updateBtn.setAttribute('aria-busy', 'true');
+                        try {
+                            await app.triggerCircuitUpdate();
+                            // Update circuit display after refresh - show current target URL
+                            updateCircuitDisplay(app, url1.value);
+                        } catch (e) {
+                            logCallback('ERROR', 'circuit', 'Circuit update failed: ' + (e.message || e));
+                        }
+                        updateBtn.removeAttribute('aria-busy');
+                        updateBtn.disabled = false;
+                    }
+                });
+
+                btn1.addEventListener('click', async () => {
+                    const url = url1Input.value;
+
+                    // Validate URL
+                    const validation = validateUrl(url);
+                    if (!validation.valid) {
+                        output1.className = 'output-box error';
+                        output1.textContent = validation.error;
+                        return;
+                    }
+
+                    // Check for TLS 1.2 sites
+                    if (isTls12Site(url)) {
+                        output1.className = 'output-box error';
+                        output1.textContent = `This site (${validation.hostname}) only supports TLS 1.2.\n\nwebtor-rs requires TLS 1.3.\n\nTry: check.torproject.org, google.com, cloudflare.com`;
+                        return;
+                    }
+
+                    output1.className = 'output-box loading';
+                    output1.textContent = 'Making request...';
+                    btn1.disabled = true;
+                    btn1.setAttribute('aria-busy', 'true');
+
+                    try {
+                        const response = await app.get(url);
+                        output1.className = 'output-box success';
+                        output1.textContent = response.substring(0, 500);
+                    } catch (e) {
+                        output1.className = 'output-box error';
+                        output1.textContent = formatTlsError(url, e.message || String(e));
+                    }
+                    btn1.removeAttribute('aria-busy');
+                    btn1.disabled = false;
+                });
+
+                btnIsolated.addEventListener('click', async () => {
+                    const url = isolatedUrlInput.value;
+
+                    // Validate URL
+                    const validation = validateUrl(url);
+                    if (!validation.valid) {
+                        outputIsolated.className = 'output-box error';
+                        outputIsolated.textContent = validation.error;
+                        return;
+                    }
+
+                    if (isTls12Site(url)) {
+                        outputIsolated.className = 'output-box error';
+                        outputIsolated.textContent = `This site only supports TLS 1.2.\n\nwebtor-rs requires TLS 1.3.`;
+                        return;
+                    }
+
+                    outputIsolated.className = 'output-box loading';
+                    outputIsolated.textContent = 'Creating isolated circuit...';
+                    btnIsolated.disabled = true;
+                    btnIsolated.setAttribute('aria-busy', 'true');
+
+                    try {
+                        const response = await app.getIsolated(url);
+                        outputIsolated.className = 'output-box success';
+                        outputIsolated.textContent = response.substring(0, 500);
+                    } catch (e) {
+                        outputIsolated.className = 'output-box error';
+                        outputIsolated.textContent = formatTlsError(url, e.message || String(e));
+                    }
+                    btnIsolated.removeAttribute('aria-busy');
+                    btnIsolated.disabled = false;
+                });
+
+                logCallback('INFO', 'init', 'Ready - click "Open TorClient" to connect');
+
+            } catch (error) {
+                console.error('Failed to initialize:', error);
+                statusEl.textContent = 'Failed to load WASM';
+                statusDot.className = 'status-dot error';
+                logCallback('ERROR', 'init', 'Initialization failed: ' + (error.message || error));
+            }
+        }
+
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', run);
         } else {

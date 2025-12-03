@@ -46,6 +46,10 @@ http = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = "1.0"
+
+# Compression
+flate2 = "1.0"
+brotli = "7.0"
 uuid = { version = "1.0", features = ["v4", "js"] }
 rand = { version = "0.8", features = ["std", "std_rng"] }
 web-sys = { workspace = true }
@@ -58,5 +62,35 @@ rustls = "0.22"
 webpki-roots = "0.26"
 tokio-util = { version = "0.7", features = ["compat"] }
 
+# KCP reliable transport
+kcp = { workspace = true }
+
+# WASM utilities
+gloo-timers = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# WASM TLS (SubtleCrypto-based)
+subtle-tls = { path = "../subtle-tls" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native TLS (non-WASM only) - ring doesn't compile to WASM
+rustls = { workspace = true }
+futures-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+rustls-pki-types = { workspace = true }
+tokio-rustls = { workspace = true }
+
+# Native WebSocket (non-WASM only)
+tokio-tungstenite = { workspace = true }
+
+# Tokio compatibility utilities
+tokio-util = { version = "0.7", features = ["compat"] }
+
 [dev-dependencies]
 tokio-test = "0.4"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sha2 = "0.10"
+
+[[bench]]
+name = "tor_benchmark"
+harness = false

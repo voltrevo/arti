@@ -47,7 +47,29 @@ web-sys = { version = "0.3.69", features = [
     "Response",
     "Request",
     "Headers",
-    "RequestInit"
+    "RequestInit",
+    # WebRTC features for Snowflake
+    "RtcPeerConnection",
+    "RtcPeerConnectionIceEvent",
+    "RtcIceCandidate",
+    "RtcIceCandidateInit",
+    "RtcSessionDescription",
+    "RtcSessionDescriptionInit",
+    "RtcSdpType",
+    "RtcConfiguration",
+    "RtcIceServer",
+    "RtcDataChannel",
+    "RtcDataChannelEvent",
+    "RtcDataChannelInit",
+    "RtcDataChannelState",
+    "RtcIceConnectionState",
+    "RtcIceGatheringState",
+    "RtcSignalingState",
+    "RtcDataChannelType",
+    # HTTP fetch features
+    "RequestMode",
+    # Performance API for timing
+    "Performance"
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
@@ -84,8 +106,54 @@ sha3 = "0.10"
 hex = "0.4"
 base64 = "0.22"
 
+# TLS
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+futures-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+webpki-roots = "0.26"
+rustls-pki-types = "1.8"
+
+# Native WebSocket (for non-WASM targets)
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
 # Async runtime
 wasm-bindgen-test = "0.3"
 
+# WASM utilities
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+# KCP reliable transport
+kcp = "0.6"
+
 [patch.crates-io]
 tor-basic-utils = { path = "vendor/arti/crates/tor-basic-utils" }
+tor-proto = { path = "vendor/arti/crates/tor-proto" }
+tor-rtcompat = { path = "vendor/arti/crates/tor-rtcompat" }
+tor-async-utils = { path = "vendor/arti/crates/tor-async-utils" }
+tor-rtmock = { path = "vendor/arti/crates/tor-rtmock" }
+tor-memquota = { path = "vendor/arti/crates/tor-memquota" }
+tor-units = { path = "vendor/arti/crates/tor-units" }
+tor-log-ratelim = { path = "vendor/arti/crates/tor-log-ratelim" }
+safelog = { path = "vendor/arti/crates/safelog" }
+slotmap-careful = { path = "vendor/arti/crates/slotmap-careful" }
+caret = { path = "vendor/arti/crates/caret" }
+oneshot-fused-workaround = { path = "vendor/arti/crates/oneshot-fused-workaround" }
+tor-bytes = { path = "vendor/arti/crates/tor-bytes" }
+tor-cell = { path = "vendor/arti/crates/tor-cell" }
+tor-cert = { path = "vendor/arti/crates/tor-cert" }
+tor-config = { path = "vendor/arti/crates/tor-config" }
+tor-error = { path = "vendor/arti/crates/tor-error" }
+tor-linkspec = { path = "vendor/arti/crates/tor-linkspec" }
+tor-llcrypto = { path = "vendor/arti/crates/tor-llcrypto" }
+tor-protover = { path = "vendor/arti/crates/tor-protover" }
+tor-relay-crypto = { path = "vendor/arti/crates/tor-relay-crypto" }
+tor-config-path = { path = "vendor/arti/crates/tor-config-path" }
+tor-persist = { path = "vendor/arti/crates/tor-persist" }
+tor-general-addr = { path = "vendor/arti/crates/tor-general-addr" }
+tor-hscrypto = { path = "vendor/arti/crates/tor-hscrypto" }
+tor-key-forge = { path = "vendor/arti/crates/tor-key-forge" }
+tor-keymgr = { path = "vendor/arti/crates/tor-keymgr" }
+tor-checkable = { path = "vendor/arti/crates/tor-checkable" }
+tor-netdoc = { path = "vendor/arti/crates/tor-netdoc" }
+fslock-guard = { path = "vendor/arti/crates/fslock-guard" }
+fs-mistrust = { path = "vendor/arti/crates/fs-mistrust" }

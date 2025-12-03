@@ -2,13 +2,15 @@
 
 use crate::error::{Result, TorError};
 use crate::relay::{Relay, RelayManager};
+use crate::time::Instant;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, error};
 use tor_proto::{ClientTunnel, CellCount, FlowCtrlParameters};
 use tor_proto::circuit::CircParameters;
 use tor_proto::client::circuit::TimeoutEstimator;
+use tor_proto::client::stream::DataStream;
 use tor_proto::channel::Channel;
 use tor_linkspec::HasRelayIds;
 use tor_proto::ccparams::{
@@ -87,6 +89,24 @@ impl Circuit {
     
     pub fn is_closed(&self) -> bool {
         self.status == CircuitStatus::Closed
+    }
+    
+    /// Begin a TCP stream to the given host and port through this circuit.
+    /// 
+    /// The hostname resolution is performed by the exit relay, so you can
+    /// pass hostnames instead of IP addresses.
+    pub async fn begin_stream(&self, host: &str, port: u16) -> Result<DataStream> {
+        let tunnel = self.internal_circuit.as_ref()
+            .ok_or_else(|| TorError::Internal("No internal circuit available".to_string()))?;
+        
+        debug!("Beginning stream to {}:{}", host, port);
+        
+        let stream = tunnel.begin_stream(host, port, None)
+            .await
+            .map_err(|e| TorError::Internal(format!("Failed to begin stream: {}", e)))?;
+        
+        info!("Stream established to {}:{}", host, port);
+        Ok(stream)
     }
 }
 
@@ -171,6 +191,17 @@ impl CircuitManager {
         let circuit_id = format!("circuit_{}", uuid::Uuid::new_v4());
         info!("Creating new circuit: {}", circuit_id);
         
+        // Log relay manager state
+        let relay_manager = self.relay_manager.read().await;
+        let total_relays = relay_manager.relays.len();
+        drop(relay_manager);
+        info!("Relay manager has {} total relays", total_relays);
+        
+        if total_relays == 0 {
+            error!("No relays available in relay manager - cannot create circuit");
+            return Err(TorError::Internal("No relays available".to_string()));
+        }
+        
         let channel_guard = self.channel.read().await;
         let channel = channel_guard.as_ref()
             .ok_or_else(|| TorError::Internal("Channel not established".to_string()))?
@@ -215,10 +246,11 @@ impl CircuitManager {
         // We don't have the real address easily accessible in string format from OwnedChanTarget without some work,
         // or the ntor key if it wasn't known.
         // For visual consistency in the circuit list, we create a placeholder if needed.
+        // For Snowflake, we use WebRTC so there's no traditional IP address.
         let bridge_relay = Relay::new(
             bridge_fingerprint.clone(),
-            "Bridge".to_string(),
-            "0.0.0.0".to_string(), // Placeholder
+            "Snowflake".to_string(), // More meaningful name for the proxy
+            "0.0.0.0".to_string(), // Placeholder - will be shown as "Snowflake (WebRTC)" in UI
             0,
             std::collections::HashSet::new(),
             "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
@@ -226,16 +258,24 @@ impl CircuitManager {
 
         // Select relays
         let relay_manager = self.relay_manager.read().await;
+        info!("Selecting relays from {} available", relay_manager.relays.len());
         
         // Middle
         // Ensure we don't select the bridge as middle
-        let middle = relay_manager.select_relay(
-            &crate::relay::selection::middle_relays()
-                .without_fingerprint(&bridge_fingerprint)
-        )?;
+        let middle_criteria = crate::relay::selection::middle_relays()
+            .without_fingerprint(&bridge_fingerprint);
+        debug!("Middle relay criteria: {:?}", middle_criteria);
+        
+        let middle = match relay_manager.select_relay(&middle_criteria) {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to select middle relay: {} (available: {})", e, relay_manager.relays.len());
+                return Err(e);
+            }
+        };
         let middle_target = middle.as_circ_target()?;
         
-        info!("Extending to middle: {}", middle.nickname);
+        info!("Extending to middle: {} (fp={})", middle.nickname, &middle.fingerprint[..8.min(middle.fingerprint.len())]);
         let params = make_circ_params()?;
         tunnel.as_single_circ()
             .map_err(|e| TorError::Internal(format!("Failed to get single circ for middle extend: {}", e)))?
@@ -245,14 +285,21 @@ impl CircuitManager {
             
         // Exit
         // Ensure we don't select bridge or middle as exit
-        let exit = relay_manager.select_relay(
-            &crate::relay::selection::exit_relays()
-                .without_fingerprint(&bridge_fingerprint)
-                .without_fingerprint(&middle.fingerprint)
-        )?;
+        let exit_criteria = crate::relay::selection::exit_relays()
+            .without_fingerprint(&bridge_fingerprint)
+            .without_fingerprint(&middle.fingerprint);
+        debug!("Exit relay criteria: {:?}", exit_criteria);
+        
+        let exit = match relay_manager.select_relay(&exit_criteria) {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to select exit relay: {} (available: {})", e, relay_manager.relays.len());
+                return Err(e);
+            }
+        };
         let exit_target = exit.as_circ_target()?;
         
-        info!("Extending to exit: {}", exit.nickname);
+        info!("Extending to exit: {} (fp={})", exit.nickname, &exit.fingerprint[..8.min(exit.fingerprint.len())]);
         let params = make_circ_params()?;
         tunnel.as_single_circ()
             .map_err(|e| TorError::Internal(format!("Failed to get single circ for exit extend: {}", e)))?
@@ -336,44 +383,99 @@ impl CircuitManager {
         relay_manager.update_relays(new_relays);
     }
     
+    /// Synchronous version of update_relays for use when we already have a mutable reference
+    pub fn update_relay_list(&mut self, new_relays: Vec<crate::relay::Relay>) {
+        if let Ok(mut relay_manager) = self.relay_manager.try_write() {
+            relay_manager.update_relays(new_relays);
+        }
+    }
+    
+    /// Get relay information from the first ready circuit
+    pub async fn get_circuit_relays(&self) -> Option<Vec<CircuitRelayInfo>> {
+        let circuits = self.circuits.read().await;
+        for circuit in circuits.iter() {
+            let circuit_read = circuit.read().await;
+            if circuit_read.is_ready() && !circuit_read.relays.is_empty() {
+                return Some(circuit_read.relays.iter().enumerate().map(|(idx, relay)| {
+                    let role = match idx {
+                        0 => "Bridge",
+                        1 => "Middle",
+                        2 => "Exit",
+                        _ => "Unknown",
+                    };
+                    // For Snowflake bridges, the address is typically 0.0.0.0 since
+                    // we connect via WebRTC - show something more meaningful
+                    let address = if idx == 0 && (relay.address == "0.0.0.0" || relay.address.starts_with("0.0.0.0:")) {
+                        "Snowflake (WebRTC)".to_string()
+                    } else {
+                        relay.address.clone()
+                    };
+                    CircuitRelayInfo {
+                        role: role.to_string(),
+                        nickname: relay.nickname.clone(),
+                        address,
+                        fingerprint: relay.fingerprint.chars().take(16).collect(),
+                    }
+                }).collect());
+            }
+        }
+        None
+    }
+
     /// Clean up failed and old circuits
     pub async fn cleanup_circuits(&self) -> Result<()> {
         let mut circuits = self.circuits.write().await;
-        let now = Instant::now();
         let max_age = Duration::from_secs(60 * 60); // 1 hour
         let max_idle = Duration::from_secs(60 * 10); // 10 minutes
         
-        let mut count = circuits.len();
+        // Gather circuit info asynchronously first
+        let mut to_remove = Vec::new();
+        let total_count = circuits.len();
+        let mut remaining = total_count;
         
-        circuits.retain(|circuit| {
-            let circuit_read = circuit.blocking_read();
+        for (idx, circuit) in circuits.iter().enumerate() {
+            let circuit_read = circuit.read().await;
             
             // Remove failed circuits
             if circuit_read.is_failed() {
                 info!("Removing failed circuit: {}", circuit_read.id);
-                count -= 1;
-                return false;
+                to_remove.push(idx);
+                remaining -= 1;
+                continue;
             }
             
             // Remove very old circuits
             if circuit_read.age() > max_age {
                 info!("Removing old circuit: {} (age: {:?})", circuit_read.id, circuit_read.age());
-                count -= 1;
-                return false;
+                to_remove.push(idx);
+                remaining -= 1;
+                continue;
             }
             
             // Remove idle circuits (but keep at least one)
-            if circuit_read.time_since_last_use() > max_idle && count > 1 {
+            if circuit_read.time_since_last_use() > max_idle && remaining > 1 {
                 info!("Removing idle circuit: {} (idle: {:?})", circuit_read.id, circuit_read.time_since_last_use());
-                count -= 1;
-                return false;
+                to_remove.push(idx);
+                remaining -= 1;
             }
-            
-            true
-        });
+        }
+        
+        // Remove in reverse order to preserve indices
+        for idx in to_remove.into_iter().rev() {
+            circuits.remove(idx);
+        }
         
         Ok(())
     }
+}
+
+/// Circuit relay information for display
+#[derive(Debug, Clone)]
+pub struct CircuitRelayInfo {
+    pub role: String,
+    pub nickname: String,
+    pub address: String,
+    pub fingerprint: String,
 }
 
 /// Circuit status information
@@ -400,7 +502,7 @@ impl CircuitStatusInfo {
 mod tests {
     use super::*;
     use crate::relay::{Relay, flags};
-    use std::collections::HashSet;
+    
     
     fn create_test_relay(fingerprint: &str, flags: Vec<&str>) -> Relay {
         Relay::new(
