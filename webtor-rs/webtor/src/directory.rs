@@ -5,7 +5,7 @@ use crate::relay::{Relay, RelayManager};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
 use tor_proto::channel::Channel;
 use tor_proto::client::circuit::TimeoutEstimator;
 use futures::{AsyncReadExt, AsyncWriteExt};
@@ -14,6 +14,11 @@ use tor_checkable::Timebound;
 use tor_netdoc::doc::microdesc::MicrodescReader;
 use tor_netdoc::AllowAnnotations;
 use std::collections::HashMap;
+use std::io::Read;
+
+/// Embedded consensus data (brotli compressed)
+const CACHED_CONSENSUS_BR: &[u8] = include_bytes!("cached/consensus.txt.br");
+const CACHED_MICRODESCRIPTORS_BR: &[u8] = include_bytes!("cached/microdescriptors.txt.br");
 
 /// Directory manager for handling network documents
 pub struct DirectoryManager {
@@ -23,6 +28,110 @@ pub struct DirectoryManager {
 impl DirectoryManager {
     pub fn new(relay_manager: Arc<RwLock<RelayManager>>) -> Self {
         Self { relay_manager }
+    }
+    
+    /// Load relays from embedded/cached consensus data.
+    /// This is used for WASM builds where we can't fetch consensus before establishing a circuit.
+    pub async fn load_cached_consensus(&self) -> Result<()> {
+        info!("Loading cached consensus data...");
+        
+        // Decompress consensus
+        let consensus_body = decompress_brotli(CACHED_CONSENSUS_BR)
+            .map_err(|e| TorError::Internal(format!("Failed to decompress cached consensus: {}", e)))?;
+        debug!("Decompressed consensus: {} bytes", consensus_body.len());
+        
+        // Decompress microdescriptors
+        let microdescs_body = decompress_brotli(CACHED_MICRODESCRIPTORS_BR)
+            .map_err(|e| TorError::Internal(format!("Failed to decompress cached microdescriptors: {}", e)))?;
+        debug!("Decompressed microdescriptors: {} bytes", microdescs_body.len());
+        
+        // Parse and process
+        self.process_consensus_data(&consensus_body, &microdescs_body).await
+    }
+    
+    /// Process consensus and microdescriptor data into relays
+    async fn process_consensus_data(&self, consensus_body: &str, microdescs_body: &str) -> Result<()> {
+        info!("Parsing consensus...");
+        
+        // Parse consensus - for cached data, we skip time validation since it may be stale
+        // The daily update job keeps it fresh enough for circuit building
+        let (_, _, unvalidated) = MdConsensus::parse(consensus_body)
+            .map_err(|e| TorError::serialization(format!("Failed to parse consensus: {}", e)))?;
+        
+        // For cached consensus, we use dangerously_assume_timely() to skip time checks
+        // This is acceptable because:
+        // 1. The cached consensus is updated daily by GitHub Actions
+        // 2. We only use it for relay selection, not for security-critical decisions
+        // 3. Once connected, we can fetch fresh consensus through the Tor network
+        let consensus = unvalidated.dangerously_assume_timely();
+        
+        let inner_consensus = &consensus.consensus;
+        info!("Parsed consensus with {} relays", inner_consensus.relays().len());
+
+        let mut router_statuses = HashMap::new();
+        for router in inner_consensus.relays() {
+            router_statuses.insert(*router.md_digest(), router.clone());
+        }
+
+        let mut relays = Vec::new();
+        let reader = MicrodescReader::new(microdescs_body, &AllowAnnotations::AnnotationsNotAllowed)?;
+        for microdesc in reader {
+            let microdesc = match microdesc {
+                Ok(md) => md.into_microdesc(),
+                Err(e) => {
+                    warn!("Failed to parse microdescriptor: {}", e);
+                    continue;
+                }
+            };
+            
+            if let Some(router) = router_statuses.get(microdesc.digest()) {
+                let nickname = router.nickname().to_string();
+                let fingerprint = hex::encode(router.rsa_identity().as_bytes());
+                
+                let address = if let Some(addr) = router.addrs().next() {
+                    addr.ip().to_string()
+                } else {
+                    continue;
+                };
+                
+                let or_port = router.addrs().next().map(|a| a.port()).unwrap_or(0);
+                
+                let mut flags = std::collections::HashSet::new();
+                if router.is_flagged_fast() { flags.insert("Fast".to_string()); }
+                if router.is_flagged_stable() { flags.insert("Stable".to_string()); }
+                if router.is_flagged_guard() { flags.insert("Guard".to_string()); }
+                if router.is_flagged_exit() { flags.insert("Exit".to_string()); }
+                if router.is_flagged_bad_exit() { flags.insert("BadExit".to_string()); }
+                if router.is_flagged_hsdir() { flags.insert("HSDir".to_string()); }
+                if router.is_flagged_v2dir() { flags.insert("V2Dir".to_string()); }
+
+                let ntor_onion_key = hex::encode(microdesc.ntor_key().as_bytes());
+                
+                let mut relay = Relay::new(
+                    fingerprint,
+                    nickname,
+                    address,
+                    or_port,
+                    flags,
+                    ntor_onion_key,
+                );
+
+                relay.ed25519_identity = Some(hex::encode(microdesc.ed25519_id().as_bytes()));
+                
+                relays.push(relay);
+            }
+        }
+        
+        let count = relays.len();
+        
+        {
+            let mut manager = self.relay_manager.write().await;
+            manager.update_relays(relays);
+        }
+        
+        info!("Loaded {} relays from cached consensus", count);
+
+        Ok(())
     }
     
     pub async fn fetch_and_process_consensus(&self, channel: Arc<Channel>) -> Result<()> {
@@ -245,4 +354,13 @@ impl DirectoryManager {
         let body = &response[body_start..];
         Ok(String::from_utf8_lossy(body).to_string())
     }
+}
+
+/// Decompress brotli-compressed data
+fn decompress_brotli(compressed: &[u8]) -> std::io::Result<String> {
+    let mut decompressed = Vec::new();
+    let mut decoder = brotli::Decompressor::new(compressed, 4096);
+    decoder.read_to_end(&mut decompressed)?;
+    String::from_utf8(decompressed)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }

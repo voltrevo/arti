@@ -52,6 +52,15 @@ impl TorClient {
         let relay_manager_arc = Arc::new(RwLock::new(relay_manager));
         
         let directory_manager = Arc::new(DirectoryManager::new(relay_manager_arc.clone()));
+        
+        // Load cached consensus to populate relay manager
+        // This is essential for WASM where we need relays before we can fetch fresh consensus
+        info!("Loading cached consensus...");
+        if let Err(e) = directory_manager.load_cached_consensus().await {
+            error!("Failed to load cached consensus: {}", e);
+            return Err(e);
+        }
+        
         let circuit_manager = Arc::new(RwLock::new(CircuitManager::new(relay_manager_arc.clone(), channel.clone())));
         let http_client = TorHttpClient::new(circuit_manager.clone());
         
@@ -223,6 +232,49 @@ impl TorClient {
         }
         
         Ok(())
+    }
+    
+    /// Refresh consensus by fetching from the network
+    /// Returns the number of relays loaded
+    pub async fn refresh_consensus(&self) -> Result<usize> {
+        // Ensure channel is established first
+        let channel_guard = self.channel.read().await;
+        if channel_guard.is_none() {
+            drop(channel_guard);
+            self.establish_channel().await?;
+        } else {
+            drop(channel_guard);
+        }
+        
+        // Get channel
+        let channel_guard = self.channel.read().await;
+        let channel = channel_guard.as_ref()
+            .ok_or_else(|| TorError::Internal("Channel not established".to_string()))?
+            .clone();
+        drop(channel_guard);
+        
+        // Fetch and process consensus
+        self.directory_manager.fetch_and_process_consensus(channel).await?;
+        
+        // Return relay count
+        let relay_manager = self.directory_manager.relay_manager.read().await;
+        Ok(relay_manager.relays.len())
+    }
+    
+    /// Get consensus status string
+    pub async fn get_consensus_status(&self) -> String {
+        let relay_manager = self.directory_manager.relay_manager.read().await;
+        let count = relay_manager.relays.len();
+        if count == 0 {
+            "No consensus loaded".to_string()
+        } else {
+            format!("{} relays loaded", count)
+        }
+    }
+    
+    /// Check if consensus needs refresh (stub - always returns false for now)
+    pub fn needs_consensus_refresh(&self) -> bool {
+        false
     }
     
     /// Close the Tor client and clean up resources
