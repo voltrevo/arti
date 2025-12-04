@@ -44,3 +44,8 @@ cd example && npm install && npm run dev
 ## Style Preferences
 
 - Use plain ASCII characters (`+`, `-`, `|`) instead of Unicode box-drawing characters (┌, ─, │, etc.) for diagrams in markdown - they render more reliably across platforms
+
+## Version Bumping
+
+- **Always bump the UI version** in `webtor-demo/static/index.html` (footer) on any UI-related changes
+- Current version format: `v0.X.Y`
