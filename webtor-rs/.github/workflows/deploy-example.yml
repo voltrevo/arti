@@ -47,8 +47,8 @@ jobs:
           mkdir -p webtor-demo/static/pkg
           cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
           # Create brotli-compressed consensus files for lazy loading
-          brotli -k webtor/src/cached/consensus.txt
-          brotli -k webtor/src/cached/microdescriptors.txt
+          brotli -f -k webtor/src/cached/consensus.txt
+          brotli -f -k webtor/src/cached/microdescriptors.txt
           cp webtor/src/cached/consensus.txt.br webtor-demo/static/
           cp webtor/src/cached/microdescriptors.txt.br webtor-demo/static/
 
