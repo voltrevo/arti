@@ -144,40 +144,72 @@ impl BrokerClient {
 
     /// Exchange SDP offer for SDP answer via broker
     /// Returns the SDP answer from a volunteer proxy
+    /// Retries up to MAX_RETRIES times if no proxy is available
     pub async fn negotiate(&self, sdp_offer: &str) -> Result<String> {
-        info!("Contacting Snowflake broker via domain fronting");
+        const MAX_RETRIES: u32 = 5;
+        const RETRY_DELAY_MS: u64 = 2000;
         
         let request = ClientPollRequest::new(sdp_offer.to_string())
             .with_nat(self.nat_type)
             .with_fingerprint(self.fingerprint.clone());
         
         let body = request.encode()?;
-        
-        // Use CORS proxy - simple fetch without domain fronting
         let proxy_url = format!("{}/client", self.broker_url.trim_end_matches('/'));
         
-        info!("Using CORS proxy: {}", proxy_url);
-        debug!("Sending offer to broker ({} bytes)", body.len());
-        
-        #[cfg(target_arch = "wasm32")]
-        let response_bytes = self.fetch_wasm(&proxy_url, &body).await?;
-        
-        #[cfg(not(target_arch = "wasm32"))]
-        let response_bytes = self.fetch_native(&format!("{}client", self.broker_url.trim_end_matches('/')), &body).await?;
-        
-        let response = ClientPollResponse::decode(&response_bytes)?;
-        
-        if !response.error.is_empty() {
-            warn!("Broker returned error: {}", response.error);
-            return Err(TorError::Network(format!("Broker error: {}", response.error)));
+        for attempt in 1..=MAX_RETRIES {
+            info!("Contacting Snowflake broker (attempt {}/{})", attempt, MAX_RETRIES);
+            debug!("Broker URL: {}", proxy_url);
+            
+            #[cfg(target_arch = "wasm32")]
+            let response_bytes = self.fetch_wasm(&proxy_url, &body).await?;
+            
+            #[cfg(not(target_arch = "wasm32"))]
+            let response_bytes = self.fetch_native(&format!("{}client", self.broker_url.trim_end_matches('/')), &body).await?;
+            
+            let response = ClientPollResponse::decode(&response_bytes)?;
+            
+            if !response.error.is_empty() {
+                // Check if it's a "no proxy available" error - these are retryable
+                let is_retryable = response.error.contains("timed out") 
+                    || response.error.contains("no proxies")
+                    || response.error.contains("match");
+                
+                if is_retryable && attempt < MAX_RETRIES {
+                    warn!("No volunteer proxy available, retrying in {}ms... ({}/{})", 
+                          RETRY_DELAY_MS, attempt, MAX_RETRIES);
+                    
+                    #[cfg(target_arch = "wasm32")]
+                    gloo_timers::future::TimeoutFuture::new(RETRY_DELAY_MS as u32).await;
+                    
+                    #[cfg(not(target_arch = "wasm32"))]
+                    tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+                    
+                    continue;
+                }
+                
+                // Final attempt failed or non-retryable error
+                let user_message = if is_retryable {
+                    "No Snowflake volunteer proxies available after multiple attempts. \
+                     This can happen during high demand or network issues. Please try again later."
+                } else {
+                    &format!("Snowflake broker error: {}", response.error)
+                };
+                
+                warn!("Broker error: {}", response.error);
+                return Err(TorError::Network(user_message.to_string()));
+            }
+            
+            if response.answer.is_empty() {
+                return Err(TorError::Network("Broker returned empty answer".to_string()));
+            }
+            
+            info!("Got SDP answer from broker ({} bytes)", response.answer.len());
+            return Ok(response.answer);
         }
         
-        if response.answer.is_empty() {
-            return Err(TorError::Network("Broker returned empty answer".to_string()));
-        }
-        
-        info!("Got SDP answer from broker ({} bytes)", response.answer.len());
-        Ok(response.answer)
+        Err(TorError::Network(
+            "No Snowflake volunteer proxies available. Please try again later.".to_string()
+        ))
     }
 
     /// Fetch via CORS proxy
