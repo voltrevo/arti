@@ -14,11 +14,11 @@ use crate::error::{Result, TorError};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-/// Snowflake broker URL (via CDN77 domain fronting for CORS support)
-/// The broker is hosted at 1098762253.rsc.cdn77.org but we access it via front domain
-pub const BROKER_URL: &str = "https://1098762253.rsc.cdn77.org/";
+/// Snowflake broker URL via CORS proxy (Vercel edge function)
+/// The proxy forwards requests to CDN77-hosted broker and adds CORS headers
+pub const BROKER_URL: &str = "https://snowflake-proxy-q5n0yq05v-igor53627s-projects-0dc1aedd.vercel.app/";
 
-/// Front domains for domain fronting (CDN77)
+/// Front domains for domain fronting (CDN77) - kept for reference but not used with CORS proxy
 pub const BROKER_FRONT_DOMAINS: &[&str] = &["www.cdn77.com", "www.phpmyadmin.net"];
 
 /// Direct broker URL (doesn't work from browsers due to CORS)
@@ -154,21 +154,14 @@ impl BrokerClient {
         
         let body = request.encode()?;
         
-        // Use domain fronting: request goes to front domain, Host header has real broker
-        // Parse the broker URL to get the host for the Host header
-        let broker_host = url::Url::parse(&self.broker_url)
-            .map(|u| u.host_str().unwrap_or("1098762253.rsc.cdn77.org").to_string())
-            .unwrap_or_else(|_| "1098762253.rsc.cdn77.org".to_string());
+        // Use CORS proxy - simple fetch without domain fronting
+        let proxy_url = format!("{}client", self.broker_url.trim_end_matches('/'));
         
-        // Select a front domain randomly
-        let front_domain = BROKER_FRONT_DOMAINS[0]; // Use first for now
-        let fronted_url = format!("https://{}/client", front_domain);
-        
-        info!("Domain fronting: {} -> Host: {}", front_domain, broker_host);
+        info!("Using CORS proxy: {}", proxy_url);
         debug!("Sending offer to broker ({} bytes)", body.len());
         
         #[cfg(target_arch = "wasm32")]
-        let response_bytes = self.fetch_wasm_fronted(&fronted_url, &broker_host, &body).await?;
+        let response_bytes = self.fetch_wasm(&proxy_url, &body).await?;
         
         #[cfg(not(target_arch = "wasm32"))]
         let response_bytes = self.fetch_native(&format!("{}client", self.broker_url.trim_end_matches('/')), &body).await?;
@@ -188,9 +181,9 @@ impl BrokerClient {
         Ok(response.answer)
     }
 
-    /// Fetch with domain fronting - URL goes to front domain, Host header to real broker
+    /// Fetch via CORS proxy
     #[cfg(target_arch = "wasm32")]
-    async fn fetch_wasm_fronted(&self, url: &str, host: &str, body: &[u8]) -> Result<Vec<u8>> {
+    async fn fetch_wasm(&self, url: &str, body: &[u8]) -> Result<Vec<u8>> {
         use wasm_bindgen::JsCast;
         use wasm_bindgen_futures::JsFuture;
         use web_sys::{Request, RequestInit, RequestMode, Response};
@@ -206,11 +199,10 @@ impl BrokerClient {
         let request = Request::new_with_str_and_init(url, &opts)
             .map_err(|e| TorError::Network(format!("Failed to create request: {:?}", e)))?;
         
-        // Set Host header for domain fronting
-        // This tells the CDN which backend to route to
+        // Set Content-Type header
         request.headers()
-            .set("Host", host)
-            .map_err(|e| TorError::Network(format!("Failed to set Host header: {:?}", e)))?;
+            .set("Content-Type", "application/x-www-form-urlencoded")
+            .map_err(|e| TorError::Network(format!("Failed to set Content-Type header: {:?}", e)))?;
         
         let window = web_sys::window()
             .ok_or_else(|| TorError::Internal("No window object".to_string()))?;
