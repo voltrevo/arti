@@ -681,10 +681,7 @@
         <!-- Right Panel - Logs -->
         <div class="panel log-panel" role="complementary">
             <div class="log-header">
-                <div>
-                    <div class="section-title" id="logsLabel">Connection Logs</div>
-                    <div id="circuitLabel" style="font-size: 11px; color: #808080; margin-top: 4px;"></div>
-                </div>
+                <div class="section-title" id="logsLabel">Connection Logs</div>
                 <div class="log-controls">
                     <div id="verboseToggle" class="toggle-switch" role="switch" aria-checked="false" aria-label="Toggle verbose logging" tabindex="0">
                         <div class="toggle-switch-track">
@@ -708,7 +705,7 @@
     <!-- Site Footer -->
     <footer class="site-footer">
         <div class="site-footer-inner">
-            <span>v0.1.8</span>
+            <span>v0.1.9</span>
             <div class="footer-links">
                 <a href="https://github.com/igor53627/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/igor53627/webtor-rs#features" target="_blank" rel="noopener noreferrer">Features</a>
@@ -1065,13 +1062,11 @@
 
                             circuitDisplay.classList.add('visible');
                             
-                            // Update circuit label with relay names
-                            const circuitLabel = document.getElementById('circuitLabel');
+                            // Log circuit info
                             const relayNames = relays.map(r => r.nickname).join(' → ');
-                            circuitLabel.textContent = relayNames;
+                            logCallback('INFO', 'circuit', `Circuit: ${relayNames}`);
                         } else {
                             circuitDisplay.classList.remove('visible');
-                            document.getElementById('circuitLabel').textContent = '';
                         }
                     } catch (e) {
                         console.warn('Failed to get circuit relays:', e);
