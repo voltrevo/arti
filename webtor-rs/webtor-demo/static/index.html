@@ -706,7 +706,7 @@
     <!-- Site Footer -->
     <footer class="site-footer">
         <div class="site-footer-inner">
-            <span>v0.1.5</span>
+            <span>v0.1.6</span>
             <div class="footer-links">
                 <a href="https://github.com/igor53627/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/igor53627/webtor-rs#features" target="_blank" rel="noopener noreferrer">Features</a>
@@ -1148,8 +1148,8 @@
                         updateBtn.setAttribute('aria-busy', 'true');
                         try {
                             await app.triggerCircuitUpdate();
-                            // Update circuit display after refresh - show current target URL
-                            updateCircuitDisplay(app, url1.value);
+                            // Update circuit display after refresh
+                            await updateCircuitDisplay(app, url1Input.value);
                         } catch (e) {
                             logCallback('ERROR', 'circuit', 'Circuit update failed: ' + (e.message || e));
                         }
