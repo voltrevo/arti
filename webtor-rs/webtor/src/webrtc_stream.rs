@@ -213,7 +213,15 @@ mod wasm {
         
         // Log SDP details for debugging
         let ice_candidate_count = sdp.matches("a=candidate:").count();
-        debug!("SDP contains {} ICE candidates", ice_candidate_count);
+        info!("SDP contains {} ICE candidates, {} bytes total", ice_candidate_count, sdp.len());
+        
+        // Log the actual SDP for debugging (first 500 chars)
+        if sdp.len() > 500 {
+            debug!("SDP (truncated): {}...", &sdp[..500]);
+        } else {
+            debug!("SDP: {}", sdp);
+        }
+        
         if ice_candidate_count == 0 {
             warn!("SDP has no ICE candidates - this may cause broker matching to fail");
         }

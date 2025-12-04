@@ -66,7 +66,9 @@ impl ClientPollRequest {
     pub fn new(offer: String) -> Self {
         Self {
             offer,
-            nat: NatType::Unknown.to_string(),
+            // Spoof as "unrestricted" when unknown to get matched with restricted proxies
+            // This matches the behavior of the official Go client's NATPolicy
+            nat: NatType::Unrestricted.to_string(),
             fingerprint: DEFAULT_BRIDGE_FINGERPRINT.to_string(),
         }
     }
@@ -167,6 +169,9 @@ impl BrokerClient {
             let response_bytes = self.fetch_native(&format!("{}client", self.broker_url.trim_end_matches('/')), &body).await?;
             
             let response = ClientPollResponse::decode(&response_bytes)?;
+            
+            debug!("Broker response: answer={} bytes, error='{}'", 
+                   response.answer.len(), response.error);
             
             if !response.error.is_empty() {
                 // Check if it's a "no proxy available" error - these are retryable
