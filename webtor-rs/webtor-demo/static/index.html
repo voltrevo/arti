@@ -372,8 +372,8 @@
             font-family: 'SF Mono', Monaco, monospace;
             font-size: 11px;
             overflow-y: auto;
-            max-height: calc(100vh - 350px);
-            min-height: 300px;
+            max-height: calc(100vh - 280px);
+            min-height: 200px;
             line-height: 1.6;
         }
 
@@ -444,6 +444,15 @@
             color: #3b82f6;
         }
 
+        .circuit-you {
+            background: rgba(40, 167, 69, 0.2);
+            border: 1px solid rgba(40, 167, 69, 0.4);
+        }
+
+        .circuit-you .circuit-relay-role {
+            color: #28a745;
+        }
+
         .circuit-relay-role {
             font-size: 10px;
             text-transform: uppercase;
@@ -472,6 +481,8 @@
             color: #9a4fd1;
             font-size: 18px;
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
         }
 
         @media (max-width: 600px) {
@@ -696,7 +707,7 @@
     <!-- Site Footer -->
     <footer class="site-footer">
         <div class="site-footer-inner">
-            <span>v0.1.3</span>
+            <span>v0.1.4</span>
             <div class="footer-links">
                 <a href="https://github.com/igor53627/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/igor53627/webtor-rs#features" target="_blank" rel="noopener noreferrer">Features</a>
@@ -986,6 +997,24 @@
                         const relays = await appInstance.getCircuitRelays();
                         if (relays && relays.length > 0) {
                             circuitPath.innerHTML = '';
+                            
+                            // Add "You" node at the start
+                            const youNode = document.createElement('div');
+                            youNode.className = 'circuit-relay circuit-you';
+                            youNode.innerHTML = `
+                                <div class="circuit-relay-role">You</div>
+                                <div class="circuit-relay-nickname">Browser</div>
+                                <div class="circuit-relay-address">local</div>
+                            `;
+                            circuitPath.appendChild(youNode);
+                            
+                            // Arrow after You
+                            const youArrow = document.createElement('div');
+                            youArrow.className = 'circuit-arrow';
+                            youArrow.textContent = '\u2192';
+                            youArrow.setAttribute('aria-hidden', 'true');
+                            circuitPath.appendChild(youArrow);
+                            
                             relays.forEach((relay, index) => {
                                 // Add relay node
                                 const node = document.createElement('div');
@@ -1004,30 +1033,24 @@
                                 `;
                                 circuitPath.appendChild(node);
 
-                                // Add arrow between nodes (except after last relay)
-                                if (index < relays.length - 1) {
-                                    const arrow = document.createElement('div');
-                                    arrow.className = 'circuit-arrow';
-                                    arrow.textContent = '\u2192';
-                                    arrow.setAttribute('aria-hidden', 'true');
-                                    circuitPath.appendChild(arrow);
-                                }
+                                // Add arrow after each relay
+                                const arrow = document.createElement('div');
+                                arrow.className = 'circuit-arrow';
+                                arrow.textContent = '\u2192';
+                                arrow.setAttribute('aria-hidden', 'true');
+                                circuitPath.appendChild(arrow);
                             });
-                            
-                            // Add arrow before target
-                            const finalArrow = document.createElement('div');
-                            finalArrow.className = 'circuit-arrow';
-                            finalArrow.textContent = '\u2192';
-                            finalArrow.setAttribute('aria-hidden', 'true');
-                            circuitPath.appendChild(finalArrow);
 
                             // Add target node (destination website)
                             const targetNode = document.createElement('div');
                             targetNode.className = 'circuit-relay circuit-target';
                             let targetHost = 'Internet';
+                            let targetAddress = '';
                             if (targetUrl) {
                                 try {
-                                    targetHost = new URL(targetUrl).hostname;
+                                    const url = new URL(targetUrl);
+                                    targetHost = url.hostname;
+                                    targetAddress = url.port ? `:${url.port}` : (url.protocol === 'https:' ? ':443' : ':80');
                                 } catch (e) {
                                     targetHost = targetUrl;
                                 }
@@ -1035,7 +1058,7 @@
                             targetNode.innerHTML = `
                                 <div class="circuit-relay-role">Target</div>
                                 <div class="circuit-relay-nickname">${escapeHtml(targetHost)}</div>
-                                <div class="circuit-relay-address"></div>
+                                <div class="circuit-relay-address">${escapeHtml(targetAddress)}</div>
                             `;
                             circuitPath.appendChild(targetNode);
 
