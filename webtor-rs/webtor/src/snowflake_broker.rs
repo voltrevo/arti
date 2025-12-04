@@ -178,10 +178,11 @@ impl BrokerClient {
     async fn fetch_wasm(&self, url: &str, body: &[u8]) -> Result<Vec<u8>> {
         use wasm_bindgen::JsCast;
         use wasm_bindgen_futures::JsFuture;
-        use web_sys::{Request, RequestInit, Response};
+        use web_sys::{Request, RequestInit, RequestMode, Response};
 
         let opts = RequestInit::new();
         opts.set_method("POST");
+        opts.set_mode(RequestMode::Cors);
         
         // Convert body to Uint8Array
         let body_array = js_sys::Uint8Array::from(body);
@@ -190,9 +191,8 @@ impl BrokerClient {
         let request = Request::new_with_str_and_init(url, &opts)
             .map_err(|e| TorError::Network(format!("Failed to create request: {:?}", e)))?;
         
-        request.headers()
-            .set("Content-Type", "application/x-www-form-urlencoded")
-            .map_err(|e| TorError::Network(format!("Failed to set header: {:?}", e)))?;
+        // The official Snowflake Go client doesn't set Content-Type
+        // The broker expects raw: "1.0\n{json}" format
         
         let window = web_sys::window()
             .ok_or_else(|| TorError::Internal("No window object".to_string()))?;
