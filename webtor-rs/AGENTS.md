@@ -40,3 +40,7 @@ cd example && npm install && npm run dev
 - The daily GitHub Action (`daily-consensus-update.yml`) refreshes cached consensus
 - Snowflake bridge is used for WASM; WebTunnel is available for native builds
 - `ring` crate doesn't compile to WASM, so `subtle-tls` provides TLS via SubtleCrypto
+
+## Style Preferences
+
+- Use plain ASCII characters (`+`, `-`, `|`) instead of Unicode box-drawing characters (┌, ─, │, etc.) for diagrams in markdown - they render more reliably across platforms
