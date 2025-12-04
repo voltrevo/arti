@@ -226,11 +226,18 @@ mod wasm {
         let (tx, rx) = futures::channel::oneshot::channel::<()>();
         let tx = Rc::new(RefCell::new(Some(tx)));
 
+        // Clone pc reference for use in closure
+        let pc_clone = pc.clone();
         let tx_clone = tx.clone();
         let on_ice_gathering = Closure::wrap(Box::new(move |_: web_sys::Event| {
-            // Check if complete (closure will be called for each state change)
-            if let Some(tx) = tx_clone.borrow_mut().take() {
-                let _ = tx.send(());
+            // Only signal when gathering is actually complete
+            if pc_clone.ice_gathering_state() == RtcIceGatheringState::Complete {
+                info!("ICE gathering completed");
+                if let Some(tx) = tx_clone.borrow_mut().take() {
+                    let _ = tx.send(());
+                }
+            } else {
+                info!("ICE gathering state changed to: {:?}", pc_clone.ice_gathering_state());
             }
         }) as Box<dyn FnMut(web_sys::Event)>);
 
@@ -238,6 +245,7 @@ mod wasm {
 
         // Also check current state in case we missed the transition
         if pc.ice_gathering_state() == RtcIceGatheringState::Complete {
+            info!("ICE gathering already complete");
             if let Some(tx) = tx.borrow_mut().take() {
                 let _ = tx.send(());
             }
@@ -247,10 +255,10 @@ mod wasm {
         let timeout = gloo_timers::future::TimeoutFuture::new(10_000);
         futures::select! {
             _ = rx.fuse() => {
-                debug!("ICE gathering complete");
+                info!("ICE gathering finished successfully");
             }
             _ = timeout.fuse() => {
-                warn!("ICE gathering timeout - proceeding with partial candidates");
+                warn!("ICE gathering timeout after 10s - proceeding with partial candidates");
             }
         }
 
