@@ -35,23 +35,25 @@ impl DirectoryManager {
     pub async fn load_cached_consensus(&self) -> Result<()> {
         info!("Fetching cached consensus from static URL...");
         
-        // Fetch consensus (uncompressed - browser handles gzip/br via Accept-Encoding)
-        let consensus_url = format!("{}/consensus.txt", CACHED_CONSENSUS_BASE_URL);
+        // Fetch brotli-compressed consensus
+        let consensus_url = format!("{}/consensus.txt.br", CACHED_CONSENSUS_BASE_URL);
         let consensus_bytes = fetch_url(&consensus_url).await
             .map_err(|e| TorError::Internal(format!("Failed to fetch cached consensus: {}", e)))?;
-        info!("Fetched consensus: {} bytes", consensus_bytes.len());
+        info!("Fetched compressed consensus: {} bytes", consensus_bytes.len());
         
-        let consensus_body = String::from_utf8(consensus_bytes)
-            .map_err(|e| TorError::Internal(format!("Invalid UTF-8 in consensus: {}", e)))?;
+        let consensus_body = decompress_brotli(&consensus_bytes)
+            .map_err(|e| TorError::Internal(format!("Failed to decompress consensus: {}", e)))?;
+        info!("Decompressed consensus: {} bytes", consensus_body.len());
         
-        // Fetch microdescriptors
-        let microdescs_url = format!("{}/microdescriptors.txt", CACHED_CONSENSUS_BASE_URL);
+        // Fetch brotli-compressed microdescriptors
+        let microdescs_url = format!("{}/microdescriptors.txt.br", CACHED_CONSENSUS_BASE_URL);
         let microdescs_bytes = fetch_url(&microdescs_url).await
             .map_err(|e| TorError::Internal(format!("Failed to fetch cached microdescriptors: {}", e)))?;
-        info!("Fetched microdescriptors: {} bytes", microdescs_bytes.len());
+        info!("Fetched compressed microdescriptors: {} bytes", microdescs_bytes.len());
         
-        let microdescs_body = String::from_utf8(microdescs_bytes)
-            .map_err(|e| TorError::Internal(format!("Invalid UTF-8 in microdescriptors: {}", e)))?;
+        let microdescs_body = decompress_brotli(&microdescs_bytes)
+            .map_err(|e| TorError::Internal(format!("Failed to decompress microdescriptors: {}", e)))?;
+        info!("Decompressed microdescriptors: {} bytes", microdescs_body.len());
         
         // Parse and process
         self.process_consensus_data(&consensus_body, &microdescs_body).await

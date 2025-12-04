@@ -25,12 +25,10 @@
         .site-header {
             background: rgba(0, 0, 0, 0.3);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 16px 20px;
+            padding: 16px 5%;
         }
 
         .site-header-inner {
-            max-width: 1400px;
-            margin: 0 auto;
             display: flex;
             align-items: center;
             gap: 12px;
@@ -589,6 +587,7 @@
                     <button id="openBtn" aria-label="Open and initialize Tor client connection">Open TorClient</button>
                     <button id="closeBtn" class="secondary" disabled aria-label="Close Tor client connection">Close</button>
                     <button id="updateBtn" class="secondary" disabled aria-label="Refresh the current circuit">Refresh Circuit</button>
+                    <span id="circuitLabel" style="margin-left: 12px; color: #808080; font-size: 12px;"></span>
                 </div>
 
                 <!-- Circuit Path Display -->
@@ -707,7 +706,7 @@
     <!-- Site Footer -->
     <footer class="site-footer">
         <div class="site-footer-inner">
-            <span>v0.1.4</span>
+            <span>v0.1.5</span>
             <div class="footer-links">
                 <a href="https://github.com/igor53627/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/igor53627/webtor-rs#features" target="_blank" rel="noopener noreferrer">Features</a>
@@ -1063,8 +1062,14 @@
                             circuitPath.appendChild(targetNode);
 
                             circuitDisplay.classList.add('visible');
+                            
+                            // Update circuit label with relay names
+                            const circuitLabel = document.getElementById('circuitLabel');
+                            const relayNames = relays.map(r => r.nickname).join(' → ');
+                            circuitLabel.textContent = relayNames;
                         } else {
                             circuitDisplay.classList.remove('visible');
+                            document.getElementById('circuitLabel').textContent = '';
                         }
                     } catch (e) {
                         console.warn('Failed to get circuit relays:', e);
