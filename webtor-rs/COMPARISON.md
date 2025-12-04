@@ -9,7 +9,7 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 | **Language** | Rust → WASM | TypeScript + WASM modules |
 | **Tor Protocol** | Uses battle-tested `tor-proto` crate | Custom implementation |
 | **Security** | Production-grade TLS validation | No No TLS certificate validation |
-| **Transport** | WebTunnel + Snowflake (WebRTC) | Snowflake (WebSocket) + Meek |
+| **Transport** | WebTunnel + Snowflake (WebSocket) | Snowflake (WebSocket) + Meek |
 | **Maturity** | Built on Arti (official Rust Tor) | Experimental, early-stage |
 | **TLS** | TLS 1.3 via SubtleCrypto | TLS 1.2 via @hazae41/cadenas |
 
@@ -29,7 +29,7 @@ This document compares **webtor-rs** (Rust) and **echalote** (TypeScript) - two 
 │    ├── subtle-tls (TLS 1.3 with SubtleCrypto + cert validation)     │
 │    └── Transport Layer                                               │
 │          ├── WebTunnel (HTTPS + HTTP Upgrade)                       │
-│          └── Snowflake (WebRTC → Turbo → KCP → SMUX)                │
+│          └── Snowflake (WebSocket → Turbo → KCP → SMUX)             │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -98,39 +98,10 @@ async fn verify_certificate_chain(&self, certs: &[Certificate]) -> Result<()> {
 
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
-| **Connection Method** | WebRTC via broker | Direct WebSocket |
-| **Broker Support** | Yes Full broker API | No Hardcoded endpoints |
-| **Protocol Stack** | WebRTC → Turbo → KCP → SMUX | WebSocket → Turbo → KCP → SMUX |
-| **Correct Architecture** | Yes Yes | No No (bypasses volunteer proxies) |
+| **Connection Method** | Direct WebSocket | Direct WebSocket |
+| **Protocol Stack** | WebSocket → Turbo → KCP → SMUX | WebSocket → Turbo → KCP → SMUX |
 
-**Why webtor-rs is better:**
-
-webtor-rs implements the **correct Snowflake architecture**:
-```
-Client ←(WebRTC)→ Volunteer Proxy ←(WebSocket)→ Bridge
-```
-
-echalote connects **directly** to the bridge WebSocket, which:
-- Bypasses the volunteer proxy network
-- May not work reliably (server expects proxy-formatted data)
-- Loses the censorship-resistance benefit of Snowflake
-
-```rust
-// webtor-rs: Correct WebRTC flow
-pub async fn connect(broker_url: &str, fingerprint: &str) -> Result<Self> {
-    // 1. Create RTCPeerConnection
-    let pc = RtcPeerConnection::new_with_configuration(&config)?;
-    let dc = pc.create_data_channel(DATA_CHANNEL_LABEL);
-    
-    // 2. Exchange SDP via broker
-    let offer_sdp = create_and_gather_offer(&pc).await?;
-    let broker = BrokerClient::new(broker_url);
-    let answer_sdp = broker.negotiate(&offer_sdp).await?;  // Yes Proper signaling
-    
-    // 3. Complete WebRTC handshake
-    pc.set_remote_description(&answer_init).await?;
-}
-```
+Both implementations connect directly to the Snowflake bridge via WebSocket, bypassing the volunteer proxy network. This is a simplification that works but loses some censorship-resistance benefits of the full WebRTC-based Snowflake architecture.
 
 #### WebTunnel Support
 
@@ -290,7 +261,7 @@ const tls = new TlsClientDuplex({ host_name: "example.com" });
 - Yes Uses official Tor protocol crate
 - Yes Modern ntor-v3 handshake
 - Yes CREATE2 circuit creation
-- Yes Proper Snowflake WebRTC architecture
+- Yes Proper Snowflake WebSocket architecture
 - Yes Memory-safe Rust code
 - Yes Audited crypto libraries
 
@@ -308,7 +279,7 @@ const tls = new TlsClientDuplex({ host_name: "example.com" });
 
 1. **Security**: Proper TLS validation and audited crypto
 2. **Correctness**: Uses official Tor protocol implementation
-3. **Architecture**: Correct Snowflake WebRTC flow
+3. **Architecture**: WebTunnel + Snowflake transports
 4. **Flexibility**: Supports both WebTunnel and Snowflake
 5. **Maintainability**: Built on maintained Arti crates
 6. **Safety**: Rust's memory safety guarantees
@@ -352,5 +323,5 @@ let response = client.get("https://example.com").await?;
 
 | Bridge | WASM | Native | Censorship Resistance |
 |--------|------|--------|----------------------|
-| Snowflake | Yes | No | High (WebRTC P2P) |
+| Snowflake | Yes | No | Medium (WebSocket) |
 | WebTunnel | Yes | Yes | Medium (HTTPS) |
