@@ -14,11 +14,15 @@ use crate::error::{Result, TorError};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-/// Snowflake broker URL (main Tor Project broker)
-pub const BROKER_URL: &str = "https://snowflake-broker.torproject.net/";
+/// Snowflake broker URL (via CDN77 domain fronting for CORS support)
+/// The broker is hosted at 1098762253.rsc.cdn77.org but we access it via front domain
+pub const BROKER_URL: &str = "https://1098762253.rsc.cdn77.org/";
 
-/// Alternative broker URL
-pub const BROKER_URL_ALT: &str = "https://snowflake-broker.bamsoftware.com/";
+/// Front domains for domain fronting (CDN77)
+pub const BROKER_FRONT_DOMAINS: &[&str] = &["www.cdn77.com", "www.phpmyadmin.net"];
+
+/// Direct broker URL (doesn't work from browsers due to CORS)
+pub const BROKER_URL_DIRECT: &str = "https://snowflake-broker.torproject.net/";
 
 /// Client protocol version
 const CLIENT_VERSION: &str = "1.0";
@@ -142,22 +146,32 @@ impl BrokerClient {
     /// Exchange SDP offer for SDP answer via broker
     /// Returns the SDP answer from a volunteer proxy
     pub async fn negotiate(&self, sdp_offer: &str) -> Result<String> {
-        info!("Contacting Snowflake broker at {}", self.broker_url);
+        info!("Contacting Snowflake broker via domain fronting");
         
         let request = ClientPollRequest::new(sdp_offer.to_string())
             .with_nat(self.nat_type)
             .with_fingerprint(self.fingerprint.clone());
         
         let body = request.encode()?;
-        let url = format!("{}client", self.broker_url.trim_end_matches('/'));
         
+        // Use domain fronting: request goes to front domain, Host header has real broker
+        // Parse the broker URL to get the host for the Host header
+        let broker_host = url::Url::parse(&self.broker_url)
+            .map(|u| u.host_str().unwrap_or("1098762253.rsc.cdn77.org").to_string())
+            .unwrap_or_else(|_| "1098762253.rsc.cdn77.org".to_string());
+        
+        // Select a front domain randomly
+        let front_domain = BROKER_FRONT_DOMAINS[0]; // Use first for now
+        let fronted_url = format!("https://{}/client", front_domain);
+        
+        info!("Domain fronting: {} -> Host: {}", front_domain, broker_host);
         debug!("Sending offer to broker ({} bytes)", body.len());
         
         #[cfg(target_arch = "wasm32")]
-        let response_bytes = self.fetch_wasm(&url, &body).await?;
+        let response_bytes = self.fetch_wasm_fronted(&fronted_url, &broker_host, &body).await?;
         
         #[cfg(not(target_arch = "wasm32"))]
-        let response_bytes = self.fetch_native(&url, &body).await?;
+        let response_bytes = self.fetch_native(&format!("{}client", self.broker_url.trim_end_matches('/')), &body).await?;
         
         let response = ClientPollResponse::decode(&response_bytes)?;
         
@@ -174,8 +188,9 @@ impl BrokerClient {
         Ok(response.answer)
     }
 
+    /// Fetch with domain fronting - URL goes to front domain, Host header to real broker
     #[cfg(target_arch = "wasm32")]
-    async fn fetch_wasm(&self, url: &str, body: &[u8]) -> Result<Vec<u8>> {
+    async fn fetch_wasm_fronted(&self, url: &str, host: &str, body: &[u8]) -> Result<Vec<u8>> {
         use wasm_bindgen::JsCast;
         use wasm_bindgen_futures::JsFuture;
         use web_sys::{Request, RequestInit, RequestMode, Response};
@@ -191,8 +206,11 @@ impl BrokerClient {
         let request = Request::new_with_str_and_init(url, &opts)
             .map_err(|e| TorError::Network(format!("Failed to create request: {:?}", e)))?;
         
-        // The official Snowflake Go client doesn't set Content-Type
-        // The broker expects raw: "1.0\n{json}" format
+        // Set Host header for domain fronting
+        // This tells the CDN which backend to route to
+        request.headers()
+            .set("Host", host)
+            .map_err(|e| TorError::Network(format!("Failed to set Host header: {:?}", e)))?;
         
         let window = web_sys::window()
             .ok_or_else(|| TorError::Internal("No window object".to_string()))?;
