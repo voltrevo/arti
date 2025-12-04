@@ -221,14 +221,6 @@ where
             let (content_type, data) = record_layer.read_record(stream).await?;
             info!("process_encrypted_handshake: got record type={}, len={}", content_type, data.len());
 
-            // Debug: raw value checks
-            if content_type == 20 {
-                tracing::error!(">> content_type is 20 (ChangeCipherSpec)");
-            } else if content_type == 22 {
-                tracing::error!(">> content_type is 22 (Handshake)");
-            } else {
-                tracing::error!(">> content_type is {} (unknown)", content_type);
-            }
             
             match content_type {
                 20 => { // CONTENT_TYPE_CHANGE_CIPHER_SPEC
