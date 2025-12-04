@@ -16,7 +16,7 @@ use tracing::{debug, info, warn};
 
 /// Snowflake broker URL via CORS proxy (Vercel edge function)
 /// The proxy forwards requests to CDN77-hosted broker and adds CORS headers
-pub const BROKER_URL: &str = "https://snowflake-proxy-q5n0yq05v-igor53627s-projects-0dc1aedd.vercel.app/";
+pub const BROKER_URL: &str = "https://snowflake-proxy-2j1gqkh53-igor53627s-projects-0dc1aedd.vercel.app/";
 
 /// Front domains for domain fronting (CDN77) - kept for reference but not used with CORS proxy
 pub const BROKER_FRONT_DOMAINS: &[&str] = &["www.cdn77.com", "www.phpmyadmin.net"];
