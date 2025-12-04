@@ -390,10 +390,11 @@ impl CircuitManager {
         }
     }
     
-    /// Get relay information from the first ready circuit
+    /// Get relay information from the most recent ready circuit
     pub async fn get_circuit_relays(&self) -> Option<Vec<CircuitRelayInfo>> {
         let circuits = self.circuits.read().await;
-        for circuit in circuits.iter() {
+        // Iterate in reverse to get the most recently created circuit
+        for circuit in circuits.iter().rev() {
             let circuit_read = circuit.read().await;
             if circuit_read.is_ready() && !circuit_read.relays.is_empty() {
                 return Some(circuit_read.relays.iter().enumerate().map(|(idx, relay)| {

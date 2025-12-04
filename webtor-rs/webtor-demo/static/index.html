@@ -587,7 +587,6 @@
                     <button id="openBtn" aria-label="Open and initialize Tor client connection">Open TorClient</button>
                     <button id="closeBtn" class="secondary" disabled aria-label="Close Tor client connection">Close</button>
                     <button id="updateBtn" class="secondary" disabled aria-label="Refresh the current circuit">Refresh Circuit</button>
-                    <span id="circuitLabel" style="margin-left: 12px; color: #808080; font-size: 12px;"></span>
                 </div>
 
                 <!-- Circuit Path Display -->
@@ -682,7 +681,10 @@
         <!-- Right Panel - Logs -->
         <div class="panel log-panel" role="complementary">
             <div class="log-header">
-                <div class="section-title" id="logsLabel">Connection Logs</div>
+                <div>
+                    <div class="section-title" id="logsLabel">Connection Logs</div>
+                    <div id="circuitLabel" style="font-size: 11px; color: #808080; margin-top: 4px;"></div>
+                </div>
                 <div class="log-controls">
                     <div id="verboseToggle" class="toggle-switch" role="switch" aria-checked="false" aria-label="Toggle verbose logging" tabindex="0">
                         <div class="toggle-switch-track">
@@ -706,7 +708,7 @@
     <!-- Site Footer -->
     <footer class="site-footer">
         <div class="site-footer-inner">
-            <span>v0.1.7</span>
+            <span>v0.1.8</span>
             <div class="footer-links">
                 <a href="https://github.com/igor53627/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/igor53627/webtor-rs#features" target="_blank" rel="noopener noreferrer">Features</a>

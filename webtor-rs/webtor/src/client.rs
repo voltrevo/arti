@@ -168,18 +168,27 @@ impl TorClient {
         self.http_client.request(request).await
     }
     
-    /// Update the circuit with a deadline for graceful transition
-    pub async fn update_circuit(&self, deadline: Duration) -> Result<()> {
-        info!("Updating circuit with {:?} deadline", deadline);
+    /// Update the circuit by creating a new one
+    pub async fn update_circuit(&self, _deadline: Duration) -> Result<()> {
+        info!("Creating new circuit...");
+        self.log("Creating new circuit...", LogType::Info);
         
-        // For now, this is a placeholder
-        // In the full implementation, this would:
-        // 1. Create a new circuit in the background
-        // 2. Allow existing requests to use the old circuit until deadline
-        // 3. Switch to the new circuit after deadline
-        
-        self.log("Circuit update completed", LogType::Success);
-        Ok(())
+        // Create a new circuit (this will select new random relays)
+        let circuit_manager = self.circuit_manager.read().await;
+        match circuit_manager.create_circuit().await {
+            Ok(circuit) => {
+                let circuit_info = circuit.read().await;
+                let relay_names: Vec<_> = circuit_info.relays.iter()
+                    .map(|r| r.nickname.clone())
+                    .collect();
+                self.log(&format!("New circuit: {}", relay_names.join(" → ")), LogType::Success);
+                Ok(())
+            }
+            Err(e) => {
+                self.log(&format!("Failed to create circuit: {}", e), LogType::Error);
+                Err(e)
+            }
+        }
     }
     
     /// Wait for a circuit to be ready
