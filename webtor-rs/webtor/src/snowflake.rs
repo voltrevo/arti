@@ -29,7 +29,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tracing::info;
+use tracing::{info, warn};
 
 #[cfg(target_arch = "wasm32")]
 use crate::webrtc_stream::WebRtcStream;
@@ -120,13 +120,49 @@ impl SnowflakeBridge {
     /// Connect to the Snowflake bridge via WebRTC (WASM) or fallback (native)
     #[cfg(target_arch = "wasm32")]
     pub async fn connect(&self) -> Result<SnowflakeStream> {
+        use crate::error::TorError;
+        
+        const MAX_WEBRTC_RETRIES: u32 = 3;
+        
         info!("Connecting to Snowflake via WebRTC");
         info!("Broker: {}", self.config.broker_url);
         info!("Fingerprint: {}", self.config.fingerprint);
 
-        // 1. Establish WebRTC connection via broker
-        info!("Connecting to volunteer proxy via WebRTC...");
-        let webrtc = WebRtcStream::connect(&self.config.broker_url, &self.config.fingerprint).await?;
+        // 1. Establish WebRTC connection via broker (with retry for unreliable proxies)
+        let mut webrtc = None;
+        let mut last_error = None;
+        
+        for attempt in 1..=MAX_WEBRTC_RETRIES {
+            info!("Connecting to volunteer proxy via WebRTC (attempt {}/{})...", attempt, MAX_WEBRTC_RETRIES);
+            
+            match WebRtcStream::connect(&self.config.broker_url, &self.config.fingerprint).await {
+                Ok(stream) => {
+                    info!("WebRTC DataChannel established on attempt {}", attempt);
+                    webrtc = Some(stream);
+                    break;
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    warn!("WebRTC connection attempt {} failed: {}", attempt, err_str);
+                    last_error = Some(e);
+                    
+                    // Only retry on timeout errors (proxy didn't respond)
+                    if !err_str.contains("timeout") {
+                        return Err(last_error.unwrap());
+                    }
+                    
+                    if attempt < MAX_WEBRTC_RETRIES {
+                        info!("Retrying with a different volunteer proxy...");
+                    }
+                }
+            }
+        }
+        
+        let webrtc = webrtc.ok_or_else(|| {
+            last_error.unwrap_or_else(|| 
+                TorError::Network("WebRTC connection failed after all retries".to_string())
+            )
+        })?;
         info!("WebRTC DataChannel established");
 
         // 2. Wrap with Turbo framing
