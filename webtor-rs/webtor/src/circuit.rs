@@ -4,6 +4,7 @@ use crate::error::{Result, TorError};
 use crate::relay::{Relay, RelayManager};
 use crate::time::Instant;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, error};
@@ -111,7 +112,7 @@ impl Circuit {
 }
 
 // Helper to create default circuit parameters
-pub(crate) fn make_circ_params() -> Result<CircParameters> {
+pub fn make_circ_params() -> Result<CircParameters> {
     // 1. Fixed Window Params (Fallback)
     let fixed_window_params = FixedWindowParamsBuilder::default()
         .circ_window_start(1000)
@@ -175,6 +176,7 @@ pub struct CircuitManager {
     circuits: Arc<RwLock<Vec<Arc<RwLock<Circuit>>>>>,
     relay_manager: Arc<RwLock<RelayManager>>,
     channel: Arc<RwLock<Option<Arc<Channel>>>>,
+    prebuild_in_progress: Arc<AtomicBool>,
 }
 
 impl CircuitManager {
@@ -183,6 +185,7 @@ impl CircuitManager {
             circuits: Arc::new(RwLock::new(Vec::new())),
             relay_manager,
             channel,
+            prebuild_in_progress: Arc::new(AtomicBool::new(false)),
         }
     }
     
@@ -343,6 +346,16 @@ impl CircuitManager {
         self.create_circuit().await
     }
     
+    /// Get a ready circuit and mark it as used (updates last_used timestamp)
+    pub async fn get_ready_circuit_and_mark_used(&self) -> Result<Arc<RwLock<Circuit>>> {
+        let circuit = self.get_ready_circuit().await?;
+        {
+            let mut circ = circuit.write().await;
+            circ.update_last_used();
+        }
+        Ok(circuit)
+    }
+    
     /// Get circuit status information
     pub async fn get_circuit_status(&self) -> CircuitStatusInfo {
         let circuits = self.circuits.read().await;
@@ -423,6 +436,81 @@ impl CircuitManager {
         None
     }
 
+    /// Preemptively build a spare circuit if conditions are met
+    /// 
+    /// This ensures we have a fresh circuit ready before existing ones expire.
+    /// Called periodically or after successful requests.
+    pub async fn maybe_prebuild_circuit(
+        &self,
+        max_circuits: usize,
+        age_threshold: Duration,
+    ) {
+        let status = self.get_circuit_status().await;
+        
+        // Only prebuild if we have at least 1 ready circuit
+        if status.ready_circuits == 0 {
+            debug!("Skipping prebuild: no ready circuits");
+            return;
+        }
+        
+        // Limit total circuits
+        if status.total_circuits >= max_circuits {
+            debug!("Skipping prebuild: at max circuits ({})", max_circuits);
+            return;
+        }
+        
+        // Only if circuits are getting old
+        if status.average_circuit_age < age_threshold {
+            debug!("Skipping prebuild: circuits not old enough (avg {:?} < threshold {:?})", 
+                   status.average_circuit_age, age_threshold);
+            return;
+        }
+        
+        // Try to acquire the prebuild slot (prevents race condition where multiple
+        // concurrent requests all trigger prebuilds)
+        if self.prebuild_in_progress.swap(true, Ordering::SeqCst) {
+            debug!("Skipping prebuild: another prebuild is already in progress");
+            return;
+        }
+        
+        info!("Prebuilding spare circuit (avg age: {:?}, threshold: {:?})", 
+              status.average_circuit_age, age_threshold);
+        
+        // Clone self for the spawned task
+        let circuit_manager = self.clone();
+        let prebuild_flag = self.prebuild_in_progress.clone();
+        
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = circuit_manager.create_circuit().await;
+            prebuild_flag.store(false, Ordering::SeqCst);
+            match result {
+                Ok(circuit) => {
+                    let circuit_info = circuit.read().await;
+                    info!("Prebuilt circuit {} ready", circuit_info.id);
+                }
+                Err(e) => {
+                    error!("Failed to prebuild circuit: {}", e);
+                }
+            }
+        });
+        
+        #[cfg(not(target_arch = "wasm32"))]
+        tokio::spawn(async move {
+            let result = circuit_manager.create_circuit().await;
+            prebuild_flag.store(false, Ordering::SeqCst);
+            match result {
+                Ok(circuit) => {
+                    let circuit_info = circuit.read().await;
+                    info!("Prebuilt circuit {} ready", circuit_info.id);
+                }
+                Err(e) => {
+                    error!("Failed to prebuild circuit: {}", e);
+                }
+            }
+        });
+    }
+    
     /// Clean up failed and old circuits
     pub async fn cleanup_circuits(&self) -> Result<()> {
         let mut circuits = self.circuits.write().await;

@@ -72,12 +72,52 @@ jobs:
     - name: Install Playwright
       run: npx playwright install chromium
 
+    - name: Install Binaryen (wasm-opt)
+      run: |
+        wget -q https://github.com/WebAssembly/binaryen/releases/download/version_118/binaryen-version_118-x86_64-linux.tar.gz
+        tar -xzf binaryen-version_118-x86_64-linux.tar.gz
+        echo "$PWD/binaryen-version_118/bin" >> $GITHUB_PATH
+
     - name: Build WASM demo
       run: wasm-pack build webtor-demo --target web --release
+
+    - name: Optimize WASM with wasm-opt
+      run: |
+        wasm-opt -Oz --strip-dwarf --strip-producers \
+          -o webtor-demo/pkg/webtor_demo_bg.opt.wasm \
+          webtor-demo/pkg/webtor_demo_bg.wasm
+        mv webtor-demo/pkg/webtor_demo_bg.opt.wasm webtor-demo/pkg/webtor_demo_bg.wasm
+
+    - name: Copy to static folder
+      run: |
+        mkdir -p webtor-demo/static/pkg
+        cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
+
+    - name: Report WASM bundle size
+      run: |
+        UNCOMPRESSED=$(ls -lh webtor-demo/pkg/webtor_demo_bg.wasm | awk '{print $5}')
+        GZIPPED=$(gzip -c -9 webtor-demo/pkg/webtor_demo_bg.wasm | wc -c)
+        GZIPPED_MB=$(echo "scale=2; $GZIPPED / 1024 / 1024" | bc)
+        echo "### WASM Bundle Size" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Size |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Uncompressed | $UNCOMPRESSED |" >> $GITHUB_STEP_SUMMARY
+        echo "| Gzipped | ${GZIPPED_MB} MB |" >> $GITHUB_STEP_SUMMARY
+        # Fail if gzipped size exceeds 1.5MB (1572864 bytes)
+        if [ "$GZIPPED" -gt 1572864 ]; then
+          echo "::error::WASM bundle size exceeds 1.5MB limit (${GZIPPED_MB} MB)"
+          exit 1
+        fi
+        echo "✅ Bundle size within limit: ${GZIPPED_MB} MB (max 1.5 MB)"
 
     - name: Run TLS connection tests
       run: npm run test:tls
       timeout-minutes: 10
+
+    - name: Run E2E performance benchmark
+      run: npm run test:bench
+      timeout-minutes: 5
+      continue-on-error: true
 
   clippy:
     name: Clippy

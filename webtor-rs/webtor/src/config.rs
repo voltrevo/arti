@@ -144,6 +144,12 @@ fn default_circuit_update_advance() -> u64 {
     60_000 // 1 minute
 }
 
+/// Maximum number of circuits to maintain (for preemptive building)
+pub const MAX_CIRCUITS: usize = 2;
+
+/// Age threshold for preemptive circuit building (circuit_timeout - 10 seconds)
+pub const CIRCUIT_PREBUILD_AGE_THRESHOLD_MS: u64 = 80_000; // 90_000 - 10_000
+
 impl TorClientOptions {
     /// Create options for Snowflake bridge using default Tor Project broker
     pub fn snowflake() -> Self {

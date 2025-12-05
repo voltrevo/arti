@@ -1,6 +1,7 @@
 //! HTTP client for making requests through Tor circuits
 
 use crate::circuit::CircuitManager;
+use crate::config::{MAX_CIRCUITS, CIRCUIT_PREBUILD_AGE_THRESHOLD_MS};
 use crate::error::{Result, TorError};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::tls::wrap_with_tls;
@@ -176,15 +177,14 @@ impl TorHttpClient {
         
         debug!("Target: {}:{} (HTTPS: {})", host, port, is_https);
         
-        // Get a ready circuit
+        // Get a ready circuit (reuses existing or creates new) and mark as used
         let circuit_manager = self.circuit_manager.read().await;
-        let circuit = circuit_manager.get_ready_circuit().await?;
+        let circuit = circuit_manager.get_ready_circuit_and_mark_used().await?;
         
-        // Update circuit last used time and begin stream
+        // Begin stream on the circuit
         let stream = {
-            let mut circuit_write = circuit.write().await;
-            circuit_write.update_last_used();
-            circuit_write.begin_stream(&host, port).await?
+            let circuit_read = circuit.read().await;
+            circuit_read.begin_stream(&host, port).await?
         };
         
         // Build the HTTP request
@@ -255,6 +255,10 @@ impl TorHttpClient {
         };
         
         info!("Received {} bytes of HTTP response", response_bytes.len());
+        
+        // Trigger preemptive circuit building after successful request
+        let age_threshold = Duration::from_millis(CIRCUIT_PREBUILD_AGE_THRESHOLD_MS);
+        circuit_manager.maybe_prebuild_circuit(MAX_CIRCUITS, age_threshold).await;
         
         // Parse the HTTP response
         parse_http_response(&response_bytes, request.url)
@@ -536,7 +540,7 @@ mod tests {
     fn create_test_relay(fingerprint: &str, flags: Vec<&str>) -> Relay {
         Relay::new(
             fingerprint.to_string(),
-            format!("test_{{}}", fingerprint),
+            format!("test_{}", fingerprint),
             "127.0.0.1".to_string(),
             9001,
             flags.into_iter().map(String::from).collect(),

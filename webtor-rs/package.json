@@ -17,6 +17,9 @@
     "test:tls:debug": "node tests/e2e/test-tls-connections.mjs --headed --debug",
     "test:tls12": "node tests/e2e/test-tls12-servers.mjs",
     "test:tls12:headed": "node tests/e2e/test-tls12-servers.mjs --headed",
+    "test:bench": "node tests/e2e/test-benchmark.mjs --quick",
+    "test:bench:full": "node tests/e2e/test-benchmark.mjs",
+    "test:bench:headed": "node tests/e2e/test-benchmark.mjs --headed --quick",
     "clean": "cargo clean && rm -rf webtor-wasm/pkg webtor-demo/pkg",
     "dev": "cargo watch -s 'npm run build:wasm'"
   },

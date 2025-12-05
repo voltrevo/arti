@@ -309,9 +309,50 @@ impl DirectoryManager {
     }
 
     async fn fetch_microdescriptors_body(&self, channel: Arc<Channel>, digests: &[[u8; 32]]) -> Result<String> {
-        info!("Fetching {} microdescriptors...", digests.len());
+        const CHUNK_SIZE: usize = 256;
+        const MAX_PARALLEL_CHUNKS: usize = 3;
         
-        // TODO: chunk digests
+        info!("Fetching {} microdescriptors in chunks of {} (max {} parallel)...", 
+              digests.len(), CHUNK_SIZE, MAX_PARALLEL_CHUNKS);
+        
+        let chunks: Vec<&[[u8; 32]]> = digests.chunks(CHUNK_SIZE).collect();
+        let total_chunks = chunks.len();
+        let mut all_results = Vec::new();
+        
+        // Process chunks in batches of MAX_PARALLEL_CHUNKS
+        for (batch_idx, batch) in chunks.chunks(MAX_PARALLEL_CHUNKS).enumerate() {
+            let batch_start = batch_idx * MAX_PARALLEL_CHUNKS;
+            info!("Fetching chunk batch {}/{} (chunks {}-{})", 
+                  batch_idx + 1, 
+                  (total_chunks + MAX_PARALLEL_CHUNKS - 1) / MAX_PARALLEL_CHUNKS,
+                  batch_start + 1,
+                  (batch_start + batch.len()).min(total_chunks));
+            
+            let futures: Vec<_> = batch.iter()
+                .enumerate()
+                .map(|(i, chunk)| {
+                    let chunk_idx = batch_start + i;
+                    self.fetch_microdescriptors_chunk(channel.clone(), chunk, chunk_idx, total_chunks)
+                })
+                .collect();
+            
+            let results = futures::future::try_join_all(futures).await?;
+            all_results.extend(results);
+        }
+        
+        let combined = all_results.join("");
+        info!("Fetched all microdescriptors: {} bytes total", combined.len());
+        Ok(combined)
+    }
+    
+    async fn fetch_microdescriptors_chunk(
+        &self,
+        channel: Arc<Channel>,
+        digests: &[[u8; 32]],
+        chunk_idx: usize,
+        total_chunks: usize,
+    ) -> Result<String> {
+        debug!("Fetching chunk {}/{} with {} digests", chunk_idx + 1, total_chunks, digests.len());
         
         let (pending_tunnel, reactor) = channel.new_tunnel(
             Arc::new(crate::circuit::SimpleTimeoutEstimator) as Arc<dyn TimeoutEstimator>
@@ -363,7 +404,7 @@ impl DirectoryManager {
         stream.read_to_end(&mut response).await
             .map_err(|e| TorError::Network(format!("Failed to read dir response: {}", e)))?;
             
-        info!("Received microdescriptors response: {} bytes", response.len());
+        debug!("Chunk {}/{}: received {} bytes", chunk_idx + 1, total_chunks, response.len());
         
         let body_start = response.windows(4)
             .position(|w| w == b"\r\n\r\n")

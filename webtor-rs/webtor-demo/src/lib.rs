@@ -292,3 +292,146 @@ pub fn main() -> Result<(), JsValue> {
     console::log_1(&"Webtor Demo module initialized".into());
     Ok(())
 }
+
+// ============================================================================
+// Performance Benchmarks
+// ============================================================================
+
+/// Benchmark result structure returned to JavaScript
+#[wasm_bindgen]
+pub struct BenchmarkResult {
+    circuit_creation_ms: f64,
+    fetch_latency_ms: f64,
+}
+
+#[wasm_bindgen]
+impl BenchmarkResult {
+    #[wasm_bindgen(getter)]
+    pub fn circuit_creation_ms(&self) -> f64 {
+        self.circuit_creation_ms
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fetch_latency_ms(&self) -> f64 {
+        self.fetch_latency_ms
+    }
+}
+
+/// Get the Performance API
+fn get_performance() -> web_sys::Performance {
+    web_sys::window()
+        .expect("no window")
+        .performance()
+        .expect("performance unavailable")
+}
+
+/// Run a Tor benchmark measuring circuit creation and fetch latency
+/// 
+/// This function measures:
+/// 1. Circuit creation time: from TorClient creation to ready circuit
+/// 2. Fetch latency: time for a single HTTP GET request through Tor
+/// 
+/// @param test_url - URL to fetch for the latency test (e.g., "https://httpbin.org/ip")
+/// @returns BenchmarkResult with timing measurements in milliseconds
+#[wasm_bindgen(js_name = runTorBenchmark)]
+pub async fn run_tor_benchmark(test_url: String) -> Result<BenchmarkResult, JsValue> {
+    let perf = get_performance();
+    
+    console::log_1(&"Starting Tor benchmark...".into());
+    
+    // Measure circuit creation time
+    let t0 = perf.now();
+    
+    // Create TorClient with WebRTC Snowflake (production config)
+    let options = TorClientOptions::snowflake_webrtc()
+        .with_connection_timeout(60000)
+        .with_circuit_timeout(120000)
+        .with_create_circuit_early(true);
+    
+    console::log_1(&"Creating TorClient...".into());
+    
+    let client = TorClient::create(options).await
+        .map_err(|e| JsValue::from_str(&format!("Failed to create TorClient: {}", e)))?;
+    
+    console::log_1(&"Waiting for circuit...".into());
+    
+    // Wait for circuit to be ready
+    client.wait_for_circuit_rust().await
+        .map_err(|e| JsValue::from_str(&format!("Circuit failed: {}", e)))?;
+    
+    let t1 = perf.now();
+    let circuit_creation_ms = t1 - t0;
+    
+    console::log_1(&format!("Circuit ready in {:.0}ms", circuit_creation_ms).into());
+    
+    // Measure fetch latency
+    let t2 = perf.now();
+    
+    console::log_1(&format!("Fetching {}...", test_url).into());
+    
+    let _response = client.fetch_rust(&test_url).await
+        .map_err(|e| JsValue::from_str(&format!("Fetch failed: {}", e)))?;
+    
+    let t3 = perf.now();
+    let fetch_latency_ms = t3 - t2;
+    
+    console::log_1(&format!("Fetch completed in {:.0}ms", fetch_latency_ms).into());
+    
+    // Cleanup
+    let mut client_mut = client;
+    client_mut.close_rust().await;
+    
+    console::log_1(&format!(
+        "Benchmark complete: circuit={:.0}ms, fetch={:.0}ms",
+        circuit_creation_ms, fetch_latency_ms
+    ).into());
+    
+    Ok(BenchmarkResult {
+        circuit_creation_ms,
+        fetch_latency_ms,
+    })
+}
+
+/// Run a quick benchmark using WebSocket Snowflake (faster but less censorship resistant)
+#[wasm_bindgen(js_name = runQuickBenchmark)]
+pub async fn run_quick_benchmark(test_url: String) -> Result<BenchmarkResult, JsValue> {
+    let perf = get_performance();
+    
+    console::log_1(&"Starting quick benchmark (WebSocket)...".into());
+    
+    let t0 = perf.now();
+    
+    // Use WebSocket Snowflake for faster connection
+    let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
+        .with_connection_timeout(30000)
+        .with_circuit_timeout(90000)
+        .with_create_circuit_early(true);
+    
+    let client = TorClient::create(options).await
+        .map_err(|e| JsValue::from_str(&format!("Failed to create TorClient: {}", e)))?;
+    
+    client.wait_for_circuit_rust().await
+        .map_err(|e| JsValue::from_str(&format!("Circuit failed: {}", e)))?;
+    
+    let t1 = perf.now();
+    let circuit_creation_ms = t1 - t0;
+    
+    let t2 = perf.now();
+    let _response = client.fetch_rust(&test_url).await
+        .map_err(|e| JsValue::from_str(&format!("Fetch failed: {}", e)))?;
+    let t3 = perf.now();
+    let fetch_latency_ms = t3 - t2;
+    
+    let mut client_mut = client;
+    client_mut.close_rust().await;
+    
+    console::log_1(&format!(
+        "Quick benchmark: circuit={:.0}ms, fetch={:.0}ms",
+        circuit_creation_ms, fetch_latency_ms
+    ).into());
+    
+    Ok(BenchmarkResult {
+        circuit_creation_ms,
+        fetch_latency_ms,
+    })
+}
