@@ -158,6 +158,7 @@ impl SnowflakeBridge {
         let tls_config = TlsConfig {
             skip_verification: true, // Tor uses self-signed certs, validated via CERTS cells
             alpn_protocols: vec![],
+            ..Default::default()
         };
         let connector = TlsConnector::with_config(tls_config);
         // Use a placeholder server name since Tor doesn't use SNI

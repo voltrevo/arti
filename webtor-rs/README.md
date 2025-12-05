@@ -129,12 +129,12 @@ flowchart TB
 | WebTunnel | Complete | HTTPS Upgrade with TLS validation |
 | Consensus | Complete | Fetching + parsing + 1hr caching |
 | HTTP Client | Complete | GET/POST through exit relays |
-| TLS (WASM) | Complete | TLS 1.3 via SubtleCrypto |
+| TLS (WASM) | Complete | TLS 1.3 via SubtleCrypto, TLS 1.2 experimental |
 | Demo App | Working | Interactive browser UI |
 
 ## Limitations
 
-- **TLS 1.3 Only** - Sites requiring TLS 1.2 (like httpbin.org) won't work
+- **TLS 1.2 Experimental** - TLS 1.2 support is new and may have issues
 - **Onion Services** - `.onion` addresses not yet implemented  
 - **Stream Isolation** - All requests share one circuit
 - **Mobile** - Not optimized for mobile browsers
@@ -148,7 +148,7 @@ flowchart TB
 - [x] WebTunnel (HTTPS Upgrade)
 - [x] TLS 1.3 support (SubtleCrypto)
 - [x] Consensus fetching and caching
-- [ ] TLS 1.2 support
+- [x] TLS 1.2 support (experimental)
 - [ ] Onion service support
 - [ ] Performance optimizations
 - [ ] Security audit

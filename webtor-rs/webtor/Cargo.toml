@@ -67,6 +67,7 @@ gloo-timers = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # WASM TLS (SubtleCrypto-based)
 subtle-tls = { path = "../subtle-tls" }
+async-trait = "0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Native TLS (non-WASM only) - ring doesn't compile to WASM

@@ -143,6 +143,7 @@ impl SnowflakeWsStream {
         let tls_config = TlsConfig {
             skip_verification: true, // Tor uses self-signed certs
             alpn_protocols: vec![],
+            ..Default::default()
         };
         let connector = TlsConnector::with_config(tls_config);
         info!("Snowflake: calling TLS connect...");

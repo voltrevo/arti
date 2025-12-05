@@ -5,6 +5,10 @@ export class DemoApp {
   free(): void;
   [Symbol.dispose](): void;
   /**
+   * Open the TorClient using WebRTC (more censorship resistant via volunteer proxies)
+   */
+  openWebRtc(): Promise<any>;
+  /**
    * Make an isolated GET request (new circuit each time)
    */
   getIsolated(url: string): Promise<any>;
@@ -26,23 +30,13 @@ export class DemoApp {
   get(url: string): Promise<any>;
   constructor();
   /**
-   * Open the TorClient and wait for circuit
+   * Open the TorClient using WebSocket (simpler, less censorship resistant)
    */
   open(): Promise<any>;
   /**
    * Close the TorClient
    */
   close(): Promise<any>;
-}
-
-export class JsCircuitRelay {
-  private constructor();
-  free(): void;
-  [Symbol.dispose](): void;
-  readonly fingerprint: string;
-  readonly role: string;
-  readonly address: string;
-  readonly nickname: string;
 }
 
 export class JsCircuitStatus {
@@ -87,7 +81,7 @@ export class TorClient {
    */
   waitForCircuit(): Promise<any>;
   /**
-   * Get circuit relays info
+   * Get circuit relay information
    */
   getCircuitRelays(): Promise<any>;
   /**
@@ -97,7 +91,6 @@ export class TorClient {
   static fetch_one_time_rust(snowflake_url: string, url: string, connection_timeout?: bigint | null, circuit_timeout?: bigint | null): Promise<JsHttpResponse>;
   update_circuit_rust(deadline_ms: bigint): Promise<void>;
   wait_for_circuit_rust(): Promise<void>;
-  get_circuit_relays_rust(): Promise<JsCircuitRelay[] | undefined>;
   /**
    * Get circuit status string
    */
@@ -118,6 +111,10 @@ export class TorClient {
 export class TorClientOptions {
   free(): void;
   [Symbol.dispose](): void;
+  /**
+   * Create options for Snowflake bridge via WebRTC (more censorship resistant)
+   */
+  static snowflakeWebRtc(): TorClientOptions;
   withCircuitTimeout(timeout: number): TorClientOptions;
   withBridgeFingerprint(fingerprint: string): TorClientOptions;
   withConnectionTimeout(timeout: number): TorClientOptions;
@@ -170,19 +167,15 @@ export interface InitOutput {
   readonly demoapp_getIsolated: (a: number, b: number, c: number) => any;
   readonly demoapp_new: () => [number, number, number];
   readonly demoapp_open: (a: number) => any;
+  readonly demoapp_openWebRtc: (a: number) => any;
   readonly demoapp_setStatusCallback: (a: number, b: any) => void;
   readonly demoapp_triggerCircuitUpdate: (a: number) => any;
   readonly main: () => void;
-  readonly __wbg_jscircuitrelay_free: (a: number, b: number) => void;
   readonly __wbg_jscircuitstatus_free: (a: number, b: number) => void;
   readonly __wbg_jshttpresponse_free: (a: number, b: number) => void;
   readonly __wbg_torclient_free: (a: number, b: number) => void;
   readonly __wbg_torclientoptions_free: (a: number, b: number) => void;
   readonly init: () => void;
-  readonly jscircuitrelay_address: (a: number) => [number, number];
-  readonly jscircuitrelay_fingerprint: (a: number) => [number, number];
-  readonly jscircuitrelay_nickname: (a: number) => [number, number];
-  readonly jscircuitrelay_role: (a: number) => [number, number];
   readonly jscircuitstatus_creating_circuits: (a: number) => number;
   readonly jscircuitstatus_failed_circuits: (a: number) => number;
   readonly jscircuitstatus_has_ready_circuits: (a: number) => number;
@@ -207,7 +200,6 @@ export interface InitOutput {
   readonly torclient_getCircuitRelays: (a: number) => any;
   readonly torclient_getCircuitStatus: (a: number) => any;
   readonly torclient_getCircuitStatusString: (a: number) => any;
-  readonly torclient_get_circuit_relays_rust: (a: number) => any;
   readonly torclient_get_circuit_status_string_rust: (a: number) => any;
   readonly torclient_new: (a: number) => any;
   readonly torclient_updateCircuit: (a: number, b: number) => any;
@@ -215,6 +207,7 @@ export interface InitOutput {
   readonly torclient_waitForCircuit: (a: number) => any;
   readonly torclient_wait_for_circuit_rust: (a: number) => any;
   readonly torclientoptions_new: (a: number, b: number) => number;
+  readonly torclientoptions_snowflakeWebRtc: () => number;
   readonly torclientoptions_webtunnel: (a: number, b: number, c: number, d: number) => number;
   readonly torclientoptions_withBridgeFingerprint: (a: number, b: number, c: number) => number;
   readonly torclientoptions_withCircuitTimeout: (a: number, b: number) => number;
@@ -223,12 +216,12 @@ export interface InitOutput {
   readonly torclientoptions_withConnectionTimeout: (a: number, b: number) => number;
   readonly torclientoptions_withCreateCircuitEarly: (a: number, b: number) => number;
   readonly setLogCallback: (a: any) => void;
+  readonly wasm_bindgen__convert__closures_____invoke__hc8336e0ca3973277: (a: number, b: number, c: any) => void;
+  readonly wasm_bindgen__closure__destroy__h425dac40a0834752: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__h15fcc68dda9f98b6: (a: number, b: number) => void;
   readonly wasm_bindgen__closure__destroy__h03f628fb5c1af182: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__h32d5e12558544916: (a: number, b: number, c: any) => void;
   readonly wasm_bindgen__closure__destroy__hf76ded83d5f84246: (a: number, b: number) => void;
-  readonly wasm_bindgen__convert__closures_____invoke__h437f43f99c40f53c: (a: number, b: number, c: any) => void;
-  readonly wasm_bindgen__closure__destroy__h00070d11570d9b01: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__hd0509b06bbeda2ff: (a: number, b: number, c: any, d: any) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

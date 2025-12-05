@@ -734,13 +734,14 @@ mod error_tests {
 
 mod tls_config_tests {
     use super::*;
-    use subtle_tls::{TlsConfig, TlsConnector};
+    use subtle_tls::{TlsConfig, TlsConnector, TlsVersion};
 
     #[wasm_bindgen_test]
     async fn test_default_config() {
         let config = TlsConfig::default();
         assert!(!config.skip_verification);
         assert!(config.alpn_protocols.contains(&"http/1.1".to_string()));
+        assert_eq!(config.version, TlsVersion::Tls13);
     }
 
     #[wasm_bindgen_test]
@@ -748,9 +749,11 @@ mod tls_config_tests {
         let config = TlsConfig {
             skip_verification: true,
             alpn_protocols: vec!["h2".to_string(), "http/1.1".to_string()],
+            version: TlsVersion::Tls12,
         };
         assert!(config.skip_verification);
         assert_eq!(config.alpn_protocols.len(), 2);
+        assert_eq!(config.version, TlsVersion::Tls12);
     }
 
     #[wasm_bindgen_test]
@@ -760,5 +763,283 @@ mod tls_config_tests {
         
         let config = TlsConfig::default();
         let _connector = TlsConnector::with_config(config);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_tls_version_prefer13() {
+        let config = TlsConfig {
+            skip_verification: false,
+            alpn_protocols: vec!["http/1.1".to_string()],
+            version: TlsVersion::Prefer13,
+        };
+        assert_eq!(config.version, TlsVersion::Prefer13);
+    }
+}
+
+// TLS 1.2 specific tests
+#[cfg(feature = "tls12")]
+mod tls12_tests {
+    use super::*;
+    use subtle_tls::prf::{self, KeyMaterial};
+    use subtle_tls::crypto::AesCbc;
+    use subtle_tls::handshake_1_2::{
+        CipherSuiteParams, Handshake12State,
+        TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+        TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+    };
+
+    #[wasm_bindgen_test]
+    async fn test_prf_basic() {
+        let secret = vec![0x42u8; 32];
+        let label = b"test label";
+        let seed = vec![0x01u8; 32];
+        
+        let result = prf::prf(&secret, label, &seed, 48).await.unwrap();
+        assert_eq!(result.len(), 48);
+        
+        // Same inputs should produce same outputs
+        let result2 = prf::prf(&secret, label, &seed, 48).await.unwrap();
+        assert_eq!(result, result2);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_prf_different_lengths() {
+        let secret = vec![0x42u8; 32];
+        let label = b"expand";
+        let seed = vec![0x01u8; 32];
+        
+        let result_32 = prf::prf(&secret, label, &seed, 32).await.unwrap();
+        let result_64 = prf::prf(&secret, label, &seed, 64).await.unwrap();
+        let result_128 = prf::prf(&secret, label, &seed, 128).await.unwrap();
+        
+        assert_eq!(result_32.len(), 32);
+        assert_eq!(result_64.len(), 64);
+        assert_eq!(result_128.len(), 128);
+        
+        // First 32 bytes should match
+        assert_eq!(&result_32[..], &result_64[..32]);
+        assert_eq!(&result_64[..], &result_128[..64]);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_master_secret_derivation() {
+        let pms = vec![0x03u8; 48]; // Pre-master secret
+        let client_random = vec![0xaa; 32];
+        let server_random = vec![0xbb; 32];
+        
+        let ms = prf::derive_master_secret(&pms, &client_random, &server_random).await.unwrap();
+        assert_eq!(ms.len(), 48);
+        
+        // Different randoms should produce different master secrets
+        let different_client = vec![0xcc; 32];
+        let ms2 = prf::derive_master_secret(&pms, &different_client, &server_random).await.unwrap();
+        assert_ne!(ms, ms2);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_key_block_derivation() {
+        let master_secret = vec![0x42u8; 48];
+        let client_random = vec![0xaa; 32];
+        let server_random = vec![0xbb; 32];
+        
+        // For AES-128-GCM: need 2*(0 + 16 + 4) = 40 bytes
+        let key_block = prf::derive_key_block(
+            &master_secret,
+            &client_random,
+            &server_random,
+            40,
+        ).await.unwrap();
+        
+        assert_eq!(key_block.len(), 40);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_key_material_extraction_gcm() {
+        // AES-128-GCM: mac_key=0, key=16, iv=4
+        let key_block = vec![0x42u8; 40];
+        
+        let km = KeyMaterial::from_key_block(&key_block, 0, 16, 4).unwrap();
+        assert_eq!(km.client_write_mac_key.len(), 0);
+        assert_eq!(km.server_write_mac_key.len(), 0);
+        assert_eq!(km.client_write_key.len(), 16);
+        assert_eq!(km.server_write_key.len(), 16);
+        assert_eq!(km.client_write_iv.len(), 4);
+        assert_eq!(km.server_write_iv.len(), 4);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_key_material_extraction_cbc_sha256() {
+        // AES-128-CBC-SHA256: mac_key=32, key=16, iv=0
+        let key_block = vec![0x42u8; 96];
+        
+        let km = KeyMaterial::from_key_block(&key_block, 32, 16, 0).unwrap();
+        assert_eq!(km.client_write_mac_key.len(), 32);
+        assert_eq!(km.server_write_mac_key.len(), 32);
+        assert_eq!(km.client_write_key.len(), 16);
+        assert_eq!(km.server_write_key.len(), 16);
+        assert_eq!(km.client_write_iv.len(), 0);
+        assert_eq!(km.server_write_iv.len(), 0);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_compute_verify_data() {
+        let master_secret = vec![0x42u8; 48];
+        let handshake_hash = vec![0xaa; 32];
+        
+        let client_verify = prf::compute_verify_data(
+            &master_secret,
+            true, // is_client
+            &handshake_hash,
+        ).await.unwrap();
+        
+        let server_verify = prf::compute_verify_data(
+            &master_secret,
+            false, // is_server
+            &handshake_hash,
+        ).await.unwrap();
+        
+        assert_eq!(client_verify.len(), 12);
+        assert_eq!(server_verify.len(), 12);
+        // Client and server should have different verify_data
+        assert_ne!(client_verify, server_verify);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_compute_mac_sha256() {
+        let mac_key = vec![0x42u8; 32];
+        let fragment = b"test data";
+        
+        let mac = prf::compute_mac_sha256(
+            &mac_key,
+            0, // seq_num
+            23, // application_data
+            0x0303, // TLS 1.2
+            fragment,
+        ).await.unwrap();
+        
+        assert_eq!(mac.len(), 32);
+        
+        // Different sequence number should produce different MAC
+        let mac2 = prf::compute_mac_sha256(
+            &mac_key,
+            1, // different seq_num
+            23,
+            0x0303,
+            fragment,
+        ).await.unwrap();
+        assert_ne!(mac, mac2);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_aes_cbc_128_roundtrip() {
+        let key = vec![0x42u8; 16];
+        let cipher = AesCbc::new_128(&key).await.unwrap();
+        
+        let iv = vec![0x01u8; 16];
+        let plaintext = b"Hello, TLS 1.2 CBC mode!";
+        
+        let ciphertext = cipher.encrypt(&iv, plaintext).await.unwrap();
+        // CBC with PKCS#7 padding should be a multiple of 16 bytes
+        assert!(ciphertext.len() % 16 == 0);
+        assert!(ciphertext.len() >= plaintext.len());
+        
+        let decrypted = cipher.decrypt(&iv, &ciphertext).await.unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_aes_cbc_256_roundtrip() {
+        let key = vec![0x42u8; 32];
+        let cipher = AesCbc::new_256(&key).await.unwrap();
+        
+        let iv = vec![0x01u8; 16];
+        let plaintext = b"AES-256-CBC encrypted message for TLS 1.2!";
+        
+        let ciphertext = cipher.encrypt(&iv, plaintext).await.unwrap();
+        let decrypted = cipher.decrypt(&iv, &ciphertext).await.unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_cipher_suite_params_gcm_128() {
+        let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256).unwrap();
+        assert_eq!(params.mac_key_len, 0);
+        assert_eq!(params.key_len, 16);
+        assert_eq!(params.iv_len, 4);
+        assert!(params.is_aead);
+        assert_eq!(params.key_block_len(), 40);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_cipher_suite_params_gcm_256() {
+        let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384).unwrap();
+        assert_eq!(params.mac_key_len, 0);
+        assert_eq!(params.key_len, 32);
+        assert_eq!(params.iv_len, 4);
+        assert!(params.is_aead);
+        assert_eq!(params.key_block_len(), 72);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_cipher_suite_params_cbc_sha256() {
+        let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256).unwrap();
+        assert_eq!(params.mac_key_len, 32);
+        assert_eq!(params.key_len, 16);
+        assert_eq!(params.iv_len, 0);
+        assert!(!params.is_aead);
+        assert_eq!(params.mac_len, 32);
+        assert_eq!(params.key_block_len(), 96);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_cipher_suite_params_cbc_sha1() {
+        let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA).unwrap();
+        assert_eq!(params.mac_key_len, 20);
+        assert_eq!(params.key_len, 16);
+        assert_eq!(params.iv_len, 0);
+        assert!(!params.is_aead);
+        assert_eq!(params.mac_len, 20);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_handshake_state_creation() {
+        let state = Handshake12State::new("example.com").await.unwrap();
+        assert_eq!(state.server_name, "example.com");
+        assert_eq!(state.client_random.len(), 32);
+        assert_eq!(state.cipher_suite, 0); // Not yet negotiated
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_client_hello_build() {
+        let state = Handshake12State::new("test.example.com").await.unwrap();
+        let client_hello = state.build_client_hello();
+        
+        // Should start with handshake type 1 (ClientHello)
+        assert_eq!(client_hello[0], 1);
+        
+        // Should contain TLS 1.2 version (0x0303)
+        assert_eq!(client_hello[4], 0x03);
+        assert_eq!(client_hello[5], 0x03);
+        
+        // Client random should be at offset 6
+        assert_eq!(&client_hello[6..38], &state.client_random[..]);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_client_hello_contains_sni() {
+        let server_name = "test.httpbin.org";
+        let state = Handshake12State::new(server_name).await.unwrap();
+        let client_hello = state.build_client_hello();
+        
+        // The SNI should be in the extensions
+        let sni_bytes = server_name.as_bytes();
+        let mut found_sni = false;
+        for i in 0..client_hello.len().saturating_sub(sni_bytes.len()) {
+            if &client_hello[i..i + sni_bytes.len()] == sni_bytes {
+                found_sni = true;
+                break;
+            }
+        }
+        assert!(found_sni, "SNI not found in TLS 1.2 ClientHello");
     }
 }

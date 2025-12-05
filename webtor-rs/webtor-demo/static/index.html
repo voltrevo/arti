@@ -617,6 +617,7 @@
                                 <optgroup label="Test Endpoints">
                                     <option value="https://check.torproject.org/" selected>Tor Check</option>
                                     <option value="https://api.ipify.org?format=json">IP Check (ipify)</option>
+                                    <option value="https://httpbin.org/user-agent">HTTPBin (TLS 1.2)</option>
                                 </optgroup>
                                 <optgroup label="Ethereum RPC">
                                     <option value="https://eth.llamarpc.com">Llama RPC</option>
@@ -652,6 +653,7 @@
                                 <optgroup label="Test Endpoints">
                                     <option value="https://check.torproject.org/" selected>Tor Check</option>
                                     <option value="https://api.ipify.org?format=json">IP Check (ipify)</option>
+                                    <option value="https://httpbin.org/user-agent">HTTPBin (TLS 1.2)</option>
                                 </optgroup>
                                 <optgroup label="Ethereum RPC">
                                     <option value="https://eth.llamarpc.com">Llama RPC</option>
@@ -703,7 +705,7 @@
     <!-- Site Footer -->
     <footer class="site-footer">
         <div class="site-footer-inner">
-            <span>v0.2.9</span>
+            <span>v0.3.0</span>
             <div class="footer-links">
                 <a href="https://github.com/igor53627/webtor-rs" target="_blank" rel="noopener noreferrer">GitHub</a>
                 <a href="https://github.com/igor53627/webtor-rs#features" target="_blank" rel="noopener noreferrer">Features</a>
@@ -716,7 +718,6 @@
 
         // Constants
         const MAX_LOG_ENTRIES = 1000;
-        const TLS12_SITES = ['httpbin.org', 'httpbin.com'];
 
         // URL validation
         function validateUrl(url) {
@@ -744,20 +745,11 @@
             }
         }
 
-        function isTls12Site(url) {
-            try {
-                const hostname = new URL(url).hostname;
-                return TLS12_SITES.some(site => hostname.includes(site));
-            } catch {
-                return false;
-            }
-        }
-
         function formatTlsError(url, errorMessage) {
             if (errorMessage.includes('close_notify') || errorMessage.includes('TLS handshake failed') || errorMessage.includes('AlertReceived')) {
                 try {
                     const hostname = new URL(url).hostname;
-                    return `TLS Error: ${hostname} may require TLS 1.2 which is not supported.\n\nwebtor-rs only supports TLS 1.3.\n\nTry: check.torproject.org, google.com, cloudflare.com`;
+                    return `TLS Error connecting to ${hostname}.\n\nDetails: ${errorMessage}`;
                 } catch {
                     return errorMessage;
                 }
@@ -1178,13 +1170,6 @@
                         return;
                     }
 
-                    // Check for TLS 1.2 sites
-                    if (isTls12Site(url)) {
-                        output1.className = 'output-box error';
-                        output1.textContent = `This site (${validation.hostname}) only supports TLS 1.2.\n\nwebtor-rs requires TLS 1.3.\n\nTry: check.torproject.org, google.com, cloudflare.com`;
-                        return;
-                    }
-
                     output1.className = 'output-box loading';
                     output1.textContent = 'Making request...';
                     btn1.disabled = true;
@@ -1210,12 +1195,6 @@
                     if (!validation.valid) {
                         outputIsolated.className = 'output-box error';
                         outputIsolated.textContent = validation.error;
-                        return;
-                    }
-
-                    if (isTls12Site(url)) {
-                        outputIsolated.className = 'output-box error';
-                        outputIsolated.textContent = `This site only supports TLS 1.2.\n\nwebtor-rs requires TLS 1.3.`;
                         return;
                     }
 
