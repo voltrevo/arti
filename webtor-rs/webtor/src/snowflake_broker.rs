@@ -30,7 +30,7 @@ const CLIENT_VERSION: &str = "1.0";
 pub const DEFAULT_BRIDGE_FINGERPRINT: &str = "2B280B23E1107BB62ABFC40DDCC8824814F80A72";
 
 /// NAT type for the client
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum NatType {
     #[default]
@@ -151,9 +151,14 @@ impl BrokerClient {
         const MAX_RETRIES: u32 = 5;
         const RETRY_DELAY_MS: u64 = 2000;
         
-        let request = ClientPollRequest::new(sdp_offer.to_string())
-            .with_nat(self.nat_type)
+        // Build request - ClientPollRequest::new() sets NAT to "unrestricted" by default
+        // Only override if we have a real NAT type (not Unknown)
+        let mut request = ClientPollRequest::new(sdp_offer.to_string())
             .with_fingerprint(self.fingerprint.clone());
+        
+        if self.nat_type != NatType::Unknown {
+            request = request.with_nat(self.nat_type);
+        }
         
         let body = request.encode()?;
         let proxy_url = format!("{}/client", self.broker_url.trim_end_matches('/'));
@@ -166,7 +171,7 @@ impl BrokerClient {
             let response_bytes = self.fetch_wasm(&proxy_url, &body).await?;
             
             #[cfg(not(target_arch = "wasm32"))]
-            let response_bytes = self.fetch_native(&format!("{}client", self.broker_url.trim_end_matches('/')), &body).await?;
+            let response_bytes = self.fetch_native(&proxy_url, &body).await?;
             
             let response = ClientPollResponse::decode(&response_bytes)?;
             
