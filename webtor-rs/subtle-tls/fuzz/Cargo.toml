@@ -1,0 +1,44 @@
+[package]
+name = "subtle-tls-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.subtle-tls]
+path = ".."
+features = ["tls12"]
+
+[[bin]]
+name = "fuzz_server_hello"
+path = "fuzz_targets/fuzz_server_hello.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_certificate"
+path = "fuzz_targets/fuzz_certificate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_record"
+path = "fuzz_targets/fuzz_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_handshake_parse"
+path = "fuzz_targets/fuzz_handshake_parse.rs"
+test = false
+doc = false
+bench = false

@@ -671,7 +671,12 @@ pub fn parse_certificate(data: &[u8]) -> Result<Vec<Vec<u8>>> {
 
     // Certificate request context (should be empty for server cert)
     let context_len = data[pos] as usize;
-    pos += 1 + context_len;
+    pos += 1;
+    
+    if pos + context_len > data.len() {
+        return Err(TlsError::handshake("Certificate context overflow"));
+    }
+    pos += context_len;
 
     if pos + 3 > data.len() {
         return Err(TlsError::handshake("Certificate list length missing"));
@@ -681,15 +686,15 @@ pub fn parse_certificate(data: &[u8]) -> Result<Vec<Vec<u8>>> {
     let list_len = ((data[pos] as usize) << 16) | ((data[pos + 1] as usize) << 8) | (data[pos + 2] as usize);
     pos += 3;
 
-    let list_end = pos + list_len;
+    let list_end = pos.saturating_add(list_len).min(data.len());
     let mut certs = Vec::new();
 
-    while pos + 3 <= list_end {
+    while pos + 3 <= list_end && pos + 3 <= data.len() {
         // Certificate length
         let cert_len = ((data[pos] as usize) << 16) | ((data[pos + 1] as usize) << 8) | (data[pos + 2] as usize);
         pos += 3;
 
-        if pos + cert_len > list_end {
+        if pos + cert_len > list_end || pos + cert_len > data.len() {
             return Err(TlsError::handshake("Certificate data overflow"));
         }
 
@@ -697,8 +702,11 @@ pub fn parse_certificate(data: &[u8]) -> Result<Vec<Vec<u8>>> {
         pos += cert_len;
 
         // Skip extensions
-        if pos + 2 <= list_end {
+        if pos + 2 <= list_end && pos + 2 <= data.len() {
             let ext_len = ((data[pos] as usize) << 8) | (data[pos + 1] as usize);
+            if pos + 2 + ext_len > data.len() {
+                break; // Truncated extensions, stop parsing
+            }
             pos += 2 + ext_len;
         }
     }

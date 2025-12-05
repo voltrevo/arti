@@ -4,6 +4,9 @@ members = [
     "webtor-wasm",
     "webtor-demo"
 ]
+exclude = [
+    "subtle-tls/fuzz"
+]
 resolver = "2"
 
 [workspace.package]
