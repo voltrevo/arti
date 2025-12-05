@@ -98,15 +98,15 @@ async fn verify_certificate_chain(&self, certs: &[Certificate]) -> Result<()> {
 
 | Feature | webtor-rs | echalote |
 |---------|-----------|----------|
-| **Connection Methods** | WebSocket OR WebRTC | Direct WebSocket only |
-| **WebRTC Support** | Yes (via broker) | No |
+| **Connection Methods** | WebSocket AND WebRTC | Direct WebSocket only |
+| **WebRTC Support** | Yes (via broker, JSON-encoded SDPs) | No |
 | **Protocol Stack** | WebRTC/WebSocket -> Turbo -> KCP -> SMUX | WebSocket -> Turbo -> KCP -> SMUX |
 
 **webtor-rs supports both connection methods:**
 - **WebSocket**: Direct connection to bridge (simpler, faster setup)
 - **WebRTC**: Via broker + volunteer proxies (more censorship resistant)
 
-The WebRTC option routes traffic through volunteer browser extensions, making it harder to block.
+The WebRTC option routes traffic through volunteer browser extensions, making it harder to block. The SDP offer/answer exchange uses JSON format matching the official Go Snowflake client.
 
 #### WebTunnel Support
 
