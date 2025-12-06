@@ -714,7 +714,7 @@
     </footer>
 
     <script type="module">
-        import init, { DemoApp, setLogCallback, setDebugEnabled } from './pkg/webtor_demo.js';
+        import init, { DemoApp, setLogCallback, setDebugEnabled, runTorBenchmark, runQuickBenchmark } from './pkg/webtor_demo.js';
 
         // Constants
         const MAX_LOG_ENTRIES = 1000;
@@ -951,6 +951,12 @@
 
                 await init();
                 logCallback('INFO', 'init', 'WASM module loaded');
+                
+                // Expose benchmark functions for e2e tests
+                window.webtor_demo = {
+                    runTorBenchmark,
+                    runQuickBenchmark,
+                };
 
                 setLogCallback(logCallback);
 

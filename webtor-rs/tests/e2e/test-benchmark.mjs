@@ -30,7 +30,7 @@ const CONFIG = {
     timeout: 180000, // 3 minutes total
     headless: true,
     quick: false,
-    testUrl: 'https://httpbin.org/ip',
+    testUrl: 'https://api64.ipify.org?format=json', // TLS 1.3 compatible
 };
 
 // Parse CLI args

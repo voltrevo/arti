@@ -1,6 +1,14 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class BenchmarkResult {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  readonly fetch_latency_ms: number;
+  readonly circuit_creation_ms: number;
+}
+
 export class DemoApp {
   free(): void;
   [Symbol.dispose](): void;
@@ -142,6 +150,23 @@ export function init(): void;
 export function main(): void;
 
 /**
+ * Run a quick benchmark using WebSocket Snowflake (faster but less censorship resistant)
+ */
+export function runQuickBenchmark(test_url: string): Promise<BenchmarkResult>;
+
+/**
+ * Run a Tor benchmark measuring circuit creation and fetch latency
+ * 
+ * This function measures:
+ * 1. Circuit creation time: from TorClient creation to ready circuit
+ * 2. Fetch latency: time for a single HTTP GET request through Tor
+ * 
+ * @param test_url - URL to fetch for the latency test (e.g., "https://httpbin.org/ip")
+ * @returns BenchmarkResult with timing measurements in milliseconds
+ */
+export function runTorBenchmark(test_url: string): Promise<BenchmarkResult>;
+
+/**
  * Enable or disable debug-level logging
  */
 export function setDebugEnabled(enabled: boolean): void;
@@ -160,7 +185,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly __wbg_benchmarkresult_free: (a: number, b: number) => void;
   readonly __wbg_demoapp_free: (a: number, b: number) => void;
+  readonly benchmarkresult_circuit_creation_ms: (a: number) => number;
+  readonly benchmarkresult_fetch_latency_ms: (a: number) => number;
   readonly demoapp_close: (a: number) => any;
   readonly demoapp_get: (a: number, b: number, c: number) => any;
   readonly demoapp_getCircuitRelays: (a: number) => any;
@@ -171,6 +199,8 @@ export interface InitOutput {
   readonly demoapp_setStatusCallback: (a: number, b: any) => void;
   readonly demoapp_triggerCircuitUpdate: (a: number) => any;
   readonly main: () => void;
+  readonly runQuickBenchmark: (a: number, b: number) => any;
+  readonly runTorBenchmark: (a: number, b: number) => any;
   readonly __wbg_jscircuitstatus_free: (a: number, b: number) => void;
   readonly __wbg_jshttpresponse_free: (a: number, b: number) => void;
   readonly __wbg_torclient_free: (a: number, b: number) => void;
@@ -216,10 +246,10 @@ export interface InitOutput {
   readonly torclientoptions_withConnectionTimeout: (a: number, b: number) => number;
   readonly torclientoptions_withCreateCircuitEarly: (a: number, b: number) => number;
   readonly setLogCallback: (a: any) => void;
-  readonly wasm_bindgen__convert__closures_____invoke__hc8336e0ca3973277: (a: number, b: number, c: any) => void;
-  readonly wasm_bindgen__closure__destroy__h425dac40a0834752: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__h15fcc68dda9f98b6: (a: number, b: number) => void;
   readonly wasm_bindgen__closure__destroy__h03f628fb5c1af182: (a: number, b: number) => void;
+  readonly wasm_bindgen__convert__closures_____invoke__h099e459a18456efc: (a: number, b: number, c: any) => void;
+  readonly wasm_bindgen__closure__destroy__h0e079988b47e5986: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__h32d5e12558544916: (a: number, b: number, c: any) => void;
   readonly wasm_bindgen__closure__destroy__hf76ded83d5f84246: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__hd0509b06bbeda2ff: (a: number, b: number, c: any, d: any) => void;
