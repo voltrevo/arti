@@ -33,9 +33,6 @@ jobs:
 
     - name: Run property tests
       run: cargo test --package webtor proptest -- --test-threads=1
-      env:
-        # Use deterministic seed for CI reproducibility
-        PROPTEST_CASES: 256
 
     - name: Upload regression files on failure
       if: failure()
