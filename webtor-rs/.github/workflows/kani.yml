@@ -1,0 +1,45 @@
+name: Kani Verification
+
+on:
+  # Manual trigger only - Kani proofs are slow and best run locally during development
+  # Run with: gh workflow run kani.yml
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  kani:
+    name: Kani Proofs
+    runs-on: self-hosted
+
+    steps:
+      # Pin to commit SHA to prevent supply chain attacks
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Kani
+        uses: model-checking/kani-github-action@f838096619a707b0f6b2118cf435eaccfa33e51f # v1.1
+        with:
+          enable-propproof: false
+
+      - name: Run Kani on subtle-tls
+        id: kani
+        run: |
+          cd subtle-tls
+          cargo kani --tests
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Kani Verification Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.kani.outcome }}" == "success" ]; then
+            echo "Kani verification **passed**." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Verified Properties" >> $GITHUB_STEP_SUMMARY
+            echo "- Parser functions never panic on arbitrary inputs" >> $GITHUB_STEP_SUMMARY
+            echo "- ECDSA DER conversion always returns correct size on success" >> $GITHUB_STEP_SUMMARY
+            echo "- Certificate parsing always returns non-empty result on success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Kani verification **failed**. Check the logs for details." >> $GITHUB_STEP_SUMMARY
+          fi

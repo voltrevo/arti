@@ -623,10 +623,13 @@ async fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
 
     let key_data = Uint8Array::from(key);
     let algorithm = Object::new();
-    Reflect::set(&algorithm, &"name".into(), &"HMAC".into()).unwrap();
+    Reflect::set(&algorithm, &"name".into(), &"HMAC".into())
+        .map_err(|_| TlsError::subtle_crypto("Failed to set HMAC algorithm name"))?;
     let hash_obj = Object::new();
-    Reflect::set(&hash_obj, &"name".into(), &"SHA-256".into()).unwrap();
-    Reflect::set(&algorithm, &"hash".into(), &hash_obj).unwrap();
+    Reflect::set(&hash_obj, &"name".into(), &"SHA-256".into())
+        .map_err(|_| TlsError::subtle_crypto("Failed to set hash algorithm name"))?;
+    Reflect::set(&algorithm, &"hash".into(), &hash_obj)
+        .map_err(|_| TlsError::subtle_crypto("Failed to set hash in algorithm"))?;
 
     let key_usages = Array::new();
     key_usages.push(&"sign".into());
@@ -741,4 +744,82 @@ pub fn parse_certificate_verify(data: &[u8]) -> Result<(u16, Vec<u8>)> {
 pub fn parse_finished(data: &[u8]) -> Result<Vec<u8>> {
     // Finished message is just the verify_data
     Ok(data.to_vec())
+}
+
+/// Maximum handshake message size (matches TLS spec 24-bit length field: 0 to 2^24-1)
+pub const MAX_HANDSHAKE_MESSAGE_SIZE: usize = (1 << 24) - 1;
+
+#[cfg(kani)]
+mod verification {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn parse_handshake_header_never_panics() {
+        let data: [u8; 8] = kani::any();
+        let _ = parse_handshake_header(&data);
+    }
+
+    #[kani::proof]
+    fn parse_handshake_header_empty_never_panics() {
+        let data: [u8; 0] = [];
+        let _ = parse_handshake_header(&data);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn parse_handshake_header_short_never_panics() {
+        let data: [u8; 3] = kani::any();
+        let _ = parse_handshake_header(&data);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn parse_certificate_never_panics() {
+        // Use smaller input to keep verification tractable
+        let data: [u8; 16] = kani::any();
+        let _ = parse_certificate(&data);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn parse_certificate_verify_never_panics() {
+        let data: [u8; 16] = kani::any();
+        let _ = parse_certificate_verify(&data);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn parse_finished_never_panics() {
+        let data: [u8; 8] = kani::any();
+        let _ = parse_finished(&data);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn handshake_header_length_bounded() {
+        let data: [u8; 4] = kani::any();
+        if let Ok((_ty, len)) = parse_handshake_header(&data) {
+            kani::assert(len < (1 << 24), "length exceeds 24-bit max");
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn certificate_parse_non_empty_on_ok() {
+        // Use smaller input to keep verification tractable
+        let data: [u8; 16] = kani::any();
+        if let Ok(certs) = parse_certificate(&data) {
+            kani::assert(!certs.is_empty(), "certs should be non-empty on Ok");
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn finished_parse_preserves_length() {
+        let data: [u8; 8] = kani::any();
+        if let Ok(result) = parse_finished(&data) {
+            kani::assert(result.len() == data.len(), "finished preserves length");
+        }
+    }
 }

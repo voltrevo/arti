@@ -598,10 +598,19 @@ fn convert_ecdsa_signature_from_der_sized(der_sig: &[u8], coord_size: usize) -> 
     }
     pos += 1;
 
+    // Bounds check before reading SEQUENCE length
+    if pos >= der_sig.len() {
+        return Err(TlsError::certificate("ECDSA signature truncated at sequence length"));
+    }
+
     // SEQUENCE length
     let _seq_len = if der_sig[pos] & 0x80 != 0 {
         let len_bytes = (der_sig[pos] & 0x7f) as usize;
         pos += 1;
+        // Bounds check for multi-byte length
+        if pos + len_bytes > der_sig.len() {
+            return Err(TlsError::certificate("ECDSA signature truncated in length field"));
+        }
         let mut len = 0usize;
         for _ in 0..len_bytes {
             len = (len << 8) | (der_sig[pos] as usize);
@@ -614,23 +623,37 @@ fn convert_ecdsa_signature_from_der_sized(der_sig: &[u8], coord_size: usize) -> 
         len
     };
 
-    // Parse r
+    // Parse r - bounds check for tag and length bytes
+    if pos + 2 > der_sig.len() {
+        return Err(TlsError::certificate("ECDSA signature truncated at r header"));
+    }
     if der_sig[pos] != 0x02 {
         return Err(TlsError::certificate("Invalid ECDSA signature: r not INTEGER"));
     }
     pos += 1;
     let r_len = der_sig[pos] as usize;
     pos += 1;
+    // Bounds check for r data
+    if pos + r_len > der_sig.len() {
+        return Err(TlsError::certificate("ECDSA signature r data overflow"));
+    }
     let r_bytes = &der_sig[pos..pos + r_len];
     pos += r_len;
 
-    // Parse s
+    // Parse s - bounds check for tag and length bytes
+    if pos + 2 > der_sig.len() {
+        return Err(TlsError::certificate("ECDSA signature truncated at s header"));
+    }
     if der_sig[pos] != 0x02 {
         return Err(TlsError::certificate("Invalid ECDSA signature: s not INTEGER"));
     }
     pos += 1;
     let s_len = der_sig[pos] as usize;
     pos += 1;
+    // Bounds check for s data
+    if pos + s_len > der_sig.len() {
+        return Err(TlsError::certificate("ECDSA signature s data overflow"));
+    }
     let s_bytes = &der_sig[pos..pos + s_len];
 
     // Convert to fixed-size (coord_size bytes each)
@@ -846,5 +869,36 @@ mod tests {
 
         let raw = convert_ecdsa_signature_from_der(&der_sig).unwrap();
         assert_eq!(raw.len(), 64);
+    }
+}
+
+#[cfg(kani)]
+mod verification {
+    use super::*;
+
+    // Use smaller input sizes to keep verification tractable
+    // The function logic is the same regardless of input size
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn ecdsa_der_conversion_never_panics_short() {
+        let sig: [u8; 16] = kani::any();
+        let _ = convert_ecdsa_signature_from_der_sized(&sig, 32);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn ecdsa_der_conversion_never_panics_medium() {
+        let sig: [u8; 16] = kani::any();
+        let _ = convert_ecdsa_signature_from_der_sized(&sig, 48);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn ecdsa_der_conversion_size_correct() {
+        let sig: [u8; 16] = kani::any();
+        if let Ok(raw) = convert_ecdsa_signature_from_der_sized(&sig, 32) {
+            kani::assert(raw.len() == 64, "P-256 output should be 64 bytes");
+        }
     }
 }

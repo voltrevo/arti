@@ -1,0 +1,88 @@
+name: Security Audit
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: '0 6 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-deny:
+    name: Dependency Licenses & Bans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+  cargo-audit:
+    name: Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo-audit
+        run: cargo audit
+        # Non-blocking initially - change to 'run: cargo audit' once advisories are triaged
+        continue-on-error: true
+
+  fuzz-smoke:
+    name: Fuzz Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Cache fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: |
+            subtle-tls/fuzz/corpus/
+            webtor/fuzz/corpus/
+          key: ${{ runner.os }}-fuzz-corpus-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-corpus-
+
+      - name: Run subtle-tls fuzzers (30s each)
+        working-directory: subtle-tls/fuzz
+        run: |
+          for target in fuzz_certificate fuzz_server_hello fuzz_handshake_parse fuzz_record; do
+            echo "Fuzzing: $target"
+            cargo +nightly fuzz run $target -- -max_total_time=30 || exit 1
+          done
+
+      - name: Run webtor fuzzers (30s each)
+        working-directory: webtor/fuzz
+        run: |
+          cargo +nightly fuzz run fuzz_isolation_key -- -max_total_time=30 || exit 1
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            subtle-tls/fuzz/artifacts/
+            webtor/fuzz/artifacts/
+          if-no-files-found: ignore
