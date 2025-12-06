@@ -184,7 +184,7 @@ webtor-rs/
 
 ## 🚧 In Progress / Planned
 
-### Phase 5 - Optimization (Partially Complete)
+### Phase 5 - Optimization ✅ Complete
 - [x] WASM bundle size optimization (0.94 MB gzipped, was 1.30 MB)
 - [x] Circuit creation performance improvements
   - [x] Parallel microdescriptor fetching (CHUNK_SIZE=256, MAX_PARALLEL_CHUNKS=3)
@@ -193,54 +193,57 @@ webtor-rs/
 - [x] Connection pooling and reuse (circuits kept alive, MAX_CIRCUITS=2)
 - [x] Parallel consensus fetching (microdescriptors fetched in parallel batches)
 - [x] Criterion benchmarks for CPU-bound operations
-- [ ] Further latency optimizations (target: <30s circuit, <3s request)
+- [x] WebRTC connection retry for unreliable volunteer proxies
 
-### Phase 6 - Advanced Features
-- [ ] TLS 1.2 support (for legacy sites like httpbin.org)
-- [ ] Stream isolation per domain
-- [ ] Advanced relay selection (bandwidth weights)
-- [ ] Onion service (.onion) support
-
-### Phase 7 - Production Readiness
-- [ ] Security audit
+### Phase 6 - Advanced Features ✅ Complete
+- [x] TLS 1.2 support with automatic fallback (PR #13)
+- [x] Comprehensive E2E test suite (regression tests for all preset URLs)
 - [x] Performance benchmarks (Criterion + E2E via Playwright)
-- [ ] Comprehensive test suite
-- [ ] Documentation improvements
-- [ ] Mobile browser optimizations
+- [x] Fuzz testing for TLS parsing (4 targets: certificate, server_hello, handshake, record)
 
-## Warning Known Limitations
+### Phase 7 - Future Enhancements
+Open issues for future work:
+- [ ] Stream isolation per domain (#21)
+- [ ] WASM bundle further optimization (#22)
+- [ ] Onion service (.onion) support (#23)
+- [ ] Security audit with Rocq formal verification (#25)
 
-### TLS 1.3 Only
-The WASM TLS implementation (`subtle-tls`) only supports TLS 1.3. Sites that only support TLS 1.2 (like httpbin.org) will fail with `close_notify` alert.
+## ⚠️ Known Limitations
 
-**Working sites** (TLS 1.3): example.com, google.com, cloudflare.com, github.com
-**Non-working sites** (TLS 1.2 only): httpbin.org
+### TLS Version Support
+The WASM TLS implementation (`subtle-tls`) supports both TLS 1.3 and TLS 1.2:
+- **TLS 1.3**: Preferred, used by default
+- **TLS 1.2**: Automatic fallback when server doesn't support TLS 1.3
 
-Adding TLS 1.2 support requires implementing different key exchange and cipher suites.
+Most modern sites work. Some legacy servers may have compatibility issues.
 
 ## 📊 Current Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Core Library | Yes Complete | Full Tor protocol support |
-| WebTunnel | Yes Complete | Works on WASM + Native |
-| Snowflake (WS) | Yes Complete | Direct WebSocket to bridge |
-| Snowflake (WebRTC) | Yes Complete | Via volunteer proxies (WASM) |
-| TLS/HTTPS | Yes Complete | TLS 1.3 via SubtleCrypto |
-| Consensus | Yes Complete | Fetching + parsing + caching |
-| Circuit Creation | Yes Complete | 3-hop circuits |
-| HTTP Client | Yes Complete | GET/POST support |
-| WASM Build | Yes Working | ~2-3 MB bundle |
-| Demo App | Yes Working | Interactive UI |
+| Core Library | ✅ Complete | Full Tor protocol support |
+| WebTunnel | ✅ Complete | Works on WASM + Native |
+| Snowflake (WS) | ✅ Complete | Direct WebSocket to bridge |
+| Snowflake (WebRTC) | ✅ Complete | Via volunteer proxies (WASM) |
+| TLS/HTTPS | ✅ Complete | TLS 1.3 + 1.2 fallback |
+| Consensus | ✅ Complete | Fetching + parsing + caching |
+| Circuit Creation | ✅ Complete | 3-hop circuits with reuse |
+| HTTP Client | ✅ Complete | GET/POST support |
+| WASM Build | ✅ Working | 0.94 MB gzipped |
+| Demo App | ✅ Working | Interactive UI |
+| E2E Tests | ✅ Complete | Regression + benchmarks |
+| Fuzz Testing | ✅ Complete | 4 TLS parsing targets |
 
 ## 🔒 Security Features
 
-- Yes **TLS Certificate Validation** - Using webpki-roots + SubtleCrypto
-- Yes **ntor-v3 Handshake** - Modern key exchange
-- Yes **CREATE2 Circuits** - Current Tor standard
-- Yes **Memory Safety** - Rust guarantees
-- Yes **Audited Crypto** - ring, dalek crates (native), SubtleCrypto (WASM)
-- Yes **Correct Snowflake** - Proper WebRTC architecture via broker
+- ✅ **TLS Certificate Validation** - Using webpki-roots + SubtleCrypto
+- ✅ **TLS 1.3 + 1.2 Support** - Automatic version negotiation
+- ✅ **ntor-v3 Handshake** - Modern key exchange
+- ✅ **CREATE2 Circuits** - Current Tor standard
+- ✅ **Memory Safety** - Rust guarantees
+- ✅ **Audited Crypto** - ring, dalek crates (native), SubtleCrypto (WASM)
+- ✅ **Correct Snowflake** - Proper WebRTC architecture via broker
+- ✅ **Fuzz Testing** - Continuous fuzzing of TLS parsing
 
 ## 📈 Performance Characteristics
 
