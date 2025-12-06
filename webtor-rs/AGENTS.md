@@ -17,6 +17,25 @@ wasm-pack build webtor-demo --target web --out-dir pkg --release
 cd example && npm install && npm run dev
 ```
 
+## Test Commands
+
+```bash
+# Unit tests
+cargo test -p webtor
+
+# Property-based tests (proptest)
+cargo test -p webtor proptest
+
+# E2E tests (requires network)
+npm run test:tls
+
+# Criterion microbenchmarks
+cargo bench -p webtor --bench circuit_params
+
+# Fuzz tests (requires nightly)
+cd subtle-tls/fuzz && cargo +nightly fuzz run fuzz_server_hello
+```
+
 ## Project Structure
 
 - `webtor/` - Core Tor client library

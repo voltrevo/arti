@@ -164,9 +164,32 @@ flowchart TB
 # Unit tests
 cargo test -p webtor
 
+# Property-based tests (proptest)
+cargo test -p webtor proptest
+
 # E2E tests (requires network)
-cargo test -p webtor --test e2e -- --ignored --nocapture
+npm run test:tls
+
+# Benchmarks (requires network)
+cargo bench -p webtor --bench tor_benchmark
+
+# Criterion microbenchmarks (deterministic)
+cargo bench -p webtor --bench circuit_params
+
+# Fuzz tests (manual trigger via GitHub Actions)
+cd subtle-tls/fuzz && cargo +nightly fuzz run fuzz_server_hello
 ```
+
+## CI/CD
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| Tests | Push/PR | Unit tests, E2E, WASM build, Clippy, Rustfmt |
+| Property Tests | Push/PR | Proptest for turbo, smux, relay modules |
+| Fuzz Testing | Manual | Fuzz testing for TLS parsing |
+| WASM Build | Push/PR | Build and size check |
+| Daily Consensus | Scheduled | Update cached consensus data |
+| Deploy Example | Push to main | Deploy demo to GitHub Pages |
 
 ## License
 
