@@ -1,5 +1,7 @@
 # webtor-rs
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/igor53627/webtor-rs)
+
 A Rust Tor client for WebAssembly. Provides anonymous HTTP/HTTPS through Tor using Snowflake (WebRTC) and WebTunnel bridges.
 
 ```
