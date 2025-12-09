@@ -2,17 +2,21 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/igor53627/webtor-rs)
 
-A Rust Tor client for WebAssembly. Provides anonymous HTTP/HTTPS through Tor using Snowflake (WebRTC) and WebTunnel bridges.
+A browser-focused Tor client written in Rust and compiled to WebAssembly (WASM), with optional native support. It enables anonymous HTTP/HTTPS connections through the Tor network directly from web browsers, without requiring plugins, extensions, or native applications.
 
-```
-                             ░██           ░██                        
-                             ░██           ░██                        
-░██    ░██    ░██  ░███████  ░████████  ░████████  ░███████  ░██░████ 
-░██    ░██    ░██ ░██    ░██ ░██    ░██    ░██    ░██    ░██ ░███     
- ░██  ░████  ░██  ░█████████ ░██    ░██    ░██    ░██    ░██ ░██      
-  ░██░██ ░██░██   ░██        ░███   ░██    ░██    ░██    ░██ ░██      
-   ░███   ░███     ░███████  ░██░█████      ░████  ░███████  ░██      
-```
+**[Live Demo](https://igor53627.github.io/webtor-rs/)**
+
+## Key Capabilities
+
+| Capability | Implementation | Status |
+|------------|----------------|--------|
+| Tor Protocol | `tor-proto` crate (official Arti) | Full support for v3-v5 |
+| Circuit Creation | CREATE2 with ntor-v3 handshake | Modern, secure |
+| TLS Security | TLS 1.3 with certificate validation | Hardened, actively tested |
+| Snowflake Bridge | WebSocket + WebRTC transports | WASM-compatible |
+| WebTunnel Bridge | HTTPS with RFC 9298 upgrade | Native + WASM |
+| Consensus | Embedded snapshot + online fetch | Daily auto-updates, 1h cache |
+| Cryptography | SubtleCrypto (browser) + Dalek crates | Audited libraries |
 
 ## Features
 
@@ -22,7 +26,7 @@ A Rust Tor client for WebAssembly. Provides anonymous HTTP/HTTPS through Tor usi
 - **TLS 1.3 Support** - Pure-Rust TLS via SubtleCrypto (WASM)
 - **Stream Isolation** - Separate circuits per domain using Mozilla's Public Suffix List (Tor Browser-style)
 - **Circuit Reuse** - Persistent circuits for performance
-- **Consensus Fetching** - Automatic relay discovery with caching
+- **Consensus Handling** - Embedded snapshot + online fetching with 1-hour caching (no CORS issues)
 
 ## Quick Start
 
@@ -120,6 +124,15 @@ flowchart TB
     Relays --> Exit
 ```
 
+## Core Components
+
+| Crate | Description |
+|-------|-------------|
+| `webtor` | Core Tor client library with TorClient, circuit management, relay selection |
+| `webtor-wasm` | WASM bindings using wasm-bindgen for JavaScript interop |
+| `webtor-demo` | Demo application with embedded consensus |
+| `subtle-tls` | TLS 1.2/1.3 implementation using browser SubtleCrypto APIs |
+
 ## Transports
 
 | Transport | WASM | Native | Notes |
@@ -127,6 +140,24 @@ flowchart TB
 | Snowflake (WebSocket) | Yes | No | Direct connection to bridge (simpler) |
 | Snowflake (WebRTC) | Yes | No | Via volunteer proxies (more censorship resistant) |
 | WebTunnel | Yes | Yes | HTTPS, works through corporate proxies |
+
+## Comparison with echalote
+
+| Feature | webtor-rs | echalote |
+|---------|-----------|----------|
+| Protocol | Official `tor-proto` crate | Custom TypeScript |
+| TLS Validation | Yes (SubtleCrypto) | No (vulnerable to MITM) |
+| Handshake | ntor-v3 (modern) | ntor (legacy) |
+| Circuit Creation | CREATE2 | CREATE_FAST |
+| Language | Rust (memory-safe) | TypeScript |
+| Maturity | Actively developed | Experimental |
+
+## Use Cases
+
+- **Censorship Circumvention** - Access blocked websites through Tor bridges in restrictive networks
+- **Anonymous Browsing** - Make HTTP requests without revealing IP address or location
+- **Privacy-Preserving Applications** - Build web apps that protect user anonymity by default
+- **Educational Tools** - Demonstrate Tor protocol and cryptography in browser environment
 
 ## Status
 
@@ -136,10 +167,16 @@ flowchart TB
 | Snowflake (WS) | Complete | Direct WebSocket + Turbo/KCP/SMUX |
 | Snowflake (WebRTC) | Complete | Broker API + volunteer proxies |
 | WebTunnel | Complete | HTTPS Upgrade with TLS validation |
-| Consensus | Complete | Fetching + parsing + 1hr caching |
+| Consensus | Complete | Embedded snapshot + fetching, 1h caching |
 | HTTP Client | Complete | GET/POST through exit relays |
 | TLS (WASM) | Complete | TLS 1.3 via SubtleCrypto, TLS 1.2 experimental |
 | Demo App | Working | Interactive browser UI |
+
+## Security
+
+- This project is **not** a full replacement for Tor Browser. It does not protect against browser fingerprinting or application-layer leaks.
+- TLS certificate validation is enforced, but the implementation has **not yet undergone a formal third-party security audit**.
+- For a hardened, end-user-oriented browser experience, use [Tor Browser](https://www.torproject.org/) instead.
 
 ## Limitations
 
@@ -166,6 +203,7 @@ flowchart TB
 
 - [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) - Detailed roadmap and architecture
 - [COMPARISON.md](COMPARISON.md) - Comparison with echalote
+- [DeepWiki Documentation](https://deepwiki.com/igor53627/webtor-rs) - AI-generated documentation
 
 ## Testing
 
