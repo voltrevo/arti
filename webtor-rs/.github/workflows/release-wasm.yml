@@ -1,0 +1,111 @@
+name: Release WASM
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v0.1.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Install wasm-opt
+      run: |
+        curl -L https://github.com/WebAssembly/binaryen/releases/download/version_118/binaryen-version_118-x86_64-linux.tar.gz | tar xz
+        sudo mv binaryen-version_118/bin/wasm-opt /usr/local/bin/
+
+    - name: Build webtor-wasm (release)
+      run: wasm-pack build webtor-wasm --target web --release
+
+    - name: Optimize WASM
+      run: |
+        wasm-opt -Oz --strip-dwarf --strip-producers \
+          -o webtor-wasm/pkg/webtor_wasm_bg_opt.wasm \
+          webtor-wasm/pkg/webtor_wasm_bg.wasm
+        mv webtor-wasm/pkg/webtor_wasm_bg_opt.wasm webtor-wasm/pkg/webtor_wasm_bg.wasm
+
+    - name: Get version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Package WASM
+      run: |
+        cd webtor-wasm/pkg
+        tar -czvf webtor-wasm-${{ steps.version.outputs.version }}.tar.gz \
+          webtor_wasm.js \
+          webtor_wasm.d.ts \
+          webtor_wasm_bg.wasm \
+          webtor_wasm_bg.wasm.d.ts \
+          package.json
+        
+        # Also create a zip for convenience
+        zip -r webtor-wasm-${{ steps.version.outputs.version }}.zip \
+          webtor_wasm.js \
+          webtor_wasm.d.ts \
+          webtor_wasm_bg.wasm \
+          webtor_wasm_bg.wasm.d.ts \
+          package.json
+
+    - name: Show WASM size
+      run: |
+        ls -lh webtor-wasm/pkg/webtor_wasm_bg.wasm
+        gzip -c webtor-wasm/pkg/webtor_wasm_bg.wasm | wc -c | awk '{printf "Gzipped: %.2f MB\n", $1/1024/1024}'
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: webtor-wasm ${{ steps.version.outputs.version }}
+        body: |
+          ## webtor-wasm ${{ steps.version.outputs.version }}
+          
+          Pre-built WebAssembly bindings for webtor-rs.
+          
+          ### Installation
+          
+          Download and extract to your project:
+          ```bash
+          curl -L https://github.com/igor53627/webtor-rs/releases/download/${{ steps.version.outputs.version }}/webtor-wasm-${{ steps.version.outputs.version }}.tar.gz | tar xz -C ./vendor/webtor-wasm
+          ```
+          
+          ### Usage
+          ```javascript
+          import init, { TorClient, TorClientOptions } from './vendor/webtor-wasm/webtor_wasm.js'
+          
+          await init()
+          const options = new TorClientOptions('wss://snowflake.torproject.net/')
+          const client = await new TorClient(options)
+          await client.waitForCircuit()
+          ```
+        files: |
+          webtor-wasm/pkg/webtor-wasm-${{ steps.version.outputs.version }}.tar.gz
+          webtor-wasm/pkg/webtor-wasm-${{ steps.version.outputs.version }}.zip
+        draft: false
+        prerelease: false
