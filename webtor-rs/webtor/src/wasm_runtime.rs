@@ -33,8 +33,8 @@ impl SleepProvider for WasmRuntime {
         WasmSleep::new(duration)
     }
 
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> tor_rtcompat::PortableInstant {
+        tor_rtcompat::PortableInstant::now()
     }
 
     fn wallclock(&self) -> std::time::SystemTime {

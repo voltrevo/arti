@@ -306,9 +306,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
-version = "1.8.1"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e050f626429857a27ddccb31e0aca21356bfa709c04041aefddac081a8f068a"
+checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bit-set"
@@ -433,7 +433,7 @@ checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
 name = "caret"
-version = "0.8.1"
+version = "0.8.0"
 
 [[package]]
 name = "cast"
@@ -443,9 +443,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.49"
+version = "1.2.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
+checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -585,9 +585,9 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "convert_case"
-version = "0.10.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+checksum = "bb402b8d4c85569410425650ce3eddc7d698ed96d39a73f941b08fb63082f1e7"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -989,23 +989,22 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "2.1.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10b768e943bed7bf2cab53df09f4bc34bfd217cdb57d971e769874c9a6710618"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
 dependencies = [
  "derive_more-impl",
 ]
 
 [[package]]
 name = "derive_more-impl"
-version = "2.1.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d286bfdaf75e988b4a78e013ecd79c581e06399ab53fbacd2d916c2f904f30b"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
 dependencies = [
  "convert_case",
  "proc-macro2",
  "quote",
- "rustc_version",
  "syn 2.0.111",
  "unicode-xid",
 ]
@@ -1300,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "fs-mistrust"
-version = "0.13.1"
+version = "0.13.0"
 dependencies = [
  "derive_builder_fork_arti",
  "dirs",
@@ -1673,9 +1672,9 @@ checksum = "7aedcccd01fc5fe81e6b489c15b247b8b0690feb23304303a9e560f37efc560a"
 
 [[package]]
 name = "icu_properties"
-version = "2.1.2"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "020bfc02fe870ec3a66d93e677ccca0562506e5872c650f893269e08615d74ec"
+checksum = "e93fcd3157766c0c8da2f8cff6ce651a31f0810eaa1c51ec363ef790bbb5fb99"
 dependencies = [
  "icu_collections",
  "icu_locale_core",
@@ -1687,9 +1686,9 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "2.1.2"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "616c294cf8d725c6afcd8f55abc17c56464ef6211f9ed59cccffe534129c77af"
+checksum = "02845b3647bb045f1100ecd6480ff52f34c35f82d9880e029d329c21d1054899"
 
 [[package]]
 name = "icu_provider"
@@ -1899,9 +1898,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.178"
+version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
+checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
 name = "libm"
@@ -1943,9 +1942,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.29"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "matchers"
@@ -1976,9 +1975,9 @@ dependencies = [
 
 [[package]]
 name = "minicov"
-version = "0.3.8"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4869b6a491569605d66d3952bcdf03df789e5b536e5f0cf7758a7f08a55ae24d"
+checksum = "f27fe9f1cc3c22e1687f9446c2083c4c5fc7f0bcf1c7a86bdbded14985895b4b"
 dependencies = [
  "cc",
  "walkdir",
@@ -2002,9 +2001,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.1.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
+checksum = "69d83b0086dc8ecf3ce9ae2874b2d1290252e2a30720bea58a5c6639b0092873"
 dependencies = [
  "libc",
  "log",
@@ -2167,7 +2166,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "oneshot-fused-workaround"
-version = "0.5.1"
+version = "0.5.0"
 dependencies = [
  "futures",
 ]
@@ -2490,7 +2489,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219cb19e96be00ab2e37d6e299658a0cfa83e52429179969b0f0121b4ac46983"
 dependencies = [
- "toml_edit 0.23.9",
+ "toml_edit 0.23.7",
 ]
 
 [[package]]
@@ -2523,9 +2522,9 @@ dependencies = [
 
 [[package]]
 name = "psl"
-version = "2.1.168"
+version = "2.1.167"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6faf5b87f44516ca3989e1e315a0413f7a4d4886e63664cbd4a5f492c73cad93"
+checksum = "aef2514878fde15b8d63698f66a1a8bbbc67229f7bc90724277c48c40e37bccd"
 dependencies = [
  "psl-types",
 ]
@@ -2754,7 +2753,7 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "retry-error"
-version = "0.9.1"
+version = "0.9.0"
 
 [[package]]
 name = "rfc6979"
@@ -2892,7 +2891,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "safelog"
-version = "0.7.1"
+version = "0.7.0"
 dependencies = [
  "derive_more",
  "educe",
@@ -3162,9 +3161,9 @@ dependencies = [
 
 [[package]]
 name = "simd-adler32"
-version = "0.3.8"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
+checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "siphasher"
@@ -3180,9 +3179,9 @@ checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "slotmap"
-version = "1.1.1"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
+checksum = "dbff4acf519f630b3a3ddcfaea6c06b42174d9a44bc70c620e9ed1649d58b82a"
 dependencies = [
  "serde",
  "version_check",
@@ -3190,7 +3189,7 @@ dependencies = [
 
 [[package]]
 name = "slotmap-careful"
-version = "0.5.1"
+version = "0.5.0"
 dependencies = [
  "paste",
  "serde",
@@ -3668,9 +3667,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.23.9"
+version = "0.23.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d7cbc3b4b49633d57a0509303158ca50de80ae32c265093b24c414705807832"
+checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
 dependencies = [
  "indexmap 2.12.1",
  "toml_datetime 0.7.3",
@@ -3701,7 +3700,7 @@ checksum = "df8b2b54733674ad286d16267dcfc7a71ed5c776e4ac7aa3c3e2561f7c637bf2"
 
 [[package]]
 name = "tor-async-utils"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive-deftly",
  "educe",
@@ -3715,7 +3714,7 @@ dependencies = [
 
 [[package]]
 name = "tor-basic-utils"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive_more",
  "hex",
@@ -3732,7 +3731,7 @@ dependencies = [
 
 [[package]]
 name = "tor-bytes"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "bytes",
  "derive-deftly",
@@ -3748,7 +3747,7 @@ dependencies = [
 
 [[package]]
 name = "tor-cell"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "amplify",
  "bitflags 2.10.0",
@@ -3776,7 +3775,7 @@ dependencies = [
 
 [[package]]
 name = "tor-cert"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "caret",
  "derive_builder_fork_arti",
@@ -3791,7 +3790,7 @@ dependencies = [
 
 [[package]]
 name = "tor-checkable"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "humantime",
  "signature",
@@ -3801,7 +3800,7 @@ dependencies = [
 
 [[package]]
 name = "tor-config"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "amplify",
  "cfg-if",
@@ -3832,7 +3831,7 @@ dependencies = [
 
 [[package]]
 name = "tor-config-path"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "directories",
  "serde",
@@ -3844,7 +3843,7 @@ dependencies = [
 
 [[package]]
 name = "tor-error"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive_more",
  "futures",
@@ -3859,7 +3858,7 @@ dependencies = [
 
 [[package]]
 name = "tor-general-addr"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive_more",
  "thiserror 2.0.17",
@@ -3868,7 +3867,7 @@ dependencies = [
 
 [[package]]
 name = "tor-hscrypto"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "data-encoding",
  "derive-deftly",
@@ -3895,7 +3894,7 @@ dependencies = [
 
 [[package]]
 name = "tor-key-forge"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive-deftly",
  "derive_more",
@@ -3915,7 +3914,7 @@ dependencies = [
 
 [[package]]
 name = "tor-keymgr"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "amplify",
  "arrayvec",
@@ -3953,7 +3952,7 @@ dependencies = [
 
 [[package]]
 name = "tor-linkspec"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "base64ct",
  "by_address",
@@ -3978,7 +3977,7 @@ dependencies = [
 
 [[package]]
 name = "tor-llcrypto"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "aes",
  "base64ct",
@@ -4016,7 +4015,7 @@ dependencies = [
 
 [[package]]
 name = "tor-log-ratelim"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "futures",
  "humantime",
@@ -4029,7 +4028,7 @@ dependencies = [
 
 [[package]]
 name = "tor-memquota"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "cfg-if",
  "derive-deftly",
@@ -4057,7 +4056,7 @@ dependencies = [
 
 [[package]]
 name = "tor-netdoc"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "amplify",
  "base64ct",
@@ -4098,7 +4097,7 @@ dependencies = [
 
 [[package]]
 name = "tor-persist"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive-deftly",
  "derive_more",
@@ -4123,7 +4122,7 @@ dependencies = [
 
 [[package]]
 name = "tor-proto"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "amplify",
  "asynchronous-codec",
@@ -4179,12 +4178,13 @@ dependencies = [
  "typenum",
  "visibility",
  "void",
+ "web-sys",
  "zeroize",
 ]
 
 [[package]]
 name = "tor-protover"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "caret",
  "paste",
@@ -4195,7 +4195,7 @@ dependencies = [
 
 [[package]]
 name = "tor-relay-crypto"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive-deftly",
  "derive_more",
@@ -4211,7 +4211,7 @@ dependencies = [
 
 [[package]]
 name = "tor-rtcompat"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "async-trait",
  "async_executors",
@@ -4231,11 +4231,12 @@ dependencies = [
  "tor-general-addr",
  "tracing",
  "void",
+ "web-sys",
 ]
 
 [[package]]
 name = "tor-rtmock"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "amplify",
  "assert_matches",
@@ -4262,7 +4263,7 @@ dependencies = [
 
 [[package]]
 name = "tor-units"
-version = "0.37.0"
+version = "0.36.0"
 dependencies = [
  "derive-deftly",
  "derive_more",
@@ -5288,4 +5289,4 @@ dependencies = [
 
 [[patch.unused]]
 name = "fslock-guard"
-version = "0.5.1"
+version = "0.5.0"
