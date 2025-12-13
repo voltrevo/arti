@@ -70,6 +70,10 @@ All time-related code in vendored Arti crates must use WASM-compatible alternati
 |--------|------------------|----------|
 | `std::time::Instant` | `web_time::Instant` | tor-rtcompat/src/traits.rs |
 | `coarsetime::Instant` | `web_time::Instant` | tor-rtcompat/src/coarse_time.rs |
+| `coarsetime::Instant` | `web_time::Instant` | tor-proto/src/channel.rs (OpenedAtInstant) |
+| `coarsetime::Instant` | `web_time::Instant` | tor-proto/src/channel/handshake.rs (HandshakeInstant) |
+| `coarsetime::Instant` | `js_sys::Date::now()` | tor-proto/src/util/ts.rs (AtomicOptTimestamp) |
+| `std::time::Instant` | `web_time::Instant` | tor-proto/src/util/tunnel_activity.rs |
 | `std::time::SystemTime::now()` | `js_sys::Date::now()` | webtor/src/time.rs |
 
 When upgrading vendored Arti crates, **always check for new usages of**:
