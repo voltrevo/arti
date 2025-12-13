@@ -73,12 +73,15 @@ cd subtle-tls/fuzz && cargo +nightly fuzz run fuzz_server_hello
 
 ## Release Workflow
 
-- **Create a release after every PR merged** to this repo
+- **NEVER release when CI is failing** - always verify all checks pass first
+- **Create a release after every PR merged** to this repo (only if CI passes)
 - **Every release must include a build artifact** (not just source code)
 - Steps:
-  1. Update CHANGELOG.md (move Unreleased to new version)
-  2. Commit and push changes
-  3. Create and push git tag: `git tag vX.Y.Z && git push origin main --tags`
-  4. Build WASM: `wasm-pack build webtor-demo --target web --out-dir pkg --release`
-  5. Package build: `cd webtor-demo && zip -r ../webtor-demo-vX.Y.Z.zip pkg/`
-  6. Create release with artifact: `gh release create vX.Y.Z --title "vX.Y.Z" --notes "..." webtor-demo-vX.Y.Z.zip`
+  1. **Verify CI passes**: `gh pr view <PR> --json statusCheckRollup` or check GitHub Actions
+  2. Update CHANGELOG.md (move Unreleased to new version)
+  3. Commit and push changes
+  4. **Wait for CI to pass on main** before tagging
+  5. Create and push git tag: `git tag vX.Y.Z && git push origin main --tags`
+  6. Build WASM: `wasm-pack build webtor-demo --target web --out-dir pkg --release`
+  7. Package build: `cd webtor-demo && zip -r ../webtor-demo-vX.Y.Z.zip pkg/`
+  8. Create release with artifact: `gh release create vX.Y.Z --title "vX.Y.Z" --notes "..." webtor-demo-vX.Y.Z.zip`
