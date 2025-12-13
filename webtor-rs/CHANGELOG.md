@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-12-13
+
+### Changed
+- **Breaking**: Upgraded vendored Arti crates from 1.7.0 to 1.8.0 (tor-proto 0.37.0)
+- UI: Switched to Dracula Pro color palette
+- UI: Added version tooltip showing all vendored Arti crate versions
+
+### Fixed
+- WASM: Fixed socket2 dependency not compiling on wasm32 target
+- WASM: Fixed tor-basic-utils ENOTDIR check for non-unix/windows platforms
+- WASM: Fixed tor-memquota 8*GIB overflow on 32-bit platforms
+
 ## [0.3.0] - 2025-12-13
 
 ### Added
