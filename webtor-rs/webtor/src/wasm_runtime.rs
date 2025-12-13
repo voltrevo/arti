@@ -33,8 +33,9 @@ impl SleepProvider for WasmRuntime {
         WasmSleep::new(duration)
     }
 
-    fn now(&self) -> tor_rtcompat::PortableInstant {
-        tor_rtcompat::PortableInstant::now()
+    fn now(&self) -> tor_rtcompat::Instant {
+        // tor_rtcompat now uses web_time::Instant which works on WASM
+        tor_rtcompat::Instant::now()
     }
 
     fn wallclock(&self) -> std::time::SystemTime {
