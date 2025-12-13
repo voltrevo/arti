@@ -60,6 +60,25 @@ cd subtle-tls/fuzz && cargo +nightly fuzz run fuzz_server_hello
 - Snowflake bridge is used for WASM; WebTunnel is available for native builds
 - `ring` crate doesn't compile to WASM, so `subtle-tls` provides TLS via SubtleCrypto
 
+## WASM Time Handling
+
+**CRITICAL**: `std::time::Instant::now()` panics on WASM with "time not implemented on this platform".
+
+All time-related code in vendored Arti crates must use WASM-compatible alternatives:
+
+| Native | WASM Replacement | Location |
+|--------|------------------|----------|
+| `std::time::Instant` | `web_time::Instant` | tor-rtcompat/src/traits.rs |
+| `coarsetime::Instant` | `web_time::Instant` | tor-rtcompat/src/coarse_time.rs |
+| `std::time::SystemTime::now()` | `js_sys::Date::now()` | webtor/src/time.rs |
+
+When upgrading vendored Arti crates, **always check for new usages of**:
+- `std::time::Instant`
+- `coarsetime::Instant`
+- `Instant::now()` without `web_time::` prefix
+
+Use `grep -rn "std::time::Instant\|coarsetime::Instant" vendor/arti/` to find violations.
+
 ## Style Preferences
 
 - **No emojis** in documentation, README, or markdown files - use plain text instead

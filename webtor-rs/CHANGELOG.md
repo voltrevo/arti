@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - subtle-tls: Avoid panic on truncated ServerHello by checking buffer length before parsing
+- WASM: Fix coarsetime::Instant panic by using web_time::Instant on WASM (coarse_time.rs)
 
 ## [0.4.0] - 2025-12-13
 
