@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2025-12-21
+
 ### Added
-- Error handling: Added `TorErrorKind` enum for error classification (Network, Timeout, Bootstrap, Circuit, Configuration, Environment, Protocol, Internal)
+- Error handling: Added `TorErrorKind` enum for error classification (Network, Timeout, Bootstrap, Circuit, Configuration, Environment, Protocol, Internal, Cancelled)
 - Error handling: Added `kind()`, `is_retryable()`, and `code()` methods to `TorError`
 - Error handling: Added `TorError::Cancelled` variant for user-initiated aborts
 - WASM: Added `JsTorError` struct for structured error reporting (code, kind, message, retryable)
