@@ -48,7 +48,7 @@ webtor-rs/
 │       ├── websocket.rs         # WebSocket communication
 │       └── wasm_runtime.rs      # WASM async runtime
 │
-├── subtle-tls/                   # Pure-Rust TLS 1.3 for WASM
+├── subtle-tls/                   # Pure-Rust TLS 1.3/1.2 for WASM (SubtleCrypto-based)
 │   ├── Cargo.toml               # TLS library dependencies
 │   └── src/
 │       ├── lib.rs               # TLS exports
@@ -136,8 +136,8 @@ webtor-rs/
    - Proper TLS certificate validation
 
 6. **SubtleCrypto TLS** (`subtle-tls/`)
-   - Pure-Rust TLS 1.3 implementation for WASM
-   - Uses browser's SubtleCrypto for cryptographic operations
+   - Pure-Rust TLS 1.3 implementation for WASM with automatic TLS 1.2 fallback
+   - Uses the browser's SubtleCrypto API for cryptographic operations
    - Proper certificate chain validation
 
 ## Completed Features
@@ -185,7 +185,7 @@ webtor-rs/
 ## In Progress / Planned
 
 ### Phase 5 - Optimization (Complete)
-- [x] WASM bundle size optimization (0.94 MB gzipped, was 1.30 MB)
+- [x] WASM bundle size optimization (~1.2 MB gzipped)
 - [x] Circuit creation performance improvements
   - [x] Parallel microdescriptor fetching (CHUNK_SIZE=256, MAX_PARALLEL_CHUNKS=3)
   - [x] Circuit reuse via `get_ready_circuit_and_mark_used()`
@@ -200,10 +200,10 @@ webtor-rs/
 - [x] Comprehensive E2E test suite (regression tests for all preset URLs)
 - [x] Performance benchmarks (Criterion + E2E via Playwright)
 - [x] Fuzz testing for TLS parsing (4 targets: certificate, server_hello, handshake, record)
+- [x] Stream isolation per domain (Tor Browser-style circuit isolation)
 
 ### Phase 7 - Future Enhancements
 Open issues for future work:
-- [ ] Stream isolation per domain (#21)
 - [ ] WASM bundle further optimization (#22)
 - [ ] Onion service (.onion) support (#23)
 - [ ] Security audit with Rocq formal verification (#25)
@@ -229,7 +229,7 @@ Most modern sites work. Some legacy servers may have compatibility issues.
 | Consensus | Complete | Fetching + parsing + caching |
 | Circuit Creation | Complete | 3-hop circuits with reuse |
 | HTTP Client | Complete | GET/POST support |
-| WASM Build | Working | 0.94 MB gzipped |
+| WASM Build | Working | ~1.2 MB gzipped |
 | Demo App | Working | Interactive UI |
 | E2E Tests | Complete | Regression + benchmarks |
 | Fuzz Testing | Complete | 4 TLS parsing targets |
@@ -249,7 +249,7 @@ Most modern sites work. Some legacy servers may have compatibility issues.
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| WASM Bundle | ~2.7 MB uncompressed, ~0.94 MB gzipped | Optimized with wasm-opt |
+| WASM Bundle | ~3.6 MB uncompressed, ~1.2 MB gzipped | Optimized with wasm-opt |
 | Initial Load | 2-5 sec | WASM compilation |
 | Consensus Fetch | 5-15 sec | Parallel microdesc fetching |
 | Circuit Creation | 20-60 sec | 3-hop with handshakes |
@@ -366,8 +366,8 @@ cargo test -p webtor --test e2e test_webtunnel_https_request -- --ignored --noca
 - Snowflake broker: https://snowflake-broker.torproject.net/
 
 ### Key Dependencies
-- `tor-proto` v0.36.0 - Tor protocol implementation
-- `tor-netdoc` v0.36.0 - Consensus parsing
+- `tor-proto` v0.37.0 - Tor protocol implementation (via vendored Arti 1.8.0)
+- `tor-netdoc` v0.37.0 - Consensus parsing
 - `rustls` v0.22 - Native TLS implementation
 - `kcp` v0.6 - KCP protocol
 - `web-sys` - WebRTC/SubtleCrypto bindings

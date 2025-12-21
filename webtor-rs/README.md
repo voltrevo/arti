@@ -13,7 +13,7 @@ A browser-focused Tor client written in Rust and compiled to WebAssembly (WASM),
 |------------|----------------|--------|
 | Tor Protocol | `tor-proto` crate (official Arti) | Full support for v3-v5 |
 | Circuit Creation | CREATE2 with ntor-v3 handshake | Modern, secure |
-| TLS Security | TLS 1.3 with certificate validation | Hardened, actively tested |
+| TLS Security | TLS 1.3 (preferred) with TLS 1.2 fallback and certificate validation | Hardened, actively tested |
 | Snowflake Bridge | WebSocket + WebRTC transports | WASM-compatible |
 | WebTunnel Bridge | HTTPS with RFC 9298 upgrade | Native + WASM |
 | Consensus | Embedded snapshot + online fetch | Daily auto-updates, 1h cache |
@@ -24,7 +24,7 @@ A browser-focused Tor client written in Rust and compiled to WebAssembly (WASM),
 - **Arti-based** - Uses official Tor Project crates with full TLS validation
 - **Two Transports** - Snowflake (WebRTC) and WebTunnel (HTTPS)
 - **Full Tor Protocol** - 3-hop circuits with ntor-v3 handshakes
-- **TLS 1.3 Support** - Pure-Rust TLS via SubtleCrypto (WASM)
+- **TLS 1.3 + 1.2 Support** - Pure-Rust TLS via SubtleCrypto (WASM) with automatic TLS 1.2 fallback
 - **Stream Isolation** - Separate circuits per domain using Mozilla's Public Suffix List (Tor Browser-style)
 - **Circuit Reuse** - Persistent circuits for performance
 - **Consensus Handling** - Embedded snapshot + online fetching with 1-hour caching (no CORS issues)
@@ -212,7 +212,7 @@ flowchart TB
 | WebTunnel | Complete | HTTPS Upgrade with TLS validation |
 | Consensus | Complete | Embedded snapshot + fetching, 1h caching |
 | HTTP Client | Complete | GET/POST through exit relays |
-| TLS (WASM) | Complete | TLS 1.3 via SubtleCrypto, TLS 1.2 experimental |
+| TLS (WASM) | Complete | TLS 1.3 via SubtleCrypto with automatic TLS 1.2 fallback |
 | Demo App | Working | Interactive browser UI |
 
 ## Security
@@ -223,7 +223,7 @@ flowchart TB
 
 ## Limitations
 
-- **TLS 1.2 Experimental** - TLS 1.2 support is new and may have issues
+- **TLS 1.2 Maturity** - TLS 1.2 fallback is newer and less battle-tested than TLS 1.3
 - **Onion Services** - `.onion` addresses not yet implemented  
 - **Mobile** - Not optimized for mobile browsers
 
@@ -236,7 +236,7 @@ flowchart TB
 - [x] WebTunnel (HTTPS Upgrade)
 - [x] TLS 1.3 support (SubtleCrypto)
 - [x] Consensus fetching and caching
-- [x] TLS 1.2 support (experimental)
+- [x] TLS 1.2 support (automatic fallback)
 - [x] Stream isolation per domain
 - [ ] Onion service support
 - [ ] Performance optimizations

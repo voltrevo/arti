@@ -26,7 +26,7 @@ KCP (reliability + ordering)
     |
 SMUX (stream multiplexing)
     |
-TLS 1.3 (link encryption)
+TLS (link encryption)
     |
 Tor Protocol
 ```
@@ -47,11 +47,13 @@ Tor Protocol
 
 ## Cryptography
 
-### TLS 1.3
+### TLS (1.3 + 1.2)
 - WebCrypto API (SubtleCrypto) for browser compatibility
-- ECDH key exchange (P-256, P-384, P-521)
-- AES-GCM encryption
+- ECDH key exchange (P-256, P-384, P-521) and X25519
+- AES-GCM encryption (TLS 1.3 and 1.2)
+- ChaCha20-Poly1305 (pure Rust)
 - SHA-256/SHA-384 hashing
+- TLS 1.3 preferred with automatic TLS 1.2 fallback when needed
 
 ### Tor Encryption
 - ntor-v3 handshake (modern key exchange)
@@ -62,7 +64,7 @@ Tor Protocol
 
 ### HTTP Client
 - GET/POST requests through Tor
-- HTTPS support (TLS 1.3 only)
+- HTTPS support with TLS 1.3 (preferred) and TLS 1.2 fallback
 - Proper certificate validation (webpki-roots)
 - Automatic content decompression
 
@@ -87,23 +89,21 @@ Tor Protocol
 
 ## Limitations
 
-### TLS 1.3 Only
-Sites requiring TLS 1.2 will not work. Most modern sites support TLS 1.3.
-
-**Working**: example.com, google.com, cloudflare.com, github.com
-**Not working**: Sites with TLS 1.2 only
+### TLS Version Compatibility
+TLS 1.3 is preferred with automatic TLS 1.2 fallback. Older protocol versions (TLS 1.1 and below) are not supported. A small number of legacy servers may still have compatibility issues.
 
 ### WebRTC Required
 Snowflake transport requires WebRTC support in the browser.
 
 ## Performance
 
-| Metric | Typical Value |
-|--------|---------------|
-| WASM Bundle | ~3-4 MB |
-| Initial Load | 2-5 seconds |
-| Circuit Creation | 20-60 seconds |
-| Request Latency | 1-5 seconds |
+| Metric          | Typical Value                          |
+|-----------------|----------------------------------------|
+| WASM Bundle     | ~3.6 MB (~1.2 MB gzipped, wasm-opt)    |
+| Initial Load    | 2-5 seconds (WASM compilation)         |
+| Circuit Creation| 20-60 seconds (3-hop with handshakes)  |
+| Request Latency | typically <3 seconds with circuit reuse|
+| Memory Usage    | ~50-100 MB at runtime                  |
 
 ## Security
 

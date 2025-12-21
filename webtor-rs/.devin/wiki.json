@@ -33,6 +33,10 @@
       "content": "As of v0.3.0, webtor-rs silently drops unexpected padding cells for forward compatibility with future Tor network behavior. Full maybenot integration pending."
     },
     {
+      "topic": "Stream Isolation",
+      "content": "webtor-rs supports Tor Browser-style stream isolation: circuits are isolated per domain using the Mozilla Public Suffix List, reducing cross-site correlation on shared exits."
+    },
+    {
       "topic": "Testing",
       "content": "Unit tests: cargo test -p webtor. Property tests with proptest. E2E browser tests in tests/e2e/ using Playwright. Fuzz tests in subtle-tls/fuzz/."
     },
