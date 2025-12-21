@@ -1,0 +1,106 @@
+name: Docs Verification
+
+on:
+  pull_request:
+    paths:
+      - '*.md'
+      - 'docs/**/*.md'
+      - 'subtle-tls/**/*.md'
+      - '.devin/wiki.json'
+      - 'webtor-demo/pkg/**'
+
+jobs:
+  verify-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check WASM bundle size claims
+        run: |
+          echo "## WASM Bundle Size Verification" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "webtor-demo/pkg/webtor_demo_bg.wasm" ]; then
+            UNCOMPRESSED=$(stat -c%s webtor-demo/pkg/webtor_demo_bg.wasm)
+            UNCOMPRESSED_MB=$(echo "scale=2; $UNCOMPRESSED / 1048576" | bc)
+            
+            COMPRESSED=$(gzip -c webtor-demo/pkg/webtor_demo_bg.wasm | wc -c)
+            COMPRESSED_MB=$(echo "scale=2; $COMPRESSED / 1048576" | bc)
+            
+            echo "| Metric | Actual |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Uncompressed | ${UNCOMPRESSED_MB} MB |" >> $GITHUB_STEP_SUMMARY
+            echo "| Gzipped | ${COMPRESSED_MB} MB |" >> $GITHUB_STEP_SUMMARY
+            
+            echo ""
+            echo "Actual WASM sizes: ${UNCOMPRESSED_MB} MB uncompressed, ${COMPRESSED_MB} MB gzipped"
+          else
+            echo "WASM bundle not found in pkg/ - skipping size check"
+            echo "[!] WASM bundle not built - size verification skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check tor-proto version consistency
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Dependency Version Verification" >> $GITHUB_STEP_SUMMARY
+          
+          # Get actual version from vendored Cargo.toml
+          ACTUAL_VERSION=$(grep '^version' vendor/arti/crates/tor-proto/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Actual tor-proto version: $ACTUAL_VERSION"
+          
+          # Check if docs mention correct version
+          DOCS_CONSISTENT=true
+          
+          if ! grep -q "tor-proto.*$ACTUAL_VERSION\|v$ACTUAL_VERSION" PROJECT_SUMMARY.md 2>/dev/null; then
+            echo "[WARN] PROJECT_SUMMARY.md may have outdated tor-proto version" >> $GITHUB_STEP_SUMMARY
+            DOCS_CONSISTENT=false
+          fi
+          
+          if [ "$DOCS_CONSISTENT" = true ]; then
+            echo "[PASS] tor-proto version $ACTUAL_VERSION is consistent across docs" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check TLS documentation consistency
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## TLS Documentation Consistency" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for outdated "TLS 1.3 only" claims
+          if grep -rn "TLS 1\.3 only\|TLS 1\.3 Only" *.md docs/ 2>/dev/null; then
+            echo "[WARN] Found outdated 'TLS 1.3 only' claims - TLS 1.2 fallback is now supported" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "[PASS] No outdated TLS 1.3 only claims found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for "experimental" TLS 1.2 claims
+          if grep -rn "TLS 1\.2.*[Ee]xperimental" *.md docs/ 2>/dev/null; then
+            echo "[WARN] Found 'experimental' TLS 1.2 claims - TLS 1.2 is now stable" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check stream isolation status
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Feature Status Consistency" >> $GITHUB_STEP_SUMMARY
+          
+          # Stream isolation should be marked complete in roadmap
+          if grep -q "\[x\].*[Ss]tream isolation" README.md; then
+            # Check it's not also listed as future/TODO
+            if grep -q "\[ \].*[Ss]tream isolation" PROJECT_SUMMARY.md 2>/dev/null; then
+              echo "[WARN] Stream isolation marked complete in README but TODO in PROJECT_SUMMARY" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            else
+              echo "[PASS] Stream isolation status is consistent" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Validate wiki.json
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Wiki JSON Validation" >> $GITHUB_STEP_SUMMARY
+          
+          if python3 -c "import json; json.load(open('.devin/wiki.json'))" 2>/dev/null; then
+            echo "[PASS] wiki.json is valid JSON" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "[FAIL] wiki.json is invalid JSON" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
