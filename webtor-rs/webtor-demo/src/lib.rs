@@ -320,7 +320,7 @@ impl Clone for DemoApp {
 /// Initialize logging when module loads
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
-    webtor_init();
+    webtor_init()?;
     console::log_1(&"Webtor Demo module initialized".into());
     Ok(())
 }

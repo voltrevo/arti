@@ -824,11 +824,38 @@ impl tracing::field::Visit for MessageVisitor {
     }
 }
 
+/// Check if secure randomness (crypto.getRandomValues) is available
+fn check_secure_randomness() -> Result<(), String> {
+    let mut test_buf = [0u8; 32];
+    getrandom::getrandom(&mut test_buf).map_err(|e| {
+        format!(
+            "Secure randomness (crypto.getRandomValues) is not available: {}. \
+             Webtor requires a secure CSPRNG and cannot run in this environment.",
+            e
+        )
+    })?;
+    
+    if test_buf == [0u8; 32] {
+        return Err(
+            "Secure randomness check failed: CSPRNG returned all zeros. \
+             This indicates a broken or missing crypto.getRandomValues implementation."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 /// Initialize the WASM module
 #[wasm_bindgen]
-pub fn init() {
+pub fn init() -> Result<(), JsValue> {
     // Set up panic handler
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+    // Fail-fast: verify secure randomness is available before anything else
+    check_secure_randomness().map_err(|e| {
+        console_error!(format!("[FAIL] {}", e));
+        JsValue::from_str(&e)
+    })?;
 
     // Set up tracing with our custom layer that forwards to JS
     use tracing_subscriber::layer::SubscriberExt;
@@ -842,7 +869,8 @@ pub fn init() {
         .with(js_layer)
         .init();
 
-    console_log!("Webtor WASM module initialized");
+    console_log!("Webtor WASM module initialized (CSPRNG verified)");
+    Ok(())
 }
 
 /// Test function for WASM
