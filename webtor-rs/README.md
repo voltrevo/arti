@@ -1,13 +1,12 @@
 # webtor-rs
 
 [![CI](https://github.com/igor53627/webtor-rs/actions/workflows/test.yml/badge.svg)](https://github.com/igor53627/webtor-rs/actions/workflows/test.yml)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Try_it_now-purple)](https://igor53627.github.io/webtor-rs/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/igor53627/webtor-rs)
 
-**Current Version**: v0.5.3 | **Arti**: 1.8.0 (tor-proto 0.37.0)
+**Current Version**: v0.5.4 | **Arti**: 1.8.0 (tor-proto 0.37.0)
 
 A browser-focused Tor client written in Rust and compiled to WebAssembly (WASM), with optional native support. It enables anonymous HTTP/HTTPS connections through the Tor network directly from web browsers, without requiring plugins, extensions, or native applications.
-
-**[Live Demo](https://igor53627.github.io/webtor-rs/)**
 
 ## Key Capabilities
 
