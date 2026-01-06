@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-01-06
+
+### Added
+- TLS: Implement RFC 8446 keying material export for Tor channel binding
+- TLS: Add `exporter_master_secret` derivation during handshake
+- TLS: Add synchronous HKDF using hmac/sha2 crates (CertifiedConn requires sync)
+
+### Removed
+- Dead code: Remove unused `webtor-wasm/src/websocket.rs` (313 lines)
+- Dead code: Remove `AnyStream` trait, `connected` field, `parse_response` method
+- Dead code: Remove unused `tls_connector` field from `TorHttpClient`
+
+### Changed
+- Build: Add `#[cfg(target_arch = "wasm32")]` to WASM-only items in directory.rs
+
 ## [0.5.5] - 2026-01-06
 
 ### Changed
