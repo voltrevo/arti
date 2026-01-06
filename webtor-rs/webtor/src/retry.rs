@@ -217,10 +217,7 @@ where
     F: FnMut(u32) -> Fut,
     Fut: Future<Output = Result<T>>,
 {
-    debug_assert!(
-        policy.max_attempts > 0,
-        "max_attempts must be >= 1"
-    );
+    debug_assert!(policy.max_attempts > 0, "max_attempts must be >= 1");
     if policy.max_attempts == 0 {
         return Err(TorError::Internal(format!(
             "{}: invalid retry policy (max_attempts = 0)",
@@ -303,11 +300,7 @@ pub async fn sleep(duration: Duration) {
 ///     establish_channel_impl()
 /// ).await
 /// ```
-pub async fn with_timeout<F, T>(
-    duration: Duration,
-    operation_name: &str,
-    future: F,
-) -> Result<T>
+pub async fn with_timeout<F, T>(duration: Duration, operation_name: &str, future: F) -> Result<T>
 where
     F: Future<Output = Result<T>>,
 {
@@ -584,11 +577,9 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_succeeds_when_operation_completes_in_time() {
-        let result = with_timeout(
-            Duration::from_secs(5),
-            "test_op",
-            async { Ok::<_, TorError>(42) },
-        )
+        let result = with_timeout(Duration::from_secs(5), "test_op", async {
+            Ok::<_, TorError>(42)
+        })
         .await;
 
         assert_eq!(result.unwrap(), 42);
@@ -596,14 +587,10 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_fails_when_operation_exceeds_time() {
-        let result = with_timeout(
-            Duration::from_millis(10),
-            "slow_op",
-            async {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                Ok::<_, TorError>(42)
-            },
-        )
+        let result = with_timeout(Duration::from_millis(10), "slow_op", async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Ok::<_, TorError>(42)
+        })
         .await;
 
         assert!(result.is_err());
@@ -614,11 +601,9 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_propagates_inner_error() {
-        let result = with_timeout(
-            Duration::from_secs(5),
-            "test_op",
-            async { Err::<u32, _>(TorError::network("inner error")) },
-        )
+        let result = with_timeout(Duration::from_secs(5), "test_op", async {
+            Err::<u32, _>(TorError::network("inner error"))
+        })
         .await;
 
         assert!(result.is_err());
@@ -689,27 +674,22 @@ mod tests {
     #[tokio::test]
     async fn with_timeout_and_cancellation_succeeds() {
         let token = CancellationToken::new();
-        let result =
-            with_timeout_and_cancellation(Duration::from_secs(5), "test", &token, async {
-                Ok::<_, TorError>(42)
-            })
-            .await;
+        let result = with_timeout_and_cancellation(Duration::from_secs(5), "test", &token, async {
+            Ok::<_, TorError>(42)
+        })
+        .await;
         assert_eq!(result.unwrap(), 42);
     }
 
     #[tokio::test]
     async fn with_timeout_and_cancellation_times_out() {
         let token = CancellationToken::new();
-        let result = with_timeout_and_cancellation(
-            Duration::from_millis(10),
-            "slow_op",
-            &token,
-            async {
+        let result =
+            with_timeout_and_cancellation(Duration::from_millis(10), "slow_op", &token, async {
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 Ok::<_, TorError>(42)
-            },
-        )
-        .await;
+            })
+            .await;
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), TorError::Timeout(_)));
@@ -719,11 +699,10 @@ mod tests {
     async fn with_timeout_and_cancellation_cancels() {
         let token = CancellationToken::new();
         token.cancel();
-        let result =
-            with_timeout_and_cancellation(Duration::from_secs(5), "test", &token, async {
-                Ok::<_, TorError>(42)
-            })
-            .await;
+        let result = with_timeout_and_cancellation(Duration::from_secs(5), "test", &token, async {
+            Ok::<_, TorError>(42)
+        })
+        .await;
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), TorError::Cancelled));

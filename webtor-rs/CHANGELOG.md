@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-01-06
+
+### Fixed
+- HTTP: Decode `Transfer-Encoding: chunked` responses properly (fixes #64)
+- HTTP: `TorResponse.text()` no longer includes raw chunk framing bytes
+- HTTP: Per HTTP/1.1 semantics, `Transfer-Encoding` takes precedence over `Content-Length`
+
 ## [0.5.3] - 2025-12-21
 
 ### Added

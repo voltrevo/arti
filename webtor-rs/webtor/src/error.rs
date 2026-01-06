@@ -371,16 +371,16 @@ mod tests {
                 "INTERNAL",
                 false,
             ),
-            (TorError::Cancelled, TorErrorKind::Cancelled, "CANCELLED", false),
+            (
+                TorError::Cancelled,
+                TorErrorKind::Cancelled,
+                "CANCELLED",
+                false,
+            ),
         ];
 
         for (err, expected_kind, expected_code, expected_retryable) in cases {
-            assert_eq!(
-                err.kind(),
-                expected_kind,
-                "kind mismatch for {:?}",
-                err
-            );
+            assert_eq!(err.kind(), expected_kind, "kind mismatch for {:?}", err);
             assert_eq!(err.code(), expected_code, "code mismatch for {:?}", err);
             assert_eq!(
                 err.is_retryable(),

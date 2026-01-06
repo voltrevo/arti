@@ -244,25 +244,20 @@ impl TorClient {
     /// Wait for a circuit to be ready (uses circuit_timeout from options)
     pub async fn wait_for_circuit(&self) -> Result<()> {
         let timeout = self.options.circuit_timeout_duration();
-        with_timeout_and_cancellation(
-            timeout,
-            "wait_for_circuit",
-            &self.shutdown_token,
-            async {
-                info!("Waiting for circuit to be ready");
+        with_timeout_and_cancellation(timeout, "wait_for_circuit", &self.shutdown_token, async {
+            info!("Waiting for circuit to be ready");
 
-                let circuit_manager = self.circuit_manager.read().await;
-                let circuit = circuit_manager.get_ready_circuit().await?;
+            let circuit_manager = self.circuit_manager.read().await;
+            let circuit = circuit_manager.get_ready_circuit().await?;
 
-                let circuit_read = circuit.read().await;
-                if !circuit_read.is_ready() {
-                    return Err(TorError::circuit_creation("Circuit is not ready"));
-                }
+            let circuit_read = circuit.read().await;
+            if !circuit_read.is_ready() {
+                return Err(TorError::circuit_creation("Circuit is not ready"));
+            }
 
-                info!("Circuit is ready");
-                Ok(())
-            },
-        )
+            info!("Circuit is ready");
+            Ok(())
+        })
         .await
     }
 
