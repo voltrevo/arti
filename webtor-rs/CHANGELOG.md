@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-01-06
+
+### Changed
+- TLS: Remove `Rc<RefCell<>>` from `TlsStream` - use direct ownership for async safety
+- TLS: Replace `write_buf.clone()` with `std::mem::take` for zero-allocation writes
+- TLS: Add `WriteZero` error handling to prevent infinite loops
+- WASM: Replace `.unwrap()` with proper error handling in websocket and HTTP code
+- Build: Pin nightly toolchain to `2026-01-05` for reproducible builds
+
+### Fixed
+- Clippy: Use `io::Error::other()`, `.is_multiple_of()`, `.div_ceil()`
+- Clippy: Remove redundant closures in error mapping
+
 ## [0.5.4] - 2026-01-06
 
 ### Fixed
