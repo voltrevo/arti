@@ -31,16 +31,6 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Fetch fresh consensus (if not recent)
-        run: |
-          if [ ! -f webtor/src/cached/consensus.txt.gz ] || \
-             [ $(find webtor/src/cached/consensus.txt.gz -mmin +720 2>/dev/null | wc -l) -gt 0 ]; then
-            chmod +x scripts/fetch-consensus.sh
-            ./scripts/fetch-consensus.sh webtor/src/cached
-          else
-            echo "Using existing cached consensus"
-          fi
-
       - name: Build WASM demo
         run: wasm-pack build webtor-demo --target web --out-dir pkg --release
 
@@ -48,9 +38,7 @@ jobs:
         run: |
           mkdir -p webtor-demo/static/pkg
           cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
-          # Create brotli-compressed consensus files for lazy loading
-          brotli -f -k webtor/src/cached/consensus.txt
-          brotli -f -k webtor/src/cached/microdescriptors.txt
+          # Copy pre-compressed consensus files (already in repo as .br)
           cp webtor/src/cached/consensus.txt.br webtor-demo/static/
           cp webtor/src/cached/microdescriptors.txt.br webtor-demo/static/
 
