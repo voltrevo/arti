@@ -37,18 +37,37 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if wasm-pack is installed
-if ! command -v wasm-pack &> /dev/null; then
-    print_error "wasm-pack is not installed. Please install it first:"
-    print_error "curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh"
-    exit 1
-fi
+# Check if required dependencies are installed
+check_deps() {
+    local missing_deps=()
+    
+    if ! command -v cargo &> /dev/null; then
+        missing_deps+=("Rust/Cargo")
+    fi
+    
+    if ! command -v wasm-pack &> /dev/null; then
+        missing_deps+=("wasm-pack")
+    fi
+    
+    if ! rustup target list 2>/dev/null | grep -q "wasm32-unknown-unknown (installed)"; then
+        missing_deps+=("wasm32-unknown-unknown target")
+    fi
+    
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        print_error "Missing dependencies: ${missing_deps[*]}"
+        print_error ""
+        print_error "Run the setup script to install all dependencies:"
+        print_error "  ./setup-deps.sh"
+        exit 1
+    fi
+}
 
-# Check if cargo is installed
-if ! command -v cargo &> /dev/null; then
-    print_error "Rust/Cargo is not installed. Please install Rust first:"
-    print_error "https://rustup.rs/"
-    exit 1
+check_deps
+
+# Warn if wasm-opt is not available (optional but recommended for release builds)
+if [ "$BUILD_MODE" = "--release" ] && ! command -v wasm-opt &> /dev/null; then
+    print_warning "wasm-opt is not installed. Install it for better WASM optimization:"
+    print_warning "  ./setup-deps.sh"
 fi
 
 print_status "Build mode: $BUILD_MODE"
