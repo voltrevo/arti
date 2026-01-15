@@ -44,7 +44,7 @@ fi
 # Install wasm-pack if not present
 if ! command -v wasm-pack &> /dev/null; then
     print_status "Installing wasm-pack..."
-    cargo install wasm-pack
+    cargo install --locked wasm-pack
 else
     print_status "wasm-pack is already installed"
 fi
@@ -52,7 +52,7 @@ fi
 # Install wasm-opt if not present (optional but recommended for release builds)
 if ! command -v wasm-opt &> /dev/null; then
     print_status "Installing wasm-opt for optimization..."
-    if cargo install wasm-opt; then
+    if cargo install --locked wasm-opt; then
         print_status "wasm-opt installed successfully"
     else
         print_warning "Failed to install wasm-opt (optional, but recommended for optimized builds)"
