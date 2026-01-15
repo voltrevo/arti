@@ -4,6 +4,11 @@ vendor/
 node_modules/
 example/node_modules/
 example/dist/
+webtor-demo/pkg/
+webtor-demo/static/pkg/
+
+# macOS
+.DS_Store
 
 # AI/Agent artifacts
 .cargo/
