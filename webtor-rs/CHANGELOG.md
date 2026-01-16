@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Arti: Revert silent padding error swallowing - unexpected padding cells now correctly error (PR #70)
+
 ## [0.5.7] - 2026-01-06
 
 ### Added
