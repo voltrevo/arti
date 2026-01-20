@@ -7380,6 +7380,7 @@ dependencies = [
  "hmac",
  "humantime",
  "itertools 0.14.0",
+ "js-sys",
  "maybenot",
  "nonany",
  "oneshot-fused-workaround",
@@ -7581,6 +7582,7 @@ dependencies = [
  "tor-general-addr",
  "tracing",
  "void",
+ "web-time",
 ]
 
 [[package]]

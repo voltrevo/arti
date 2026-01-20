@@ -78,7 +78,6 @@ pin-project = "1"
 rustls-pki-types = { version = "1.8", optional = true }
 rustls-webpki = { version = "0.103.1", optional = true }
 smol = { version = "2.0.2", optional = true }
-socket2 = "0.6.1"
 thiserror = "2"
 tokio-crate = { package = "tokio", version = "1.7", optional = true, features = [
     "rt",
@@ -92,6 +91,11 @@ tor-error = { version = "0.37.0", path = "../tor-error", features = ["tracing"] 
 tor-general-addr = { version = "0.37.0", path = "../tor-general-addr" }
 tracing = "0.1.36"
 void = "1"
+# WASM-compatible Instant - re-exports std::time on non-WASM, provides working impl on WASM
+web-time = "1.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+socket2 = "0.6.1"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

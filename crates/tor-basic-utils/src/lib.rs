@@ -246,22 +246,26 @@ pub trait IoErrorExt: Sealed {
 }
 impl Sealed for std::io::Error {}
 impl IoErrorExt for std::io::Error {
+    #[cfg(target_family = "unix")]
     fn is_not_a_directory(&self) -> bool {
-        self.raw_os_error()
-            == Some(
-                #[cfg(target_family = "unix")]
-                libc::ENOTDIR,
-                #[cfg(target_family = "windows")]
-                {
-                    /// Obtained from Rust stdlib source code
-                    /// See also:
-                    ///   <https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499->
-                    /// (although the documentation is anaemic) and
-                    /// <https://github.com/rust-lang/rust/pull/79965>
-                    const ERROR_DIRECTORY: i32 = 267;
-                    ERROR_DIRECTORY
-                },
-            )
+        self.raw_os_error() == Some(libc::ENOTDIR)
+    }
+
+    #[cfg(target_family = "windows")]
+    fn is_not_a_directory(&self) -> bool {
+        /// Obtained from Rust stdlib source code
+        /// See also:
+        ///   <https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499->
+        /// (although the documentation is anaemic) and
+        /// <https://github.com/rust-lang/rust/pull/79965>
+        const ERROR_DIRECTORY: i32 = 267;
+        self.raw_os_error() == Some(ERROR_DIRECTORY)
+    }
+
+    #[cfg(not(any(target_family = "unix", target_family = "windows")))]
+    fn is_not_a_directory(&self) -> bool {
+        // WASM and other platforms don't have filesystem errors
+        false
     }
 }
 

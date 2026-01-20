@@ -110,7 +110,13 @@ pub struct CoarseDuration(coarsetime::Duration);
 /// We regard this as a bug.
 /// The intent is that all operations will saturate.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)] //
+#[cfg(not(target_arch = "wasm32"))]
 pub struct CoarseInstant(coarsetime::Instant);
+
+/// On WASM, use web_time::Instant since coarsetime doesn't support WASM
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)] //
+#[cfg(target_arch = "wasm32")]
+pub struct CoarseInstant(web_time::Instant);
 
 impl From<time::Duration> for CoarseDuration {
     fn from(td: time::Duration) -> CoarseDuration {
@@ -123,6 +129,7 @@ impl From<CoarseDuration> for time::Duration {
     }
 }
 /// implement `$AddSub<CoarseDuration> for CoarseInstant`, and `*Assign`
+#[cfg(not(target_arch = "wasm32"))]
 macro_rules! impl_add_sub { { $($AddSub:ident),* $(,)? } => { paste! { $(
     impl std::ops::$AddSub<CoarseDuration> for CoarseInstant {
         type Output = CoarseInstant;
@@ -137,7 +144,87 @@ macro_rules! impl_add_sub { { $($AddSub:ident),* $(,)? } => { paste! { $(
         }
     }
 )* } } }
+#[cfg(not(target_arch = "wasm32"))]
 impl_add_sub!(Add, Sub);
+
+// WASM implementation using web_time::Instant (which wraps std::time::Duration)
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Add<CoarseDuration> for CoarseInstant {
+    type Output = CoarseInstant;
+    fn add(self, rhs: CoarseDuration) -> CoarseInstant {
+        CoarseInstant(self.0 + time::Duration::from(rhs))
+    }
+}
+#[cfg(target_arch = "wasm32")]
+impl std::ops::AddAssign<CoarseDuration> for CoarseInstant {
+    fn add_assign(&mut self, rhs: CoarseDuration) {
+        *self = *self + rhs;
+    }
+}
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Sub<CoarseDuration> for CoarseInstant {
+    type Output = CoarseInstant;
+    fn sub(self, rhs: CoarseDuration) -> CoarseInstant {
+        CoarseInstant(self.0 - time::Duration::from(rhs))
+    }
+}
+#[cfg(target_arch = "wasm32")]
+impl std::ops::SubAssign<CoarseDuration> for CoarseInstant {
+    fn sub_assign(&mut self, rhs: CoarseDuration) {
+        *self = *self - rhs;
+    }
+}
+
+/// Implement `CoarseInstant - CoarseInstant -> CoarseDuration` (native)
+#[cfg(not(target_arch = "wasm32"))]
+impl std::ops::Sub<CoarseInstant> for CoarseInstant {
+    type Output = CoarseDuration;
+    fn sub(self, rhs: CoarseInstant) -> CoarseDuration {
+        CoarseDuration(self.0 - rhs.0)
+    }
+}
+
+/// Implement `CoarseInstant - CoarseInstant -> CoarseDuration` (WASM)
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Sub<CoarseInstant> for CoarseInstant {
+    type Output = CoarseDuration;
+    fn sub(self, rhs: CoarseInstant) -> CoarseDuration {
+        // web_time::Instant subtraction returns std::time::Duration
+        CoarseDuration((self.0 - rhs.0).into())
+    }
+}
+
+impl CoarseInstant {
+    /// Returns the current coarse instant.
+    ///
+    /// This is a convenience method that calls the underlying platform-specific
+    /// coarse time implementation directly. On native platforms, this uses
+    /// `coarsetime::Instant::now()`. On WASM, this uses `web_time::Instant::now()`.
+    ///
+    /// Note: For mockable time in tests, prefer using `CoarseTimeProvider::now_coarse()`
+    /// from a runtime instead.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[inline]
+    pub fn now() -> Self {
+        CoarseInstant(coarsetime::Instant::now())
+    }
+
+    /// Returns the current coarse instant (WASM version).
+    #[cfg(target_arch = "wasm32")]
+    #[inline]
+    pub fn now() -> Self {
+        CoarseInstant(web_time::Instant::now())
+    }
+
+    /// Returns the time elapsed since this instant was created.
+    ///
+    /// Note: For mockable time in tests, prefer computing elapsed time using
+    /// `CoarseTimeProvider::now_coarse()` from a runtime instead.
+    #[inline]
+    pub fn elapsed(&self) -> CoarseDuration {
+        Self::now() - *self
+    }
+}
 
 /// Provider of reduced-precision timestamps using the real OS clock
 ///
@@ -156,9 +243,17 @@ impl RealCoarseTimeProvider {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl CoarseTimeProvider for RealCoarseTimeProvider {
     fn now_coarse(&self) -> CoarseInstant {
         CoarseInstant(coarsetime::Instant::now())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl CoarseTimeProvider for RealCoarseTimeProvider {
+    fn now_coarse(&self) -> CoarseInstant {
+        CoarseInstant(web_time::Instant::now())
     }
 }
 
