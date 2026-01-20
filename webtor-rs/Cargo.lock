@@ -5330,8 +5330,3 @@ dependencies = [
  "quote",
  "syn 2.0.111",
 ]
-
-[[patch.unused]]
-name = "fslock-guard"
-version = "0.5.1"
-source = "git+https://github.com/voltrevo/arti?rev=2dacba5cdf56b54cb64107fff6f555715eb3f10f#2dacba5cdf56b54cb64107fff6f555715eb3f10f"

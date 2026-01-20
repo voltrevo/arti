@@ -88,18 +88,18 @@ tracing-wasm = "0.2"
 getrandom = { version = "0.2", features = ["js"] }
 
 # Tor-related dependencies (Arti 1.8.0)
-tor-rtcompat = { version = "0.37.0", default-features = false }
-tor-proto = { version = "0.37.0", default-features = false }
-tor-netdoc = { version = "0.37.0", default-features = false }
-tor-linkspec = "0.37.0"
-tor-llcrypto = "0.37.0"
-tor-cell = "0.37.0"
-tor-error = "0.37.0"
-tor-async-utils = "0.37.0"
-tor-memquota = "0.37.0"
-tor-protover = "0.37.0"
-tor-units = "0.37.0"
-tor-checkable = "0.37.0"
+tor-rtcompat = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f", default-features = false }
+tor-proto = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f", default-features = false }
+tor-netdoc = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f", default-features = false }
+tor-linkspec = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-llcrypto = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-cell = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-error = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-async-utils = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-memquota = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-protover = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-units = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
+tor-checkable = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
 
 # Cryptography
 rsa = "0.9"
@@ -129,39 +129,6 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 
 # KCP reliable transport
 kcp = "0.6"
-
-[patch.crates-io]
-tor-basic-utils = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-proto = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-rtcompat = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-async-utils = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-rtmock = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-memquota = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-units = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-log-ratelim = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-safelog = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-slotmap-careful = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-caret = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-oneshot-fused-workaround = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-bytes = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-cell = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-cert = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-config = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-error = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-linkspec = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-llcrypto = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-protover = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-relay-crypto = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-config-path = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-persist = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-general-addr = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-hscrypto = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-key-forge = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-keymgr = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-checkable = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-tor-netdoc = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-fslock-guard = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
-fs-mistrust = { git = "https://github.com/voltrevo/arti", rev = "2dacba5cdf56b54cb64107fff6f555715eb3f10f" }
 
 # Release profile optimized for WASM bundle size
 [profile.release]
