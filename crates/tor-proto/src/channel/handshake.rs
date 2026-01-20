@@ -11,7 +11,7 @@ use crate::memquota::ChannelAccount;
 use crate::util::skew::ClockSkew;
 use crate::{Error, Result};
 use tor_cell::chancell::{AnyChanCell, ChanMsg, msg};
-use tor_rtcompat::{CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, SleepProvider, StreamOps};
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -50,7 +50,7 @@ where
     async fn send_versions_cell<F>(
         &mut self,
         now_fn: F,
-    ) -> Result<(coarsetime::Instant, SystemTime)>
+    ) -> Result<(CoarseInstant, SystemTime)>
     where
         F: FnOnce() -> SystemTime,
     {
@@ -64,7 +64,7 @@ where
         );
         self.framed_tls().send(version_cell).await?;
         Ok((
-            coarsetime::Instant::now(), // Flushed at instant
+            CoarseInstant::now(), // Flushed at instant
             now_fn(),                   // Flushed at wallclock
         ))
     }
@@ -132,11 +132,11 @@ where
     ) -> Result<(
         Option<msg::AuthChallenge>,
         msg::Certs,
-        (msg::Netinfo, coarsetime::Instant),
+        (msg::Netinfo, CoarseInstant),
     )> {
         let mut auth_challenge_cell: Option<msg::AuthChallenge> = None;
         let mut certs_cell: Option<msg::Certs> = None;
-        let mut netinfo_cell: Option<(msg::Netinfo, coarsetime::Instant)> = None;
+        let mut netinfo_cell: Option<(msg::Netinfo, CoarseInstant)> = None;
 
         // IMPORTANT: Protocol wise, we MUST only allow one single cell of each type for a valid
         // handshake. Any duplicates lead to a failure. They can arrive in any order unfortunately.
@@ -170,7 +170,7 @@ where
                             "Somehow tried to record a duplicate NETINFO cell"
                         )));
                     }
-                    netinfo_cell = Some((n, coarsetime::Instant::now()));
+                    netinfo_cell = Some((n, CoarseInstant::now()));
                     break;
                 }
                 // This should not happen because the ChannelFrame makes sure that only allowed cell on
@@ -596,8 +596,8 @@ impl<
 /// that you have authenticated the other party.
 pub(crate) fn unauthenticated_clock_skew(
     netinfo_cell: &msg::Netinfo,
-    netinfo_rcvd_at: coarsetime::Instant,
-    versions_flushed_at: coarsetime::Instant,
+    netinfo_rcvd_at: CoarseInstant,
+    versions_flushed_at: CoarseInstant,
     versions_flushed_wallclock: SystemTime,
 ) -> ClockSkew {
     // Try to compute our clock skew.  It won't be authenticated yet, since we haven't checked
