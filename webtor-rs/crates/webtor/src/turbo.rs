@@ -367,8 +367,10 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for TurboStream<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_frame_encode_decode_small() {
         let data = b"Hello, World!";
         let frame = TurboFrame::new(data.to_vec());
@@ -384,7 +386,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_frame_encode_decode_medium() {
         let data = vec![0u8; 100]; // > 63 bytes, needs 2-byte header
         let frame = TurboFrame::new(data.clone());
@@ -400,7 +402,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_frame_encode_decode_large() {
         let data = vec![0u8; 10000]; // > 8191 bytes, needs 3-byte header
         let frame = TurboFrame::new(data.clone());
@@ -417,7 +419,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_padding_frame() {
         let data = b"padding data";
         let frame = TurboFrame::padding(data.to_vec());
@@ -429,7 +431,7 @@ mod tests {
         assert!(decoded.is_padding);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_partial_decode() {
         let data = b"Hello";
         let frame = TurboFrame::new(data.to_vec());
@@ -443,105 +445,111 @@ mod tests {
         assert!(TurboFrame::decode(&encoded).unwrap().is_some());
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    mod proptests {
-        use super::*;
-        use proptest::prelude::*;
+    const FUZZ_ITERATIONS: usize = 256;
 
-        proptest! {
-            #![proptest_config(ProptestConfig::with_cases(256))]
+    fn random_bytes(rng: &mut impl rand::Rng, max_len: usize) -> Vec<u8> {
+        let len = rng.gen_range(0..=max_len);
+        (0..len).map(|_| rng.gen()).collect()
+    }
 
-            #[test]
-            fn turbo_frame_roundtrips(
-                data in proptest::collection::vec(any::<u8>(), 0..=0x4000), // 16KB max for faster tests
-                is_padding in any::<bool>(),
-            ) {
-                let frame = if is_padding {
-                    TurboFrame::padding(data.clone())
-                } else {
-                    TurboFrame::new(data.clone())
-                };
+    #[wasm_bindgen_test]
+    fn turbo_frame_roundtrips() {
+        let mut rng = rand::thread_rng();
 
-                let encoded = frame.encode();
-                let (decoded, consumed) = TurboFrame::decode(&encoded).unwrap().unwrap();
+        for _ in 0..FUZZ_ITERATIONS {
+            let data = random_bytes(&mut rng, 0x4000); // 16KB max
+            let is_padding: bool = rng.gen();
 
-                prop_assert_eq!(decoded.data, data);
-                prop_assert_eq!(decoded.is_padding, is_padding);
-                prop_assert_eq!(consumed, encoded.len());
-            }
+            let frame = if is_padding {
+                TurboFrame::padding(data.clone())
+            } else {
+                TurboFrame::new(data.clone())
+            };
 
-            #[test]
-            fn turbo_header_size_boundaries(len in prop_oneof![
-                Just(0usize),
-                Just(1usize),
-                Just(0x3Fusize),
-                Just(0x40usize),
-                Just(0x41usize),
-                Just(0x1FFFusize),
-                Just(0x2000usize),
-                Just(0x2001usize),
-                Just(0xFFFFFusize),
-            ]) {
-                let data = vec![0u8; len];
-                let frame = TurboFrame::new(data);
-                let encoded = frame.encode();
+            let encoded = frame.encode();
+            let (decoded, consumed) = TurboFrame::decode(&encoded).unwrap().unwrap();
 
-                let header_size = encoded.len() - len;
-
-                let expected = if len <= 0x3F { 1 }
-                else if len <= 0x1FFF { 2 }
-                else { 3 };
-
-                prop_assert_eq!(header_size, expected);
-                prop_assert!(TurboFrame::decode(&encoded).unwrap().is_some());
-            }
-
-            #[test]
-            fn turbo_partial_decode_returns_none(
-                data in proptest::collection::vec(any::<u8>(), 0..=1024),
-                is_padding in any::<bool>(),
-            ) {
-                let frame = if is_padding {
-                    TurboFrame::padding(data)
-                } else {
-                    TurboFrame::new(data)
-                };
-                let encoded = frame.encode();
-
-                for split in 0..encoded.len() {
-                    let prefix = &encoded[..split];
-                    let res = TurboFrame::decode(prefix).unwrap();
-                    prop_assert!(res.is_none(), "Expected None for prefix of length {}", split);
-                }
-
-                let full = TurboFrame::decode(&encoded).unwrap();
-                prop_assert!(full.is_some());
-            }
+            assert_eq!(decoded.data, data);
+            assert_eq!(decoded.is_padding, is_padding);
+            assert_eq!(consumed, encoded.len());
         }
+    }
 
-        #[test]
-        fn turbo_oversized_header_rejected() {
-            // MAX_FRAME_SIZE = 1 << 20 = 0x100000 (1MB)
-            // Max 3-byte header length = 0x3F << 14 | 0x7F << 7 | 0x7F = 0xFFFFF
-            // This is less than MAX_FRAME_SIZE, so we need to test boundary
-            // Actually, MAX_FRAME_SIZE = 1 << 20 = 1048576
-            // 0xFFFFF = 1048575, which is < MAX_FRAME_SIZE, so it passes
-            // We need a length > 1048576, but 3-byte max is 1048575
-            //
-            // The only way to exceed is if the code changes or we have a 4-byte header
-            // For now, test that max valid header (0xFFFFF) is accepted
-            let header = [
-                0x80 | 0x40 | 0x3F, // data flag + continuation + 6 bits = max
-                0x80 | 0x7F,        // continuation + 7 bits = max
-                0x7F,               // 7 bits = max (no continuation)
-            ];
-            // Length = 0xFFFFF = 1048575, needs that many bytes of data
-            // Without the data, it returns None (need more data), not an error
-            let result = TurboFrame::decode(&header);
-            assert!(result.unwrap().is_none()); // Need more data
+    #[wasm_bindgen_test]
+    fn turbo_header_size_boundaries() {
+        let boundary_lengths = [
+            0usize, 1, 0x3F, 0x40, 0x41, 0x1FFF, 0x2000, 0x2001, 0xFFFFF,
+        ];
 
-            // Test that we can't construct a frame that would be > MAX_FRAME_SIZE
-            // since the protocol limits to 20 bits (max 0xFFFFF < 0x100000)
+        for len in boundary_lengths {
+            let data = vec![0u8; len];
+            let frame = TurboFrame::new(data);
+            let encoded = frame.encode();
+
+            let header_size = encoded.len() - len;
+
+            let expected = if len <= 0x3F {
+                1
+            } else if len <= 0x1FFF {
+                2
+            } else {
+                3
+            };
+
+            assert_eq!(header_size, expected, "Wrong header size for len {}", len);
+            assert!(TurboFrame::decode(&encoded).unwrap().is_some());
         }
+    }
+
+    #[wasm_bindgen_test]
+    fn turbo_partial_decode_returns_none() {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let data = random_bytes(&mut rng, 1024);
+            let is_padding: bool = rng.gen();
+
+            let frame = if is_padding {
+                TurboFrame::padding(data)
+            } else {
+                TurboFrame::new(data)
+            };
+            let encoded = frame.encode();
+
+            for split in 0..encoded.len() {
+                let prefix = &encoded[..split];
+                let res = TurboFrame::decode(prefix).unwrap();
+                assert!(res.is_none(), "Expected None for prefix of length {}", split);
+            }
+
+            let full = TurboFrame::decode(&encoded).unwrap();
+            assert!(full.is_some());
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn turbo_oversized_header_rejected() {
+        // MAX_FRAME_SIZE = 1 << 20 = 0x100000 (1MB)
+        // Max 3-byte header length = 0x3F << 14 | 0x7F << 7 | 0x7F = 0xFFFFF
+        // This is less than MAX_FRAME_SIZE, so we need to test boundary
+        // Actually, MAX_FRAME_SIZE = 1 << 20 = 1048576
+        // 0xFFFFF = 1048575, which is < MAX_FRAME_SIZE, so it passes
+        // We need a length > 1048576, but 3-byte max is 1048575
+        //
+        // The only way to exceed is if the code changes or we have a 4-byte header
+        // For now, test that max valid header (0xFFFFF) is accepted
+        let header = [
+            0x80 | 0x40 | 0x3F, // data flag + continuation + 6 bits = max
+            0x80 | 0x7F,        // continuation + 7 bits = max
+            0x7F,               // 7 bits = max (no continuation)
+        ];
+        // Length = 0xFFFFF = 1048575, needs that many bytes of data
+        // Without the data, it returns None (need more data), not an error
+        let result = TurboFrame::decode(&header);
+        assert!(result.unwrap().is_none()); // Need more data
+
+        // Test that we can't construct a frame that would be > MAX_FRAME_SIZE
+        // since the protocol limits to 20 bits (max 0xFFFFF < 0x100000)
     }
 }

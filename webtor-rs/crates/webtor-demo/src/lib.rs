@@ -318,6 +318,7 @@ impl Clone for DemoApp {
 }
 
 /// Initialize logging when module loads
+#[cfg(not(test))]
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
     webtor_init()?;

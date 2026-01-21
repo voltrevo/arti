@@ -345,6 +345,8 @@ pub mod selection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use wasm_bindgen_test::*;
 
     fn create_test_relay(fingerprint: &str, flags: Vec<&str>) -> Relay {
         Relay::new(
@@ -357,7 +359,7 @@ mod tests {
         )
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_relay_selection() {
         let relays = vec![
             create_test_relay("relay1", vec![flags::FAST, flags::STABLE, flags::V2DIR]),
@@ -384,167 +386,194 @@ mod tests {
         assert!(!exit_relays[0].flags.contains(flags::BAD_EXIT));
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    mod proptests {
-        use super::*;
-        use proptest::prelude::*;
+    const FUZZ_ITERATIONS: usize = 128;
 
-        const ALL_FLAGS: &[&str] = &[
-            flags::AUTHORITY,
-            flags::BAD_EXIT,
-            flags::EXIT,
-            flags::FAST,
-            flags::GUARD,
-            flags::HSDIR,
-            flags::NAMED,
-            flags::STABLE,
-            flags::RUNNING,
-            flags::VALID,
-            flags::V2DIR,
-        ];
+    const ALL_FLAGS: &[&str] = &[
+        flags::AUTHORITY,
+        flags::BAD_EXIT,
+        flags::EXIT,
+        flags::FAST,
+        flags::GUARD,
+        flags::HSDIR,
+        flags::NAMED,
+        flags::STABLE,
+        flags::RUNNING,
+        flags::VALID,
+        flags::V2DIR,
+    ];
 
-        fn relay_flags_strategy() -> impl Strategy<Value = HashSet<String>> {
-            proptest::collection::hash_set(
-                proptest::sample::select(ALL_FLAGS).prop_map(|s| s.to_string()),
-                0..=ALL_FLAGS.len(),
-            )
+    fn random_fingerprint(rng: &mut impl rand::Rng) -> String {
+        (0..8).map(|_| format!("{:x}", rng.gen_range(0..16))).collect()
+    }
+
+    fn random_flags(rng: &mut impl rand::Rng) -> HashSet<String> {
+        ALL_FLAGS
+            .iter()
+            .filter(|_| rng.gen_bool(0.3))
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    fn random_relay(rng: &mut impl rand::Rng) -> Relay {
+        let fingerprint = random_fingerprint(rng);
+        let flags = random_flags(rng);
+        let bandwidth: u64 = rng.gen_range(0..1_000_000);
+        let weight: u32 = rng.gen_range(0..100_000);
+
+        let mut relay = Relay::new(
+            fingerprint.clone(),
+            format!("relay_{}", &fingerprint[..4.min(fingerprint.len())]),
+            "127.0.0.1".to_string(),
+            9001,
+            flags,
+            "00".repeat(32),
+        );
+        relay.bandwidth = bandwidth;
+        relay.consensus_weight = weight;
+        relay
+    }
+
+    fn random_criteria(rng: &mut impl rand::Rng) -> RelayCriteria {
+        let num_exclude_fps = rng.gen_range(0..=3);
+        let exclude_fingerprints: HashSet<String> =
+            (0..num_exclude_fps).map(|_| random_fingerprint(rng)).collect();
+
+        RelayCriteria {
+            need_flags: random_flags(rng),
+            exclude_flags: random_flags(rng),
+            exclude_fingerprints,
+            min_bandwidth: rng.gen_range(0..500_000),
+            max_selection: rng.gen_range(1..=10),
         }
+    }
 
-        fn relay_strategy() -> impl Strategy<Value = Relay> {
-            (
-                "[a-f0-9]{8}", // fingerprint
-                relay_flags_strategy(),
-                0u64..1_000_000u64, // bandwidth
-                0u32..100_000u32,   // consensus_weight
-            )
-                .prop_map(|(fingerprint, flags, bandwidth, weight)| {
-                    let mut relay = Relay::new(
-                        fingerprint.clone(),
-                        format!("relay_{}", &fingerprint[..4]),
-                        "127.0.0.1".to_string(),
-                        9001,
-                        flags,
-                        "00".repeat(32),
+    #[wasm_bindgen_test]
+    fn relay_selection_respects_invariants() {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let num_relays = rng.gen_range(0..=16);
+            let relays: Vec<Relay> = (0..num_relays).map(|_| random_relay(&mut rng)).collect();
+            let criteria = random_criteria(&mut rng);
+
+            let mgr = RelayManager::new(relays.clone());
+            let result = mgr.select_relays(&criteria);
+
+            match result {
+                Ok(selected) => {
+                    // Size bound
+                    assert!(
+                        selected.len() <= criteria.max_selection,
+                        "Selected {} relays but max is {}",
+                        selected.len(),
+                        criteria.max_selection
                     );
-                    relay.bandwidth = bandwidth;
-                    relay.consensus_weight = weight;
-                    relay
-                })
-        }
 
-        fn criteria_strategy() -> impl Strategy<Value = RelayCriteria> {
-            (
-                relay_flags_strategy(),                               // need_flags
-                relay_flags_strategy(),                               // exclude_flags
-                proptest::collection::hash_set("[a-f0-9]{8}", 0..=3), // exclude_fingerprints
-                0u64..500_000u64,                                     // min_bandwidth
-                1usize..=10usize,                                     // max_selection
-            )
-                .prop_map(
-                    |(
-                        need_flags,
-                        exclude_flags,
-                        exclude_fingerprints,
-                        min_bandwidth,
-                        max_selection,
-                    )| {
-                        RelayCriteria {
-                            need_flags,
-                            exclude_flags,
-                            exclude_fingerprints,
-                            min_bandwidth,
-                            max_selection,
+                    for r in &selected {
+                        // Required flags present
+                        for f in &criteria.need_flags {
+                            assert!(
+                                r.flags.contains(f),
+                                "Relay {} missing required flag {}",
+                                r.fingerprint,
+                                f
+                            );
                         }
-                    },
-                )
-        }
-
-        proptest! {
-            #![proptest_config(ProptestConfig::with_cases(128))]
-
-            #[test]
-            fn relay_selection_respects_invariants(
-                relays in proptest::collection::vec(relay_strategy(), 0..=16),
-                criteria in criteria_strategy(),
-            ) {
-                let mgr = RelayManager::new(relays.clone());
-                let result = mgr.select_relays(&criteria);
-
-                match result {
-                    Ok(selected) => {
-                        // Size bound
-                        prop_assert!(selected.len() <= criteria.max_selection);
-
-                        for r in &selected {
-                            // Required flags present
-                            for f in &criteria.need_flags {
-                                prop_assert!(r.flags.contains(f),
-                                    "Relay {} missing required flag {}", r.fingerprint, f);
-                            }
-                            // Excluded flags absent
-                            for f in &criteria.exclude_flags {
-                                prop_assert!(!r.flags.contains(f),
-                                    "Relay {} has excluded flag {}", r.fingerprint, f);
-                            }
-                            // Excluded fingerprints not selected
-                            prop_assert!(!criteria.exclude_fingerprints.contains(&r.fingerprint),
-                                "Relay {} should have been excluded by fingerprint", r.fingerprint);
-                            // Bandwidth threshold
-                            prop_assert!(r.bandwidth >= criteria.min_bandwidth,
-                                "Relay {} bandwidth {} below minimum {}",
-                                r.fingerprint, r.bandwidth, criteria.min_bandwidth);
+                        // Excluded flags absent
+                        for f in &criteria.exclude_flags {
+                            assert!(
+                                !r.flags.contains(f),
+                                "Relay {} has excluded flag {}",
+                                r.fingerprint,
+                                f
+                            );
                         }
-
-                        // Ordering: sorted by consensus_weight descending
-                        for win in selected.windows(2) {
-                            prop_assert!(win[0].consensus_weight >= win[1].consensus_weight,
-                                "Relays not sorted by consensus_weight");
-                        }
+                        // Excluded fingerprints not selected
+                        assert!(
+                            !criteria.exclude_fingerprints.contains(&r.fingerprint),
+                            "Relay {} should have been excluded by fingerprint",
+                            r.fingerprint
+                        );
+                        // Bandwidth threshold
+                        assert!(
+                            r.bandwidth >= criteria.min_bandwidth,
+                            "Relay {} bandwidth {} below minimum {}",
+                            r.fingerprint,
+                            r.bandwidth,
+                            criteria.min_bandwidth
+                        );
                     }
-                    Err(_) => {
-                        // When error, there must be no valid candidates
-                        let manual_count = relays.iter().filter(|relay| {
-                            !criteria.exclude_fingerprints.contains(&relay.fingerprint)
-                                && criteria.need_flags.iter().all(|f| relay.flags.contains(f))
-                                && criteria.exclude_flags.iter().all(|f| !relay.flags.contains(f))
-                                && relay.bandwidth >= criteria.min_bandwidth
-                        }).count();
 
-                        prop_assert_eq!(manual_count, 0,
-                            "select_relays returned error but {} candidates exist", manual_count);
+                    // Ordering: sorted by consensus_weight descending
+                    for win in selected.windows(2) {
+                        assert!(
+                            win[0].consensus_weight >= win[1].consensus_weight,
+                            "Relays not sorted by consensus_weight"
+                        );
                     }
                 }
+                Err(_) => {
+                    // When error, there must be no valid candidates
+                    let manual_count = relays
+                        .iter()
+                        .filter(|relay| {
+                            !criteria.exclude_fingerprints.contains(&relay.fingerprint)
+                                && criteria.need_flags.iter().all(|f| relay.flags.contains(f))
+                                && criteria
+                                    .exclude_flags
+                                    .iter()
+                                    .all(|f| !relay.flags.contains(f))
+                                && relay.bandwidth >= criteria.min_bandwidth
+                        })
+                        .count();
+
+                    assert_eq!(
+                        manual_count, 0,
+                        "select_relays returned error but {} candidates exist",
+                        manual_count
+                    );
+                }
             }
+        }
+    }
 
-            #[test]
-            fn select_relay_picks_from_select_relays(
-                relays in proptest::collection::vec(relay_strategy(), 1..=16),
-                criteria in criteria_strategy(),
-            ) {
-                let mgr = RelayManager::new(relays);
+    #[wasm_bindgen_test]
+    fn select_relay_picks_from_select_relays() {
+        let mut rng = rand::thread_rng();
 
-                let list_result = mgr.select_relays(&criteria);
-                let single_result = mgr.select_relay(&criteria);
+        for _ in 0..FUZZ_ITERATIONS {
+            let num_relays = rng.gen_range(1..=16);
+            let relays: Vec<Relay> = (0..num_relays).map(|_| random_relay(&mut rng)).collect();
+            let criteria = random_criteria(&mut rng);
 
-                match (list_result, single_result) {
-                    (Ok(list), Ok(single)) => {
-                        prop_assert!(list.iter().any(|r| r.fingerprint == single.fingerprint),
-                            "select_relay returned {} not in select_relays list",
-                            single.fingerprint);
-                    }
-                    (Err(_), Err(_)) => {
-                        // Both error: consistent
-                    }
-                    (Ok(list), Err(_)) => {
-                        prop_assert!(list.is_empty(),
-                            "select_relay errored but select_relays returned {} items",
-                            list.len());
-                    }
-                    (Err(_), Ok(single)) => {
-                        prop_assert!(false,
-                            "select_relays errored but select_relay returned {}",
-                            single.fingerprint);
-                    }
+            let mgr = RelayManager::new(relays);
+
+            let list_result = mgr.select_relays(&criteria);
+            let single_result = mgr.select_relay(&criteria);
+
+            match (list_result, single_result) {
+                (Ok(list), Ok(single)) => {
+                    assert!(
+                        list.iter().any(|r| r.fingerprint == single.fingerprint),
+                        "select_relay returned {} not in select_relays list",
+                        single.fingerprint
+                    );
+                }
+                (Err(_), Err(_)) => {
+                    // Both error: consistent
+                }
+                (Ok(list), Err(_)) => {
+                    assert!(
+                        list.is_empty(),
+                        "select_relay errored but select_relays returned {} items",
+                        list.len()
+                    );
+                }
+                (Err(_), Ok(single)) => {
+                    panic!(
+                        "select_relays errored but select_relay returned {}",
+                        single.fingerprint
+                    );
                 }
             }
         }

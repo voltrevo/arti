@@ -363,8 +363,9 @@ impl BrokerClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_request_encode() {
         let request = ClientPollRequest::new("test-offer".to_string()).with_nat(NatType::Unknown);
 
@@ -376,7 +377,7 @@ mod tests {
         assert!(text.contains("\"nat\":\"unknown\""));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_response_decode() {
         let json = r#"{"answer":"test-answer","error":""}"#;
         let response = ClientPollResponse::decode(json.as_bytes()).unwrap();
@@ -386,7 +387,7 @@ mod tests {
         assert!(response.is_success());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_response_error() {
         let json = r#"{"answer":"","error":"no proxies available"}"#;
         let response = ClientPollResponse::decode(json.as_bytes()).unwrap();

@@ -474,8 +474,9 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_kcp_config_default() {
         let config = KcpConfig::default();
         // Match Snowflake Go settings: nodelay=false, interval=100, nc=true
@@ -484,7 +485,7 @@ mod tests {
         assert!(config.nc);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_output_buffer() {
         let mut buf = OutputBuffer::new();
         buf.write_all(b"hello").unwrap();

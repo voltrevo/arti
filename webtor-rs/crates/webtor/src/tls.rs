@@ -259,8 +259,9 @@ impl AsyncWrite for TlsStream {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_create_tls_connector() {
         let connector = create_tls_connector();
         assert!(connector.is_ok());

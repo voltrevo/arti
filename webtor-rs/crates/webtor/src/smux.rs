@@ -666,8 +666,10 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for SmuxStream<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_segment_encode_decode() {
         let segment = SmuxSegment::psh(3, b"Hello".to_vec());
         let encoded = segment.encode();
@@ -683,7 +685,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_segment_syn() {
         let segment = SmuxSegment::syn(5);
         assert_eq!(segment.command, SmuxCommand::Syn);
@@ -691,7 +693,7 @@ mod tests {
         assert!(segment.data.is_empty());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_segment_upd() {
         let segment = SmuxSegment::upd(3, 1000, 65535);
         assert_eq!(segment.command, SmuxCommand::Upd);
@@ -702,7 +704,7 @@ mod tests {
         assert_eq!(update.window, 65535);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_partial_decode() {
         let segment = SmuxSegment::psh(3, b"Hello".to_vec());
         let encoded = segment.encode();
@@ -714,7 +716,7 @@ mod tests {
         assert!(SmuxSegment::decode(&encoded).unwrap().is_some());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_invalid_version() {
         let mut buf = SmuxSegment::psh(3, b"test".to_vec()).encode();
         buf[0] = 1; // Wrong version
@@ -722,119 +724,144 @@ mod tests {
         assert!(SmuxSegment::decode(&buf).is_err());
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    mod proptests {
-        use super::*;
-        use proptest::prelude::*;
+    const FUZZ_ITERATIONS: usize = 256;
 
-        fn smux_command_strategy() -> impl Strategy<Value = SmuxCommand> {
-            prop_oneof![
-                Just(SmuxCommand::Syn),
-                Just(SmuxCommand::Fin),
-                Just(SmuxCommand::Psh),
-                Just(SmuxCommand::Nop),
-                Just(SmuxCommand::Upd),
-            ]
+    fn random_smux_command(rng: &mut impl rand::Rng) -> SmuxCommand {
+        match rng.gen_range(0..5) {
+            0 => SmuxCommand::Syn,
+            1 => SmuxCommand::Fin,
+            2 => SmuxCommand::Psh,
+            3 => SmuxCommand::Nop,
+            _ => SmuxCommand::Upd,
         }
+    }
 
-        proptest! {
-            #![proptest_config(ProptestConfig::with_cases(256))]
+    fn random_bytes(rng: &mut impl rand::Rng, max_len: usize) -> Vec<u8> {
+        let len = rng.gen_range(0..=max_len);
+        (0..len).map(|_| rng.gen()).collect()
+    }
 
-            #[test]
-            fn smux_segment_roundtrips(
-                cmd in smux_command_strategy(),
-                stream_id in any::<u32>(),
-                data in proptest::collection::vec(any::<u8>(), 0..=1024),
-            ) {
-                let seg = SmuxSegment {
-                    version: SMUX_VERSION,
-                    command: cmd,
-                    stream_id,
-                    data,
-                };
-                let encoded = seg.encode();
+    #[wasm_bindgen_test]
+    fn smux_segment_roundtrips() {
+        let mut rng = rand::thread_rng();
 
-                let (decoded, consumed_bytes) = SmuxSegment::decode(&encoded).unwrap().unwrap();
+        for _ in 0..FUZZ_ITERATIONS {
+            let cmd = random_smux_command(&mut rng);
+            let stream_id: u32 = rng.gen();
+            let data = random_bytes(&mut rng, 1024);
 
-                prop_assert_eq!(decoded.version, SMUX_VERSION);
-                prop_assert_eq!(decoded.command, cmd);
-                prop_assert_eq!(decoded.stream_id, stream_id);
-                prop_assert_eq!(decoded.data, seg.data);
-                prop_assert_eq!(consumed_bytes, encoded.len());
+            let seg = SmuxSegment {
+                version: SMUX_VERSION,
+                command: cmd,
+                stream_id,
+                data: data.clone(),
+            };
+            let encoded = seg.encode();
+
+            let (decoded, consumed_bytes) = SmuxSegment::decode(&encoded).unwrap().unwrap();
+
+            assert_eq!(decoded.version, SMUX_VERSION);
+            assert_eq!(decoded.command, cmd);
+            assert_eq!(decoded.stream_id, stream_id);
+            assert_eq!(decoded.data, data);
+            assert_eq!(consumed_bytes, encoded.len());
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn smux_update_roundtrips() {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let consumed: u32 = rng.gen();
+            let window: u32 = rng.gen();
+
+            let seg = SmuxSegment::upd(3, consumed, window);
+            let upd = SmuxUpdate::decode(&seg.data).unwrap();
+
+            assert_eq!(upd.consumed, consumed);
+            assert_eq!(upd.window, window);
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn smux_partial_decode_returns_none() {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let cmd = random_smux_command(&mut rng);
+            let stream_id: u32 = rng.gen();
+            let data = random_bytes(&mut rng, 256);
+
+            let seg = SmuxSegment {
+                version: SMUX_VERSION,
+                command: cmd,
+                stream_id,
+                data,
+            };
+            let encoded = seg.encode();
+
+            for split in 0..encoded.len() {
+                let prefix = &encoded[..split];
+                let res = SmuxSegment::decode(prefix).unwrap();
+                assert!(res.is_none(), "Expected None for prefix of length {}", split);
             }
 
-            #[test]
-            fn smux_update_roundtrips(consumed in any::<u32>(), window in any::<u32>()) {
-                let seg = SmuxSegment::upd(3, consumed, window);
-                let upd = SmuxUpdate::decode(&seg.data).unwrap();
+            let full = SmuxSegment::decode(&encoded).unwrap();
+            assert!(full.is_some());
+        }
+    }
 
-                prop_assert_eq!(upd.consumed, consumed);
-                prop_assert_eq!(upd.window, window);
-            }
+    #[wasm_bindgen_test]
+    fn smux_rejects_invalid_version() {
+        let mut rng = rand::thread_rng();
 
-            #[test]
-            fn smux_partial_decode_returns_none(
-                cmd in smux_command_strategy(),
-                stream_id in any::<u32>(),
-                data in proptest::collection::vec(any::<u8>(), 0..=256),
-            ) {
-                let seg = SmuxSegment {
-                    version: SMUX_VERSION,
-                    command: cmd,
-                    stream_id,
-                    data,
-                };
-                let encoded = seg.encode();
-
-                for split in 0..encoded.len() {
-                    let prefix = &encoded[..split];
-                    let res = SmuxSegment::decode(prefix).unwrap();
-                    prop_assert!(res.is_none(), "Expected None for prefix of length {}", split);
+        for _ in 0..FUZZ_ITERATIONS {
+            let version: u8 = loop {
+                let v: u8 = rng.gen();
+                if v != SMUX_VERSION {
+                    break v;
                 }
+            };
 
-                let full = SmuxSegment::decode(&encoded).unwrap();
-                prop_assert!(full.is_some());
-            }
+            let mut buf = Vec::with_capacity(12);
+            buf.push(version);
+            buf.push(SmuxCommand::Psh as u8);
+            buf.extend_from_slice(&4u16.to_le_bytes());
+            buf.extend_from_slice(&1u32.to_le_bytes());
+            buf.extend_from_slice(&[0u8; 4]);
 
-            #[test]
-            fn smux_rejects_invalid_version(
-                version in any::<u8>().prop_filter("valid version filtered", |v| *v != SMUX_VERSION),
-            ) {
-                let mut buf = Vec::with_capacity(12);
-                buf.push(version);
-                buf.push(SmuxCommand::Psh as u8);
-                buf.extend_from_slice(&4u16.to_le_bytes()); // data_len = 4
-                buf.extend_from_slice(&1u32.to_le_bytes()); // stream_id
-                buf.extend_from_slice(&[0u8; 4]); // data
-
-                let res = SmuxSegment::decode(&buf);
-                prop_assert!(res.is_err());
-            }
-
-            #[test]
-            fn smux_rejects_invalid_command(
-                cmd_byte in 5u8..=255u8, // commands 0-4 are valid
-            ) {
-                let mut buf = Vec::with_capacity(12);
-                buf.push(SMUX_VERSION);
-                buf.push(cmd_byte);
-                buf.extend_from_slice(&4u16.to_le_bytes()); // data_len = 4
-                buf.extend_from_slice(&1u32.to_le_bytes()); // stream_id
-                buf.extend_from_slice(&[0u8; 4]); // data
-
-                let res = SmuxSegment::decode(&buf);
-                prop_assert!(res.is_err());
-            }
+            let res = SmuxSegment::decode(&buf);
+            assert!(res.is_err());
         }
+    }
 
-        #[test]
-        fn smux_update_rejects_short_payload() {
-            // UPD payload must be 8 bytes
-            for len in 0..8 {
-                let data = vec![0u8; len];
-                let result = SmuxUpdate::decode(&data);
-                assert!(result.is_err(), "Expected error for payload length {}", len);
-            }
+    #[wasm_bindgen_test]
+    fn smux_rejects_invalid_command() {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let cmd_byte: u8 = rng.gen_range(5..=255);
+
+            let mut buf = Vec::with_capacity(12);
+            buf.push(SMUX_VERSION);
+            buf.push(cmd_byte);
+            buf.extend_from_slice(&4u16.to_le_bytes());
+            buf.extend_from_slice(&1u32.to_le_bytes());
+            buf.extend_from_slice(&[0u8; 4]);
+
+            let res = SmuxSegment::decode(&buf);
+            assert!(res.is_err());
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn smux_update_rejects_short_payload() {
+        for len in 0..8 {
+            let data = vec![0u8; len];
+            let result = SmuxUpdate::decode(&data);
+            assert!(result.is_err(), "Expected error for payload length {}", len);
         }
     }
 }

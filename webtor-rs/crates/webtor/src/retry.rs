@@ -449,8 +449,9 @@ where
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn delay_calculation_is_correct() {
         let policy = RetryPolicy {
             max_attempts: 5,
@@ -466,7 +467,7 @@ mod tests {
         assert_eq!(policy.delay_for_attempt(5), Duration::from_millis(8000));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn delay_respects_max_delay() {
         let policy = RetryPolicy {
             max_attempts: 10,
@@ -479,7 +480,7 @@ mod tests {
         assert_eq!(policy.delay_for_attempt(10), Duration::from_secs(30));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn preset_policies_are_reasonable() {
         let network = RetryPolicy::network();
         assert_eq!(network.max_attempts, 5);
@@ -569,7 +570,7 @@ mod tests {
         assert_eq!(attempts.load(AtomicOrdering::SeqCst), 3);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn zero_attempts_policy_has_zero_max_attempts() {
         let policy = RetryPolicy::new(0);
         assert_eq!(policy.max_attempts, 0);
@@ -611,20 +612,20 @@ mod tests {
         assert!(err.to_string().contains("inner error"));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn cancellation_token_starts_uncancelled() {
         let token = CancellationToken::new();
         assert!(!token.is_cancelled());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn cancellation_token_cancel_sets_flag() {
         let token = CancellationToken::new();
         token.cancel();
         assert!(token.is_cancelled());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn cancellation_token_clone_shares_state() {
         let token1 = CancellationToken::new();
         let token2 = token1.clone();

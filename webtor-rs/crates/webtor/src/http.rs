@@ -655,6 +655,7 @@ mod tests {
     use crate::relay::{flags, Relay, RelayManager};
     use std::sync::Arc;
     use tokio::sync::RwLock;
+    use wasm_bindgen_test::*;
 
     fn create_test_relay(fingerprint: &str, flags: Vec<&str>) -> Relay {
         Relay::new(
@@ -667,7 +668,7 @@ mod tests {
         )
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn test_http_request_creation() {
         let url = Url::parse("https://httpbin.org/ip").unwrap();
         let request = HttpRequest::new(url.clone())
@@ -684,7 +685,7 @@ mod tests {
         assert_eq!(request.timeout, Duration::from_secs(30));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_build_request() {
         let url = Url::parse("http://example.com/path?query=1").unwrap();
         let request = HttpRequest::new(url).with_header("X-Custom", "value");
@@ -698,7 +699,7 @@ mod tests {
         assert!(request_str.ends_with("\r\n\r\n"));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_parse_http_response() {
         let response_bytes = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello, World!";
         let url = Url::parse("http://example.com/").unwrap();
@@ -756,7 +757,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_single_chunk() {
         // Single chunk: "Hello" (5 bytes = 0x5)
         let chunked = b"5\r\nHello\r\n0\r\n\r\n";
@@ -764,7 +765,7 @@ mod tests {
         assert_eq!(decoded, b"Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_multiple_chunks() {
         // Two chunks: "Hello" + " World"
         let chunked = b"5\r\nHello\r\n6\r\n World\r\n0\r\n\r\n";
@@ -772,7 +773,7 @@ mod tests {
         assert_eq!(decoded, b"Hello World");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_with_extension() {
         // Chunk with extension (should be ignored)
         let chunked = b"5;name=value\r\nHello\r\n0\r\n\r\n";
@@ -780,7 +781,7 @@ mod tests {
         assert_eq!(decoded, b"Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_json_rpc() {
         // Simulate JSON-RPC response like eth.drpc.org
         let json = r#"{"jsonrpc":"2.0","id":1,"result":"0x1234"}"#;
@@ -790,7 +791,7 @@ mod tests {
         assert_eq!(String::from_utf8(decoded).unwrap(), json);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_parse_http_response_chunked() {
         // Full HTTP response with chunked encoding
         let response_bytes =
@@ -803,7 +804,7 @@ mod tests {
         assert_eq!(response.text().unwrap(), "Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_parse_http_response_content_length_truncation() {
         // Response with Content-Length but extra trailing data
         let response_bytes = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHelloExtra garbage";
@@ -815,28 +816,28 @@ mod tests {
         assert_eq!(response.text().unwrap(), "Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_leading_crlf() {
         let chunked = b"\r\n\r\n5\r\nHello\r\n0\r\n\r\n";
         let decoded = decode_chunked_body(chunked).unwrap();
         assert_eq!(decoded, b"Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_with_trailers() {
         let chunked = b"5\r\nHello\r\n0\r\nX-Foo: bar\r\nAnother: header\r\n\r\nGarbageAfter";
         let decoded = decode_chunked_body(chunked).unwrap();
         assert_eq!(decoded, b"Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_invalid_first_chunk_size() {
         let chunked = b"ZZZ\r\nHello\r\n0\r\n\r\n";
         let err = decode_chunked_body(chunked).unwrap_err();
         assert!(err.contains("Invalid chunk size"));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_decode_chunked_body_partial_second_chunk_returns_partial() {
         // First chunk "Hello", second chunk claims 5 bytes but only 2 available
         let chunked = b"5\r\nHello\r\n5\r\nWo";
@@ -844,7 +845,7 @@ mod tests {
         assert_eq!(decoded, b"HelloWo");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_parse_http_response_chunked_mixed_case_header() {
         let response_bytes =
             b"HTTP/1.1 200 OK\r\nTransfer-Encoding: Chunked\r\n\r\n5\r\nHello\r\n0\r\n\r\n";
@@ -853,7 +854,7 @@ mod tests {
         assert_eq!(response.text().unwrap(), "Hello");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_parse_http_response_chunked_ignores_content_length() {
         // Content-Length is wrong on purpose - chunked should take precedence
         let response_bytes = b"HTTP/1.1 200 OK\r\n\

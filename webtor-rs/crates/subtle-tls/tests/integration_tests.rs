@@ -373,16 +373,14 @@ mod handshake_tests {
         // Session ID length should be 0, so cipher suite length starts at 39
         let pos = 39;
         let cs_len = ((client_hello[pos] as usize) << 8) | (client_hello[pos + 1] as usize);
-        assert_eq!(cs_len, 6); // 3 cipher suites * 2 bytes each
+        assert_eq!(cs_len, 4); // 2 cipher suites * 2 bytes each (SHA-384 not implemented)
 
-        // Parse cipher suites
+        // Parse cipher suites (only SHA-256 based suites are sent)
         let cs1 = ((client_hello[pos + 2] as u16) << 8) | (client_hello[pos + 3] as u16);
         let cs2 = ((client_hello[pos + 4] as u16) << 8) | (client_hello[pos + 5] as u16);
-        let cs3 = ((client_hello[pos + 6] as u16) << 8) | (client_hello[pos + 7] as u16);
 
         assert_eq!(cs1, TLS_AES_128_GCM_SHA256);
-        assert_eq!(cs2, TLS_AES_256_GCM_SHA384);
-        assert_eq!(cs3, TLS_CHACHA20_POLY1305_SHA256);
+        assert_eq!(cs2, TLS_CHACHA20_POLY1305_SHA256);
     }
 
     #[wasm_bindgen_test]

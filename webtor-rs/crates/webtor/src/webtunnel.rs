@@ -422,7 +422,7 @@ pub async fn create_webtunnel_stream(config: WebTunnelConfig) -> Result<WebTunne
 mod tests {
     use super::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_config_creation() {
         let config = WebTunnelConfig::new(
             "https://example.com/secret-path".to_string(),
@@ -433,7 +433,7 @@ mod tests {
         assert!(config.server_name.is_none());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_config_with_timeout() {
         let config =
             WebTunnelConfig::new("https://example.com/path".to_string(), "AAAA".repeat(10))
@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(config.connection_timeout, Duration::from_secs(60));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_config_with_server_name() {
         let config =
             WebTunnelConfig::new("https://example.com/path".to_string(), "AAAA".repeat(10))

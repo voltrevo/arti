@@ -256,8 +256,9 @@ pub async fn create_snowflake_ws_stream() -> Result<SnowflakeWsStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_config_default() {
         let config = SnowflakeWsConfig::default();
         assert_eq!(config.ws_url, SNOWFLAKE_WS_URL);

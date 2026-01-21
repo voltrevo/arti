@@ -90,7 +90,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
-proptest = { version = "1", default-features = false, features = ["std"] }
+wasm-bindgen-test = { workspace = true }
 
 # Integration benchmark (manual, requires network)
 [[bench]]

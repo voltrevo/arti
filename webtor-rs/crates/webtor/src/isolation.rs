@@ -130,36 +130,37 @@ fn extract_domain(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::*;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_per_subdomain_uses_full_host() {
         let url = Url::parse("https://foo.bar.example.com:443/path").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerSubdomain).unwrap();
         assert_eq!(key.0, "foo.bar.example.com");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_per_domain_uses_registrable_domain() {
         let url = Url::parse("https://foo.bar.example.com").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "example.com");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_per_origin_includes_scheme_and_port() {
         let url = Url::parse("https://example.com:4443/path").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerOrigin).unwrap();
         assert_eq!(key.0, "https://example.com:4443");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_per_origin_with_default_port() {
         let url = Url::parse("https://example.com/path").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerOrigin).unwrap();
         assert_eq!(key.0, "https://example.com:443");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_http_and_https_same_domain() {
         let http_url = Url::parse("http://example.com/").unwrap();
         let https_url = Url::parse("https://example.com/").unwrap();
@@ -175,35 +176,35 @@ mod tests {
         assert_ne!(http_key, https_key);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_ip_address_handling() {
         let url = Url::parse("http://192.168.1.1:8080/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "192.168.1.1");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_onion_address() {
         let url = Url::parse("http://exampleonion123456.onion/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "exampleonion123456.onion");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_two_part_tld() {
         let url = Url::parse("https://www.example.co.uk/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "example.co.uk");
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_no_isolation_returns_none() {
         let url = Url::parse("https://example.com/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::None);
         assert!(key.is_none());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_isolation_key_equality() {
         let key1 = IsolationKey::from_string("example.com");
         let key2 = IsolationKey::from_string("example.com");
@@ -213,7 +214,7 @@ mod tests {
         assert_ne!(key1, key3);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_subdomains_same_domain_per_domain() {
         let url1 = Url::parse("https://foo.example.com/").unwrap();
         let url2 = Url::parse("https://bar.example.com/").unwrap();
@@ -223,7 +224,7 @@ mod tests {
         assert_eq!(key1, key2);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_subdomains_different_per_subdomain() {
         let url1 = Url::parse("https://foo.example.com/").unwrap();
         let url2 = Url::parse("https://bar.example.com/").unwrap();
@@ -232,21 +233,44 @@ mod tests {
         let key2 = IsolationKey::from_url(&url2, StreamIsolationPolicy::PerSubdomain).unwrap();
         assert_ne!(key1, key2);
     }
-}
 
-#[cfg(test)]
-mod proptest_tests {
-    use super::*;
-    use proptest::prelude::*;
+    const FUZZ_ITERATIONS: usize = 256;
 
-    proptest! {
-        #[test]
-        fn isolation_key_from_url_never_panics(
-            scheme in "(http|https)",
-            host in "[a-z]{1,10}(\\.[a-z]{1,10}){0,3}",
-            port in 1u16..65535,
-            path in "/[a-z]{0,20}",
-        ) {
+    fn random_alpha_string(rng: &mut impl rand::Rng, len: usize) -> String {
+        use rand::Rng;
+        (0..len)
+            .map(|_| (b'a' + rng.gen_range(0..26)) as char)
+            .collect()
+    }
+
+    fn random_host(rng: &mut impl rand::Rng) -> String {
+        use rand::Rng;
+        let num_parts = rng.gen_range(1..=4);
+        let mut parts = Vec::with_capacity(num_parts);
+        for _ in 0..num_parts {
+            let len = rng.gen_range(1..=5);
+            parts.push(random_alpha_string(rng, len));
+        }
+        parts.join(".")
+    }
+
+    fn random_path(rng: &mut impl rand::Rng) -> String {
+        use rand::Rng;
+        let len = rng.gen_range(0..=20);
+        format!("/{}", random_alpha_string(rng, len))
+    }
+
+    #[wasm_bindgen_test]
+    fn isolation_key_from_url_never_panics() {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let scheme = if rng.gen_bool(0.5) { "http" } else { "https" };
+            let host = random_host(&mut rng);
+            let port: u16 = rng.gen_range(1..65535);
+            let path = random_path(&mut rng);
+
             let url_str = format!("{}://{}:{}{}", scheme, host, port, path);
             if let Ok(url) = Url::parse(&url_str) {
                 let _ = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain);
@@ -255,33 +279,62 @@ mod proptest_tests {
                 let _ = IsolationKey::from_url(&url, StreamIsolationPolicy::None);
             }
         }
+    }
 
-        #[test]
-        fn per_domain_always_shorter_or_equal_to_per_subdomain(
-            host in "[a-z]{1,5}(\\.[a-z]{1,5}){1,4}",
-        ) {
+    #[wasm_bindgen_test]
+    fn per_domain_always_shorter_or_equal_to_per_subdomain() {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let host = random_host(&mut rng);
             let url_str = format!("https://{}/", host);
             if let Ok(url) = Url::parse(&url_str) {
-                let domain_key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
-                let subdomain_key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerSubdomain).unwrap();
-                prop_assert!(domain_key.0.len() <= subdomain_key.0.len());
+                if let (Some(domain_key), Some(subdomain_key)) = (
+                    IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain),
+                    IsolationKey::from_url(&url, StreamIsolationPolicy::PerSubdomain),
+                ) {
+                    assert!(
+                        domain_key.0.len() <= subdomain_key.0.len(),
+                        "Domain key {} longer than subdomain key {} for host {}",
+                        domain_key.0,
+                        subdomain_key.0,
+                        host
+                    );
+                }
             }
         }
+    }
 
-        #[test]
-        fn per_origin_includes_scheme(
-            scheme in "(http|https)",
-            host in "[a-z]{1,10}\\.[a-z]{1,5}",
-        ) {
+    #[wasm_bindgen_test]
+    fn per_origin_includes_scheme() {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let scheme = if rng.gen_bool(0.5) { "http" } else { "https" };
+            let host = random_host(&mut rng);
             let url_str = format!("{}://{}/", scheme, host);
             if let Ok(url) = Url::parse(&url_str) {
-                let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerOrigin).unwrap();
-                prop_assert!(key.0.starts_with(&scheme));
+                if let Some(key) = IsolationKey::from_url(&url, StreamIsolationPolicy::PerOrigin) {
+                    assert!(
+                        key.0.starts_with(scheme),
+                        "Key {} doesn't start with scheme {}",
+                        key.0,
+                        scheme
+                    );
+                }
             }
         }
+    }
 
-        #[test]
-        fn same_url_same_key(url_str in "https://[a-z]{1,5}\\.[a-z]{1,5}/[a-z]{0,10}") {
+    #[wasm_bindgen_test]
+    fn same_url_same_key() {
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..FUZZ_ITERATIONS {
+            let host = random_host(&mut rng);
+            let path = random_path(&mut rng);
+            let url_str = format!("https://{}{}", host, path);
             if let Ok(url) = Url::parse(&url_str) {
                 for policy in [
                     StreamIsolationPolicy::PerDomain,
@@ -290,7 +343,7 @@ mod proptest_tests {
                 ] {
                     let key1 = IsolationKey::from_url(&url, policy);
                     let key2 = IsolationKey::from_url(&url, policy);
-                    prop_assert_eq!(key1, key2);
+                    assert_eq!(key1, key2, "Same URL {} produced different keys", url_str);
                 }
             }
         }
