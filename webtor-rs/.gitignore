@@ -11,7 +11,6 @@ crates/webtor-wasm/pkg/
 .DS_Store
 
 # AI/Agent artifacts
-.cargo/
 .claude/
 .claude-collective/
 .taskmaster/
