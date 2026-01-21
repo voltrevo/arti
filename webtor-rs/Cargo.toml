@@ -1,13 +1,6 @@
 [workspace]
-members = [
-    "webtor",
-    "webtor-wasm",
-    "webtor-demo"
-]
-exclude = [
-    "subtle-tls/fuzz",
-    "webtor/fuzz"
-]
+members = ["crates/*"]
+exclude = ["crates/*/fuzz"]
 resolver = "2"
 
 [workspace.package]

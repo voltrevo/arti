@@ -73,26 +73,26 @@ fi
 print_status "Build mode: $BUILD_MODE"
 
 print_status "Building webtor-wasm (WebAssembly bindings)..."
-cd webtor-wasm
+cd crates/webtor-wasm
 wasm-pack build --target web --out-dir pkg $BUILD_MODE
 if [ $? -ne 0 ]; then
     print_error "Failed to build webtor-wasm"
     exit 1
 fi
-cd ..
+cd ../..
 
 print_status "Building webtor-demo (Demo webpage)..."
-cd webtor-demo
+cd crates/webtor-demo
 wasm-pack build --target web --out-dir pkg $BUILD_MODE
 if [ $? -ne 0 ]; then
     print_error "Failed to build webtor-demo"
     exit 1
 fi
-cd ..
+cd ../..
 
 print_status "Copying demo files..."
-mkdir -p webtor-demo/static/pkg
-cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
+mkdir -p crates/webtor-demo/static/pkg
+cp -r crates/webtor-demo/pkg/* crates/webtor-demo/static/pkg/
 
 # Run wasm-opt if available (for additional size optimization)
 optimize_wasm() {
@@ -117,14 +117,14 @@ print_wasm_size() {
 
 # Optimize WASM binaries if wasm-opt is available
 if [ "$BUILD_MODE" = "--release" ]; then
-    optimize_wasm webtor-wasm/pkg/webtor_wasm_bg.wasm
-    optimize_wasm webtor-demo/pkg/webtor_demo_bg.wasm
+    optimize_wasm crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
+    optimize_wasm crates/webtor-demo/pkg/webtor_demo_bg.wasm
 fi
 
 # Show WASM sizes
 echo ""
-print_wasm_size webtor-wasm/pkg/webtor_wasm_bg.wasm
-print_wasm_size webtor-demo/pkg/webtor_demo_bg.wasm
+print_wasm_size crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
+print_wasm_size crates/webtor-demo/pkg/webtor_demo_bg.wasm
 
 echo ""
 print_status "Build completed successfully!"
@@ -134,5 +134,5 @@ print_status "  ./build.sh          # Production build (optimized, slower compil
 print_status "  ./build.sh --dev    # Development build (fast compile, no optimization)"
 echo ""
 print_status "To run the demo:"
-print_status "  cd webtor-demo/static && python3 -m http.server 8000"
+print_status "  cd crates/webtor-demo/static && python3 -m http.server 8000"
 print_status "  Open http://localhost:8000 in your browser"
