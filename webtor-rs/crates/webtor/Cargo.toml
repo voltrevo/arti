@@ -90,15 +90,9 @@ tokio-util = { version = "0.7", features = ["compat"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
-criterion = "0.5"
-proptest = "1"
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 # Integration benchmark (manual, requires network)
 [[bench]]
 name = "tor_benchmark"
-harness = false
-
-# Criterion microbenchmarks (deterministic, no network)
-[[bench]]
-name = "circuit_params"
 harness = false
