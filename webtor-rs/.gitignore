@@ -3,8 +3,9 @@ target/
 node_modules/
 example/node_modules/
 example/dist/
-webtor-demo/pkg/
-webtor-demo/static/pkg/
+crates/webtor-demo/pkg/
+crates/webtor-demo/static/pkg/
+crates/webtor-wasm/pkg/
 
 # macOS
 .DS_Store
