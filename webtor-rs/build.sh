@@ -22,8 +22,14 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+print_usage() {
+    print_status "Usage:"
+    print_status "  ./build.sh            # Development build (fast compile, no optimization)"
+    print_status "  ./build.sh --release  # Production build (optimized, slower compile)"
+}
+
 # Parse arguments
-BUILD_MODE="--release"
+BUILD_MODE="--dev"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -31,8 +37,14 @@ while [[ $# -gt 0 ]]; do
             BUILD_MODE="--dev"
             shift
             ;;
-        *)
+        --release)
+            BUILD_MODE="--release"
             shift
+            ;;
+        *)
+            print_error "Unrecognized arg: \"$1\""
+            print_usage
+            exit 1
             ;;
     esac
 done
@@ -129,9 +141,7 @@ print_wasm_size crates/webtor-demo/pkg/webtor_demo_bg.wasm
 echo ""
 print_status "Build completed successfully!"
 echo ""
-print_status "Usage:"
-print_status "  ./build.sh          # Production build (optimized, slower compile)"
-print_status "  ./build.sh --dev    # Development build (fast compile, no optimization)"
+print_usage
 echo ""
 print_status "To run the demo:"
 print_status "  cd crates/webtor-demo/static && python3 -m http.server 8000"
