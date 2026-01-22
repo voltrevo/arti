@@ -203,7 +203,7 @@ mod tls12_handshake_tests {
 
         for (suite, expected_key_len, expected_iv_len, is_aead) in suites {
             let params = CipherSuiteParams::for_suite(suite)
-                .expect(&format!("Suite 0x{:04x} should be supported", suite));
+                .unwrap_or_else(|_| panic!("Suite 0x{:04x} should be supported", suite));
 
             assert_eq!(
                 params.key_len, expected_key_len,
@@ -380,40 +380,175 @@ mod tls12_record_tests {
 
 mod tls_version_negotiation_tests {
     use super::*;
-    use subtle_tls::{TlsConfig, TlsVersion};
+    use subtle_tls::handshake::{
+        HandshakeState, EXT_KEY_SHARE, EXT_SUPPORTED_VERSIONS, GROUP_X25519,
+        TLS_AES_128_GCM_SHA256,
+    };
+    use subtle_tls::handshake_1_2::{
+        Handshake12State, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_VERSION_1_2,
+    };
 
-    #[wasm_bindgen_test]
-    async fn test_tls_version_enum() {
-        // Test that different variants are not equal
-        assert_ne!(TlsVersion::Tls13, TlsVersion::Tls12);
-        assert_ne!(TlsVersion::Tls13, TlsVersion::Prefer13);
-        assert_ne!(TlsVersion::Tls12, TlsVersion::Prefer13);
+    /// Build a minimal TLS 1.3 ServerHello message (without handshake header).
+    /// The `supported_versions` extension contains the specified version.
+    fn build_tls13_server_hello(version_in_ext: u16, cipher_suite: u16, group: u16) -> Vec<u8> {
+        let mut msg = Vec::new();
 
-        // Test clone produces equal values
-        let v1 = TlsVersion::Tls13;
-        let v2 = v1.clone();
-        assert_eq!(v1, v2);
+        // Legacy version (TLS 1.2 for compatibility)
+        msg.extend_from_slice(&[0x03, 0x03]);
+
+        // Server random (32 bytes)
+        msg.extend_from_slice(&[0xaa; 32]);
+
+        // Session ID (empty)
+        msg.push(0x00);
+
+        // Cipher suite
+        msg.push((cipher_suite >> 8) as u8);
+        msg.push(cipher_suite as u8);
+
+        // Compression method (null)
+        msg.push(0x00);
+
+        // Build extensions
+        let mut extensions = Vec::new();
+
+        // supported_versions extension (type 43)
+        extensions.push((EXT_SUPPORTED_VERSIONS >> 8) as u8);
+        extensions.push(EXT_SUPPORTED_VERSIONS as u8);
+        extensions.push(0x00); // length high
+        extensions.push(0x02); // length low (2 bytes for version)
+        extensions.push((version_in_ext >> 8) as u8);
+        extensions.push(version_in_ext as u8);
+
+        // key_share extension (type 51) with X25519 key (32 bytes)
+        extensions.push((EXT_KEY_SHARE >> 8) as u8);
+        extensions.push(EXT_KEY_SHARE as u8);
+        let key_share_len: u16 = 2 + 2 + 32; // group(2) + key_len(2) + key(32)
+        extensions.push((key_share_len >> 8) as u8);
+        extensions.push(key_share_len as u8);
+        extensions.push((group >> 8) as u8);
+        extensions.push(group as u8);
+        extensions.push(0x00); // key length high
+        extensions.push(0x20); // key length low (32)
+        extensions.extend_from_slice(&[0xbb; 32]); // fake public key
+
+        // Extensions length
+        let ext_len = extensions.len() as u16;
+        msg.push((ext_len >> 8) as u8);
+        msg.push(ext_len as u8);
+        msg.extend_from_slice(&extensions);
+
+        msg
+    }
+
+    /// Build a minimal TLS 1.2 ServerHello message (without handshake header).
+    fn build_tls12_server_hello(version: u16, cipher_suite: u16) -> Vec<u8> {
+        let mut msg = Vec::new();
+
+        // Version
+        msg.push((version >> 8) as u8);
+        msg.push(version as u8);
+
+        // Server random (32 bytes)
+        msg.extend_from_slice(&[0xaa; 32]);
+
+        // Session ID (empty)
+        msg.push(0x00);
+
+        // Cipher suite
+        msg.push((cipher_suite >> 8) as u8);
+        msg.push(cipher_suite as u8);
+
+        // Compression method (null - required)
+        msg.push(0x00);
+
+        msg
     }
 
     #[wasm_bindgen_test]
-    async fn test_config_with_prefer13() {
-        let config = TlsConfig {
-            skip_verification: false,
-            alpn_protocols: vec!["http/1.1".to_string()],
-            version: TlsVersion::Prefer13,
-        };
+    async fn test_tls13_parse_server_hello_accepts_correct_version() {
+        let mut state = HandshakeState::new("example.com").await.unwrap();
+        let server_hello = build_tls13_server_hello(0x0304, TLS_AES_128_GCM_SHA256, GROUP_X25519);
 
-        assert_eq!(config.version, TlsVersion::Prefer13);
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_ok(), "Should accept TLS 1.3 version: {:?}", result);
+        assert_eq!(state.cipher_suite, TLS_AES_128_GCM_SHA256);
+        assert_eq!(state.selected_group, GROUP_X25519);
     }
 
     #[wasm_bindgen_test]
-    async fn test_config_with_tls12_only() {
-        let config = TlsConfig {
-            skip_verification: false,
-            alpn_protocols: vec!["http/1.1".to_string()],
-            version: TlsVersion::Tls12,
-        };
+    async fn test_tls13_parse_server_hello_rejects_tls12_in_supported_versions() {
+        let mut state = HandshakeState::new("example.com").await.unwrap();
+        // Server responds with TLS 1.2 (0x0303) in supported_versions - should reject
+        let server_hello = build_tls13_server_hello(0x0303, TLS_AES_128_GCM_SHA256, GROUP_X25519);
 
-        assert_eq!(config.version, TlsVersion::Tls12);
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_err(), "Should reject TLS 1.2 in supported_versions");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Unsupported TLS version"),
+            "Error should mention version: {}",
+            err
+        );
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_tls13_parse_server_hello_rejects_unknown_version() {
+        let mut state = HandshakeState::new("example.com").await.unwrap();
+        // Server responds with made-up version 0x0305
+        let server_hello = build_tls13_server_hello(0x0305, TLS_AES_128_GCM_SHA256, GROUP_X25519);
+
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_err(), "Should reject unknown TLS version");
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_tls12_parse_server_hello_accepts_correct_version() {
+        let mut state = Handshake12State::new("example.com").await.unwrap();
+        let server_hello =
+            build_tls12_server_hello(TLS_VERSION_1_2, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_ok(), "Should accept TLS 1.2 version: {:?}", result);
+        assert_eq!(state.cipher_suite, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_tls12_parse_server_hello_rejects_tls11() {
+        let mut state = Handshake12State::new("example.com").await.unwrap();
+        // Server responds with TLS 1.1 (0x0302) - should reject
+        let server_hello =
+            build_tls12_server_hello(0x0302, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_err(), "Should reject TLS 1.1");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Unexpected TLS version"),
+            "Error should mention version: {}",
+            err
+        );
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_tls12_parse_server_hello_rejects_tls10() {
+        let mut state = Handshake12State::new("example.com").await.unwrap();
+        // Server responds with TLS 1.0 (0x0301) - should reject
+        let server_hello =
+            build_tls12_server_hello(0x0301, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_err(), "Should reject TLS 1.0");
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_tls12_parse_server_hello_rejects_ssl3() {
+        let mut state = Handshake12State::new("example.com").await.unwrap();
+        // Server responds with SSL 3.0 (0x0300) - should reject
+        let server_hello =
+            build_tls12_server_hello(0x0300, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+
+        let result = state.parse_server_hello(&server_hello);
+        assert!(result.is_err(), "Should reject SSL 3.0");
     }
 }
