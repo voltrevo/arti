@@ -405,8 +405,6 @@ impl TorClient {
     async fn establish_channel_impl(&self) -> Result<()> {
         self.log("Establishing channel", LogType::Info);
 
-        let timeout = self.options.connection_timeout_duration();
-
         // Get fingerprint - use default for Snowflake if not provided
         let fingerprint = match &self.options.bridge {
             BridgeType::Snowflake { .. } | BridgeType::SnowflakeWebRtc { .. } => self

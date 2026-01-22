@@ -223,7 +223,7 @@ impl TorHttpClient {
 
                         // Get a new stream for TLS 1.2 retry
                         let stream_tls12 = {
-                            let mut circuit_write = circuit.write().await;
+                            let circuit_write = circuit.write().await;
                             circuit_write.begin_stream(&host, port).await?
                         };
 

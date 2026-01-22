@@ -546,7 +546,7 @@ async fn fetch_url(url: &str) -> std::result::Result<Vec<u8>, String> {
 
     let window = web_sys::window().ok_or("No window")?;
 
-    let mut opts = RequestInit::new();
+    let opts = RequestInit::new();
     opts.set_method("GET");
 
     let request = Request::new_with_str_and_init(url, &opts)
