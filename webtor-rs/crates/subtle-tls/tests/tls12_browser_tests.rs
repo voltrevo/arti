@@ -381,8 +381,7 @@ mod tls12_record_tests {
 mod tls_version_negotiation_tests {
     use super::*;
     use subtle_tls::handshake::{
-        HandshakeState, EXT_KEY_SHARE, EXT_SUPPORTED_VERSIONS, GROUP_X25519,
-        TLS_AES_128_GCM_SHA256,
+        HandshakeState, EXT_KEY_SHARE, EXT_SUPPORTED_VERSIONS, GROUP_X25519, TLS_AES_128_GCM_SHA256,
     };
     use subtle_tls::handshake_1_2::{
         Handshake12State, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_VERSION_1_2,
@@ -410,26 +409,25 @@ mod tls_version_negotiation_tests {
         msg.push(0x00);
 
         // Build extensions
-        let mut extensions = Vec::new();
-
-        // supported_versions extension (type 43)
-        extensions.push((EXT_SUPPORTED_VERSIONS >> 8) as u8);
-        extensions.push(EXT_SUPPORTED_VERSIONS as u8);
-        extensions.push(0x00); // length high
-        extensions.push(0x02); // length low (2 bytes for version)
-        extensions.push((version_in_ext >> 8) as u8);
-        extensions.push(version_in_ext as u8);
-
-        // key_share extension (type 51) with X25519 key (32 bytes)
-        extensions.push((EXT_KEY_SHARE >> 8) as u8);
-        extensions.push(EXT_KEY_SHARE as u8);
-        let key_share_len: u16 = 2 + 2 + 32; // group(2) + key_len(2) + key(32)
-        extensions.push((key_share_len >> 8) as u8);
-        extensions.push(key_share_len as u8);
-        extensions.push((group >> 8) as u8);
-        extensions.push(group as u8);
-        extensions.push(0x00); // key length high
-        extensions.push(0x20); // key length low (32)
+        let mut extensions = vec![
+            // supported_versions extension (type 43)
+            (EXT_SUPPORTED_VERSIONS >> 8) as u8,
+            EXT_SUPPORTED_VERSIONS as u8,
+            0x00, // length high
+            0x02, // length low (2 bytes for version)
+            (version_in_ext >> 8) as u8,
+            version_in_ext as u8,
+            // key_share extension (type 51) with X25519 key (32 bytes)
+            (EXT_KEY_SHARE >> 8) as u8,
+            EXT_KEY_SHARE as u8,
+            // key share len = 36 (group(2) + key_len(2) + key(32))
+            (36 >> 8) as u8,
+            36_u8,
+            (group >> 8) as u8,
+            group as u8,
+            0x00, // key length high
+            0x20, // key length low (32)
+        ];
         extensions.extend_from_slice(&[0xbb; 32]); // fake public key
 
         // Extensions length
@@ -471,7 +469,11 @@ mod tls_version_negotiation_tests {
         let server_hello = build_tls13_server_hello(0x0304, TLS_AES_128_GCM_SHA256, GROUP_X25519);
 
         let result = state.parse_server_hello(&server_hello);
-        assert!(result.is_ok(), "Should accept TLS 1.3 version: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Should accept TLS 1.3 version: {:?}",
+            result
+        );
         assert_eq!(state.cipher_suite, TLS_AES_128_GCM_SHA256);
         assert_eq!(state.selected_group, GROUP_X25519);
     }
@@ -483,7 +485,10 @@ mod tls_version_negotiation_tests {
         let server_hello = build_tls13_server_hello(0x0303, TLS_AES_128_GCM_SHA256, GROUP_X25519);
 
         let result = state.parse_server_hello(&server_hello);
-        assert!(result.is_err(), "Should reject TLS 1.2 in supported_versions");
+        assert!(
+            result.is_err(),
+            "Should reject TLS 1.2 in supported_versions"
+        );
         let err = result.unwrap_err().to_string();
         assert!(
             err.contains("Unsupported TLS version"),
@@ -509,7 +514,11 @@ mod tls_version_negotiation_tests {
             build_tls12_server_hello(TLS_VERSION_1_2, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
         let result = state.parse_server_hello(&server_hello);
-        assert!(result.is_ok(), "Should accept TLS 1.2 version: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Should accept TLS 1.2 version: {:?}",
+            result
+        );
         assert_eq!(state.cipher_suite, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
     }
 
@@ -517,8 +526,7 @@ mod tls_version_negotiation_tests {
     async fn test_tls12_parse_server_hello_rejects_tls11() {
         let mut state = Handshake12State::new("example.com").await.unwrap();
         // Server responds with TLS 1.1 (0x0302) - should reject
-        let server_hello =
-            build_tls12_server_hello(0x0302, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+        let server_hello = build_tls12_server_hello(0x0302, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
         let result = state.parse_server_hello(&server_hello);
         assert!(result.is_err(), "Should reject TLS 1.1");
@@ -534,8 +542,7 @@ mod tls_version_negotiation_tests {
     async fn test_tls12_parse_server_hello_rejects_tls10() {
         let mut state = Handshake12State::new("example.com").await.unwrap();
         // Server responds with TLS 1.0 (0x0301) - should reject
-        let server_hello =
-            build_tls12_server_hello(0x0301, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+        let server_hello = build_tls12_server_hello(0x0301, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
         let result = state.parse_server_hello(&server_hello);
         assert!(result.is_err(), "Should reject TLS 1.0");
@@ -545,8 +552,7 @@ mod tls_version_negotiation_tests {
     async fn test_tls12_parse_server_hello_rejects_ssl3() {
         let mut state = Handshake12State::new("example.com").await.unwrap();
         // Server responds with SSL 3.0 (0x0300) - should reject
-        let server_hello =
-            build_tls12_server_hello(0x0300, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+        let server_hello = build_tls12_server_hello(0x0300, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
         let result = state.parse_server_hello(&server_hello);
         assert!(result.is_err(), "Should reject SSL 3.0");
