@@ -93,18 +93,11 @@ if [ $? -ne 0 ]; then
 fi
 cd ../..
 
-print_status "Building webtor-demo (Demo webpage)..."
-cd crates/webtor-demo
-wasm-pack build --target web --out-dir pkg $BUILD_MODE
-if [ $? -ne 0 ]; then
-    print_error "Failed to build webtor-demo"
-    exit 1
-fi
-cd ../..
-
-print_status "Copying demo files..."
-mkdir -p crates/webtor-demo/static/pkg
-cp -r crates/webtor-demo/pkg/* crates/webtor-demo/static/pkg/
+print_status "Copying WASM to examples..."
+mkdir -p examples/showcase/pkg
+mkdir -p examples/simple/pkg
+cp -r crates/webtor-wasm/pkg/* examples/showcase/pkg/
+cp -r crates/webtor-wasm/pkg/* examples/simple/pkg/
 
 # Run wasm-opt if available (for additional size optimization)
 optimize_wasm() {
@@ -130,19 +123,23 @@ print_wasm_size() {
 # Optimize WASM binaries if wasm-opt is available
 if [ "$BUILD_MODE" = "--release" ]; then
     optimize_wasm crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
-    optimize_wasm crates/webtor-demo/pkg/webtor_demo_bg.wasm
+    # Also optimize the copies in examples
+    optimize_wasm examples/showcase/pkg/webtor_wasm_bg.wasm
+    optimize_wasm examples/simple/pkg/webtor_wasm_bg.wasm
 fi
 
 # Show WASM sizes
 echo ""
 print_wasm_size crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
-print_wasm_size crates/webtor-demo/pkg/webtor_demo_bg.wasm
 
 echo ""
 print_status "Build completed successfully!"
 echo ""
 print_usage
 echo ""
-print_status "To run the demo:"
-print_status "  cd crates/webtor-demo/static && python3 -m http.server 8000"
+print_status "To run the showcase example:"
+print_status "  cd examples/showcase && python3 -m http.server 8000"
 print_status "  Open http://localhost:8000 in your browser"
+echo ""
+print_status "To run the simple React example:"
+print_status "  cd examples/simple && npm install && npm run dev"

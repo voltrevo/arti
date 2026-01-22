@@ -645,121 +645,6 @@ impl TorClient {
             true
         }
     }
-
-    // --- Rust-friendly methods (not exposed to JS, but usable by other Rust crates) ---
-
-    pub async fn create(options: TorClientOptions) -> Result<Self, String> {
-        match NativeTorClient::new(options.inner).await {
-            Ok(client) => Ok(TorClient {
-                inner: Some(Arc::new(client)),
-            }),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    pub async fn fetch_rust(&self, url: &str) -> Result<JsHttpResponse, String> {
-        let client = self.inner.as_ref().ok_or("TorClient is not initialized")?;
-        match client.fetch(url).await {
-            Ok(response) => Ok(JsHttpResponse {
-                status: response.status,
-                headers: headers_to_js(&response.headers),
-                body: response.body,
-                url: response.url.to_string(),
-            }),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    pub async fn post_rust(&self, url: &str, body: Vec<u8>) -> Result<JsHttpResponse, String> {
-        let client = self.inner.as_ref().ok_or("TorClient is not initialized")?;
-        match client.post(url, body).await {
-            Ok(response) => Ok(JsHttpResponse {
-                status: response.status,
-                headers: headers_to_js(&response.headers),
-                body: response.body,
-                url: response.url.to_string(),
-            }),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    pub async fn wait_for_circuit_rust(&self) -> Result<(), String> {
-        let client = self.inner.as_ref().ok_or("TorClient is not initialized")?;
-        client.wait_for_circuit().await.map_err(|e| e.to_string())
-    }
-
-    pub async fn close_rust(&mut self) {
-        if let Some(client) = self.inner.take() {
-            // We need to clone the Arc because close takes self/&self but we are taking ownership of the Arc from Option
-            // Actually client.close() takes &self.
-            // But we removed it from Option, so we own the Arc.
-            // NativeTorClient::close is async.
-            client.close().await;
-        }
-    }
-
-    pub async fn get_circuit_status_string_rust(&self) -> Result<String, String> {
-        let client = self.inner.as_ref().ok_or("TorClient is not initialized")?;
-        Ok(client.get_circuit_status_string().await)
-    }
-
-    pub async fn fetch_one_time_rust(
-        snowflake_url: &str,
-        url: &str,
-        connection_timeout: Option<u64>,
-        circuit_timeout: Option<u64>,
-    ) -> Result<JsHttpResponse, String> {
-        match NativeTorClient::fetch_one_time(
-            snowflake_url,
-            url,
-            connection_timeout,
-            circuit_timeout,
-        )
-        .await
-        {
-            Ok(response) => Ok(JsHttpResponse {
-                status: response.status,
-                headers: headers_to_js(&response.headers),
-                body: response.body,
-                url: response.url.to_string(),
-            }),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    pub async fn update_circuit_rust(&self, deadline_ms: u64) -> Result<(), String> {
-        let client = self.inner.as_ref().ok_or("TorClient is not initialized")?;
-        client
-            .update_circuit(Duration::from_millis(deadline_ms))
-            .await
-            .map_err(|e| e.to_string())
-    }
-}
-
-/// Simple circuit relay info for internal use (not WASM-bound)
-pub struct CircuitRelayInfoSimple {
-    pub role: String,
-    pub nickname: String,
-    pub address: String,
-    pub fingerprint: String,
-}
-
-// Non-wasm_bindgen impl block for methods that return non-WASM types
-impl TorClient {
-    pub async fn get_circuit_relays_rust(&self) -> Option<Vec<CircuitRelayInfoSimple>> {
-        let client = self.inner.as_ref()?;
-        client.get_circuit_relays().await.map(|relays| {
-            relays
-                .into_iter()
-                .map(|r| CircuitRelayInfoSimple {
-                    role: r.role,
-                    nickname: r.nickname,
-                    address: r.address,
-                    fingerprint: r.fingerprint,
-                })
-                .collect()
-        })
-    }
 }
 
 /// JavaScript-friendly HTTP response
@@ -979,4 +864,152 @@ pub fn get_version_info() -> JsValue {
         "tor_proto": env!("TOR_PROTO_VERSION"),
     });
     serde_wasm_bindgen::to_value(&info).unwrap_or(JsValue::NULL)
+}
+
+// ============================================================================
+// Performance Benchmarks
+// ============================================================================
+
+/// Helper to get browser Performance API
+fn get_performance() -> web_sys::Performance {
+    web_sys::window()
+        .expect("no window")
+        .performance()
+        .expect("no performance")
+}
+
+/// Benchmark result structure returned to JavaScript
+#[wasm_bindgen]
+#[derive(serde::Serialize)]
+pub struct BenchmarkResult {
+    circuit_creation_ms: f64,
+    fetch_latency_ms: f64,
+}
+
+#[wasm_bindgen]
+impl BenchmarkResult {
+    #[wasm_bindgen(getter)]
+    pub fn circuit_creation_ms(&self) -> f64 {
+        self.circuit_creation_ms
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fetch_latency_ms(&self) -> f64 {
+        self.fetch_latency_ms
+    }
+}
+
+/// Run full Tor benchmark using WebRTC Snowflake (slower but production-like)
+#[wasm_bindgen(js_name = runTorBenchmark)]
+pub fn run_tor_benchmark(test_url: String) -> js_sys::Promise {
+    console_log!("Starting Tor benchmark...");
+
+    future_to_promise(async move {
+        let perf = get_performance();
+        let t0 = perf.now();
+
+        // Create TorClient with WebRTC Snowflake (production config)
+        let options = TorClientOptions::snowflake_webrtc();
+        let options_native = options.inner;
+
+        console_log!("Creating TorClient...");
+
+        let client = match NativeTorClient::new(options_native).await {
+            Ok(c) => Arc::new(c),
+            Err(e) => {
+                return Err(JsValue::from_str(&format!("Failed to create TorClient: {}", e)));
+            }
+        };
+
+        console_log!("Waiting for circuit...");
+
+        // Wait for circuit to be ready
+        if let Err(e) = client.wait_for_circuit().await {
+            return Err(JsValue::from_str(&format!("Circuit failed: {}", e)));
+        }
+
+        let t1 = perf.now();
+        let circuit_creation_ms = t1 - t0;
+
+        console_log!(format!("Circuit ready in {:.0}ms", circuit_creation_ms));
+
+        // Measure fetch latency
+        let t2 = perf.now();
+
+        console_log!(format!("Fetching {}...", test_url));
+
+        if let Err(e) = client.fetch(&test_url).await {
+            return Err(JsValue::from_str(&format!("Fetch failed: {}", e)));
+        }
+
+        let t3 = perf.now();
+        let fetch_latency_ms = t3 - t2;
+
+        console_log!(format!("Fetch completed in {:.0}ms", fetch_latency_ms));
+
+        // Cleanup
+        client.close().await;
+
+        console_log!(format!(
+            "Tor benchmark complete: circuit={:.0}ms, fetch={:.0}ms",
+            circuit_creation_ms, fetch_latency_ms
+        ));
+
+        let result = BenchmarkResult {
+            circuit_creation_ms,
+            fetch_latency_ms,
+        };
+
+        Ok(serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL))
+    })
+}
+
+/// Run quick benchmark using WebSocket Snowflake (faster connection)
+#[wasm_bindgen(js_name = runQuickBenchmark)]
+pub fn run_quick_benchmark(test_url: String) -> js_sys::Promise {
+    console_log!("Starting quick benchmark (WebSocket)...");
+
+    future_to_promise(async move {
+        let perf = get_performance();
+        let t0 = perf.now();
+
+        // Use WebSocket Snowflake for faster connection
+        let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string());
+        let options_native = options.inner;
+
+        let client = match NativeTorClient::new(options_native).await {
+            Ok(c) => Arc::new(c),
+            Err(e) => {
+                return Err(JsValue::from_str(&format!("Failed to create TorClient: {}", e)));
+            }
+        };
+
+        if let Err(e) = client.wait_for_circuit().await {
+            return Err(JsValue::from_str(&format!("Circuit failed: {}", e)));
+        }
+
+        let t1 = perf.now();
+        let circuit_creation_ms = t1 - t0;
+
+        let t2 = perf.now();
+        if let Err(e) = client.fetch(&test_url).await {
+            return Err(JsValue::from_str(&format!("Fetch failed: {}", e)));
+        }
+        let t3 = perf.now();
+        let fetch_latency_ms = t3 - t2;
+
+        client.close().await;
+
+        console_log!(format!(
+            "Quick benchmark: circuit={:.0}ms, fetch={:.0}ms",
+            circuit_creation_ms, fetch_latency_ms
+        ));
+
+        let result = BenchmarkResult {
+            circuit_creation_ms,
+            fetch_latency_ms,
+        };
+
+        Ok(serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL))
+    })
 }

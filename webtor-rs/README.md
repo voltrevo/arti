@@ -34,9 +34,11 @@ A browser-focused Tor client written in Rust and compiled to WebAssembly (WASM),
 
 ```bash
 ./build.sh
-cd webtor-demo/static && python3 -m http.server 8000
+cd examples/showcase && python3 -m http.server 8000
 # Open http://localhost:8000
 ```
+
+Or see the [live demo](https://igor53627.github.io/webtor-rs/)
 
 ## Usage
 
@@ -174,8 +176,9 @@ flowchart TB
 |-------|-------------|
 | `webtor` | Core Tor client library with TorClient, circuit management, relay selection |
 | `webtor-wasm` | WASM bindings using wasm-bindgen for JavaScript interop |
-| `webtor-demo` | Demo application with embedded consensus |
 | `subtle-tls` | TLS 1.2/1.3 implementation using browser SubtleCrypto APIs |
+
+See [examples/](examples/) for demo applications.
 
 ## Transports
 

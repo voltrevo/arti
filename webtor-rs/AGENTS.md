@@ -10,11 +10,14 @@ cargo check --package webtor
 cargo check --package webtor --target wasm32-unknown-unknown
 cargo check --package webtor-wasm --target wasm32-unknown-unknown
 
-# Build WASM demo (includes embedded consensus)
-wasm-pack build webtor-demo --target web --out-dir pkg --release
+# Build WASM for examples (includes embedded consensus)
+./examples/build-wasm.sh
 
-# Run example locally (alternative, requires npm)
-cd example && npm install && npm run dev
+# Run showcase example locally
+cd examples/showcase && python3 -m http.server 8000
+
+# Run simple React example locally (requires npm)
+cd examples/simple && npm install && npm run dev
 ```
 
 ## Test Commands
@@ -35,11 +38,11 @@ cd subtle-tls/fuzz && cargo +nightly fuzz run fuzz_server_hello
 
 ## Project Structure
 
-- `webtor/` - Core Tor client library
-- `webtor-wasm/` - WASM bindings for webtor
-- `webtor-demo/` - Demo application library
-- `example/` - Web demo (Vite + TypeScript)
-- `subtle-tls/` - SubtleCrypto-based TLS for WASM
+- `crates/webtor/` - Core Tor client library
+- `crates/webtor-wasm/` - WASM bindings for webtor
+- `examples/showcase/` - Comprehensive vanilla JS demo
+- `examples/simple/` - Minimal React + TypeScript example
+- `crates/subtle-tls/` - SubtleCrypto-based TLS for WASM
 - `scripts/` - Build and consensus fetch scripts
 
 ## Key Files
@@ -88,7 +91,7 @@ Use `grep -rn "std::time::Instant\|coarsetime::Instant" vendor/arti/` to find vi
 
 ## Version Bumping
 
-- **Always bump the UI version** in `webtor-demo/static/index.html` (footer) on any UI-related changes
+- **Always bump the UI version** in `examples/showcase/index.html` (footer) on any UI-related changes
 - Current version format: `v0.X.Y`
 
 ## R2 CDN
@@ -118,8 +121,8 @@ Files available:
   3. Commit and push changes
   4. **Wait for CI to pass on main** before tagging
   5. Create and push git tag: `git tag vX.Y.Z && git push origin main --tags`
-  6. Build WASM: `wasm-pack build webtor-demo --target web --out-dir pkg --release`
-  7. Package build: `cd webtor-demo && zip -r ../webtor-demo-vX.Y.Z.zip pkg/`
+  6. Build WASM: `wasm-pack build crates/webtor-wasm --target web --release`
+  7. Package build: `cd crates/webtor-wasm && zip -r ../../webtor-wasm-vX.Y.Z.zip pkg/`
   8. Create release with changelog in notes:
      ```
      gh release create vX.Y.Z --title "vX.Y.Z" --notes "## Added
@@ -129,5 +132,5 @@ Files available:
      ## Fixed
      - Bug fix 1
 
-     **Full Changelog**: https://github.com/igor53627/webtor-rs/compare/vPREV...vX.Y.Z" webtor-demo-vX.Y.Z.zip
+     **Full Changelog**: https://github.com/igor53627/webtor-rs/compare/vPREV...vX.Y.Z" webtor-wasm-vX.Y.Z.zip
      ```

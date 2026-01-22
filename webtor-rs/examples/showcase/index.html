@@ -850,7 +850,7 @@
     </footer>
 
     <script type="module">
-        import init, { DemoApp, setLogCallback, setDebugEnabled, runTorBenchmark, runQuickBenchmark, getVersionInfo } from './pkg/webtor_demo.js';
+        import init, { TorClient, TorClientOptions, setLogCallback, setDebugEnabled, runTorBenchmark, runQuickBenchmark, getVersionInfo } from './pkg/webtor_wasm.js';
 
         // Constants
         const MAX_LOG_ENTRIES = 1000;
@@ -1147,13 +1147,13 @@
                 const circuitPath = document.getElementById('circuitPath');
 
                 // Function to update circuit display
-                async function updateCircuitDisplay(appInstance, targetUrl = null) {
-                    if (!appInstance) {
+                async function updateCircuitDisplay(clientInstance, targetUrl = null) {
+                    if (!clientInstance) {
                         circuitDisplay.classList.remove('visible');
                         return;
                     }
                     try {
-                        const relays = await appInstance.getCircuitRelays();
+                        const relays = await clientInstance.getCircuitRelays();
                         if (relays && relays.length > 0) {
                             circuitPath.innerHTML = '';
                             
@@ -1241,7 +1241,40 @@
                     return div.innerHTML;
                 }
 
-                let app = null;
+                let torClient = null;
+                let statusPollInterval = null;
+
+                // Status polling function
+                function startStatusPolling() {
+                    if (statusPollInterval) {
+                        clearInterval(statusPollInterval);
+                    }
+                    statusPollInterval = setInterval(async () => {
+                        if (!torClient) {
+                            clearInterval(statusPollInterval);
+                            statusPollInterval = null;
+                            return;
+                        }
+                        try {
+                            const status = await torClient.getCircuitStatusString();
+                            statusEl.textContent = status;
+                            if (status.includes('Ready')) {
+                                statusDot.className = 'status-dot ready';
+                                btn1.disabled = false;
+                                btnIsolated.disabled = false;
+                                updateBtn.disabled = false;
+                                // Update circuit display when ready - show current target URL
+                                updateCircuitDisplay(torClient, url1Input.value);
+                            } else if (status.includes('Error') || status.includes('Failed')) {
+                                statusDot.className = 'status-dot error';
+                            } else {
+                                statusDot.className = 'status-dot loading';
+                            }
+                        } catch (e) {
+                            console.warn('Status polling error:', e);
+                        }
+                    }, 500); // Poll every 500ms
+                }
 
                 // Helper function for open logic (shared between WebSocket and WebRTC)
                 async function doOpen(useWebRtc) {
@@ -1253,29 +1286,18 @@
                     statusDot.className = 'status-dot loading';
 
                     try {
-                        app = new DemoApp();
-
-                        app.setStatusCallback((status) => {
-                            statusEl.textContent = status;
-                            if (status.includes('Ready')) {
-                                statusDot.className = 'status-dot ready';
-                                btn1.disabled = false;
-                                btnIsolated.disabled = false;
-                                updateBtn.disabled = false;
-                                // Update circuit display when ready - show current target URL
-                                updateCircuitDisplay(app, url1Input.value);
-                            } else if (status.includes('Error') || status.includes('Failed')) {
-                                statusDot.className = 'status-dot error';
-                            } else {
-                                statusDot.className = 'status-dot loading';
-                            }
-                        });
-
-                        if (useWebRtc) {
-                            await app.openWebRtc();
-                        } else {
-                            await app.open();
-                        }
+                        const options = useWebRtc 
+                            ? TorClientOptions.snowflakeWebRtc()
+                            : new TorClientOptions("wss://snowflake.torproject.net/");
+                        
+                        torClient = await new TorClient(options);
+                        
+                        // Start status polling
+                        startStatusPolling();
+                        
+                        // Wait for circuit to be ready
+                        await torClient.waitForCircuit();
+                        
                         closeBtn.disabled = false;
 
                     } catch (e) {
@@ -1293,13 +1315,17 @@
                 openWebRtcBtn.addEventListener('click', () => doOpen(true));
 
                 closeBtn.addEventListener('click', async () => {
-                    if (app) {
+                    if (torClient) {
                         try {
-                            await app.close();
+                            torClient.close();
                         } catch (e) {
                             logCallback('ERROR', 'connection', 'Close error: ' + (e.message || e));
                         }
-                        app = null;
+                        torClient = null;
+                    }
+                    if (statusPollInterval) {
+                        clearInterval(statusPollInterval);
+                        statusPollInterval = null;
                     }
                     statusEl.textContent = 'Not initialized';
                     statusDot.className = 'status-dot';
@@ -1314,13 +1340,13 @@
                 });
 
                 updateBtn.addEventListener('click', async () => {
-                    if (app) {
+                    if (torClient) {
                         updateBtn.disabled = true;
                         updateBtn.setAttribute('aria-busy', 'true');
                         try {
-                            await app.triggerCircuitUpdate();
+                            await torClient.updateCircuit(30000);
                             // Update circuit display after refresh
-                            await updateCircuitDisplay(app, url1Input.value);
+                            await updateCircuitDisplay(torClient, url1Input.value);
                         } catch (e) {
                             logCallback('ERROR', 'circuit', 'Circuit update failed: ' + (e.message || e));
                         }
@@ -1346,9 +1372,10 @@
                     btn1.setAttribute('aria-busy', 'true');
 
                     try {
-                        const response = await app.get(url);
+                        const response = await torClient.fetch(url);
+                        const text = await response.text();
                         output1.className = 'output-box success';
-                        output1.textContent = response.substring(0, 500);
+                        output1.textContent = text.substring(0, 500);
                     } catch (e) {
                         output1.className = 'output-box error';
                         output1.textContent = formatTlsError(url, e.message || String(e));
@@ -1374,9 +1401,9 @@
                     btnIsolated.setAttribute('aria-busy', 'true');
 
                     try {
-                        const response = await app.getIsolated(url);
+                        const response = await TorClient.fetchOneTime("wss://snowflake.torproject.net/", url, null, null);
                         outputIsolated.className = 'output-box success';
-                        outputIsolated.textContent = response.substring(0, 500);
+                        outputIsolated.textContent = response.body.substring(0, 500);
                     } catch (e) {
                         outputIsolated.className = 'output-box error';
                         outputIsolated.textContent = formatTlsError(url, e.message || String(e));

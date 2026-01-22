@@ -31,16 +31,16 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Build WASM demo
-        run: wasm-pack build crates/webtor-demo --target web --release
+      - name: Build WASM
+        run: wasm-pack build crates/webtor-wasm --target web --release
 
-      - name: Prepare static files
+      - name: Prepare showcase example
         run: |
-          mkdir -p crates/webtor-demo/static/pkg
-          cp -r crates/webtor-demo/pkg/* crates/webtor-demo/static/pkg/
+          mkdir -p examples/showcase/pkg
+          cp -r crates/webtor-wasm/pkg/* examples/showcase/pkg/
           # Copy pre-compressed consensus files (already in repo as .br)
-          cp crates/webtor/src/cached/consensus.txt.br crates/webtor-demo/static/
-          cp crates/webtor/src/cached/microdescriptors.txt.br crates/webtor-demo/static/
+          cp crates/webtor/src/cached/consensus.txt.br examples/showcase/
+          cp crates/webtor/src/cached/microdescriptors.txt.br examples/showcase/
 
       - name: Setup Pages
         if: ${{ !github.event.repository.fork }}
@@ -50,7 +50,7 @@ jobs:
         if: ${{ !github.event.repository.fork }}
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./crates/webtor-demo/static
+          path: ./examples/showcase
 
   deploy:
     if: ${{ !github.event.repository.fork }}

@@ -4617,24 +4617,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "webtor-demo"
-version = "0.5.7"
-dependencies = [
- "anyhow",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "tracing",
- "tracing-wasm",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "webtor-wasm",
-]
-
-[[package]]
 name = "webtor-wasm"
 version = "0.5.7"
 dependencies = [
