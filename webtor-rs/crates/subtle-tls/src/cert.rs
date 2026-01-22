@@ -760,12 +760,6 @@ fn convert_ecdsa_signature_from_der_sized(der_sig: &[u8], coord_size: usize) -> 
     Ok(result)
 }
 
-/// Convert ECDSA signature from DER format to raw (r || s) format for P-256
-/// (Legacy wrapper for backward compatibility)
-fn convert_ecdsa_signature_from_der(der_sig: &[u8]) -> Result<Vec<u8>> {
-    convert_ecdsa_signature_from_der_sized(der_sig, 32)
-}
-
 /// Verify CertificateVerify signature (TLS 1.3)
 /// This verifies the server's proof of possession of the private key
 pub async fn verify_certificate_verify(
@@ -955,7 +949,7 @@ mod tests {
             0x3d, 0x3e, 0x3f, 0x40,
         ];
 
-        let raw = convert_ecdsa_signature_from_der(&der_sig).unwrap();
+        let raw = convert_ecdsa_signature_from_der_sized(&der_sig, 32).unwrap();
         assert_eq!(raw.len(), 64);
     }
 }
