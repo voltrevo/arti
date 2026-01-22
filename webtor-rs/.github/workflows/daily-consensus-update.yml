@@ -84,14 +84,17 @@ jobs:
           cp crates/webtor/src/cached/microdescriptors.txt.br crates/webtor-demo/static/
 
       - name: Setup Pages
+        if: github.repository == 'voltrevo/webtor-rs'
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
+        if: github.repository == 'voltrevo/webtor-rs'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./crates/webtor-demo/static
 
   deploy:
+    if: github.repository == 'voltrevo/webtor-rs'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
