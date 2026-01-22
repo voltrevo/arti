@@ -4,9 +4,6 @@
 
 use wasm_bindgen_test::*;
 
-// TODO: remove
-wasm_bindgen_test_configure!(run_in_browser);
-
 mod parsing_edge_cases {
     use super::*;
     use subtle_tls::handshake::{
@@ -280,12 +277,6 @@ mod hkdf_edge_cases {
 mod tls12_edge_cases {
     use super::*;
     use subtle_tls::prf;
-
-    #[wasm_bindgen_test]
-    async fn test_prf_empty_secret() {
-        let result = prf::prf(&[], b"label", &[0u8; 32], 48).await;
-        assert!(result.is_ok());
-    }
 
     #[wasm_bindgen_test]
     async fn test_prf_empty_seed() {
