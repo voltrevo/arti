@@ -134,7 +134,6 @@ jobs:
 
     - name: Run clippy
       run: cargo clippy --workspace --all-targets -- -D warnings
-      continue-on-error: true
 
   fmt:
     name: Rustfmt

@@ -136,7 +136,8 @@ impl DemoApp {
         future_to_promise(async move {
             app.stop_status_polling()?;
 
-            if let Some(mut client) = lock_or_recover(&app.tor_client).take() {
+            let client = lock_or_recover(&app.tor_client).take();
+            if let Some(mut client) = client {
                 client.close_rust().await;
             }
 
