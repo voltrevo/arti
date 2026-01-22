@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+echo "=== Check ==="
+
+cargo check --all-targets
+
+echo "=== Fmt ==="
+
+cargo fmt --all -- --check
+
+echo "=== Clippy ==="
+
+cargo clippy --all-targets -- -D warnings
+
 echo "Running wasm-pack tests for all crates..."
 
 for crate in crates/*/; do
