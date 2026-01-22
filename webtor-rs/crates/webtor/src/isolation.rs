@@ -233,14 +233,12 @@ mod tests {
     const FUZZ_ITERATIONS: usize = 256;
 
     fn random_alpha_string(rng: &mut impl rand::Rng, len: usize) -> String {
-        use rand::Rng;
         (0..len)
             .map(|_| (b'a' + rng.gen_range(0..26)) as char)
             .collect()
     }
 
     fn random_host(rng: &mut impl rand::Rng) -> String {
-        use rand::Rng;
         let num_parts = rng.gen_range(1..=4);
         let mut parts = Vec::with_capacity(num_parts);
         for _ in 0..num_parts {
@@ -251,7 +249,6 @@ mod tests {
     }
 
     fn random_path(rng: &mut impl rand::Rng) -> String {
-        use rand::Rng;
         let len = rng.gen_range(0..=20);
         format!("/{}", random_alpha_string(rng, len))
     }

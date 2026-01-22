@@ -322,7 +322,7 @@ mod handshake_tests {
     use super::*;
     use subtle_tls::handshake::{
         parse_certificate_verify, parse_finished, parse_handshake_header, HandshakeState,
-        HANDSHAKE_CLIENT_HELLO, TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384,
+        HANDSHAKE_CLIENT_HELLO, TLS_AES_128_GCM_SHA256,
         TLS_CHACHA20_POLY1305_SHA256, TLS_VERSION_1_2,
     };
 
