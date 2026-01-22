@@ -2421,19 +2421,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "psl"
-version = "2.1.180"
+name = "public-suffix"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e6f9add6bc6dff9f3627544800ee38967ab62d1fe7d4148e99ac5f93e9501a"
-dependencies = [
- "psl-types",
-]
-
-[[package]]
-name = "psl-types"
-version = "2.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
+checksum = "51315bca45305dd8aa64b831b33e71abac528ca8058c0651346a39b8d3009498"
 
 [[package]]
 name = "pwd-grp"
@@ -4584,7 +4575,7 @@ dependencies = [
  "httparse",
  "js-sys",
  "kcp",
- "psl",
+ "public-suffix",
  "rand 0.8.5",
  "rsa",
  "rustls",

@@ -44,7 +44,7 @@ url = { workspace = true }
 http = { workspace = true }
 
 # Public Suffix List for eTLD+1 extraction
-psl = "2"
+public-suffix = "0.1"
 
 # Serialization
 serde = { workspace = true }

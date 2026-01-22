@@ -90,8 +90,8 @@ impl IsolationKey {
 
 /// Extract the registrable domain (eTLD+1) from a hostname using the Public Suffix List
 ///
-/// Uses Mozilla's Public Suffix List via the `psl` crate for accurate domain extraction.
-/// This handles all known TLDs including multi-part suffixes like co.uk, com.au, etc.
+/// Uses the `public-suffix` crate which stores the PSL as a compact trie structure,
+/// avoiding the memory issues of crates that generate thousands of functions.
 fn extract_domain(host: &str) -> String {
     if host.is_empty() {
         return String::new();
@@ -107,17 +107,13 @@ fn extract_domain(host: &str) -> String {
         return host.to_string();
     }
 
-    // Use PSL to extract the registrable domain (eTLD+1)
-    // The psl crate works with bytes and handles lowercase internally
-    match psl::domain(host.as_bytes()) {
-        Some(domain) => {
-            // Convert the domain back to a string
-            // The Domain type implements PartialEq<str> and can be converted
-            std::str::from_utf8(domain.as_bytes())
-                .unwrap_or(host)
-                .to_string()
-        }
-        None => {
+    // Use the public-suffix crate to extract the registrable domain
+    match public_suffix::EffectiveTLDProvider::effective_tld_plus_one(
+        &public_suffix::DEFAULT_PROVIDER,
+        host,
+    ) {
+        Ok(domain) => domain.to_string(),
+        Err(_) => {
             // PSL couldn't find a registrable domain - this happens for:
             // - TLDs themselves (e.g., "com", "co.uk")
             // - Private/unknown TLDs
