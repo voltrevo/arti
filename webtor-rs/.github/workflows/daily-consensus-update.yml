@@ -71,7 +71,7 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM demo
-        run: wasm-pack build crates/webtor-demo --target web --out-dir ../pkg --release
+        run: wasm-pack build crates/webtor-demo --target web --release
 
       - name: Prepare static files
         run: |
@@ -84,17 +84,17 @@ jobs:
           cp crates/webtor/src/cached/microdescriptors.txt.br crates/webtor-demo/static/
 
       - name: Setup Pages
-        if: github.repository == 'voltrevo/webtor-rs'
+        if: ${{ !github.event.repository.fork }}
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
-        if: github.repository == 'voltrevo/webtor-rs'
+        if: ${{ !github.event.repository.fork }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./crates/webtor-demo/static
 
   deploy:
-    if: github.repository == 'voltrevo/webtor-rs'
+    if: ${{ !github.event.repository.fork }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
