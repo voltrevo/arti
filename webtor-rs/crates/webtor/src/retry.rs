@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(bootstrap.max_attempts, 3);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn retry_succeeds_on_first_attempt() {
         let result = retry_with_backoff(
             "test_op",
@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn retry_succeeds_after_failures() {
         let attempts = AtomicU32::new(0);
 
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(attempts.load(AtomicOrdering::SeqCst), 3);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn retry_fails_on_non_retryable_error() {
         let attempts = AtomicU32::new(0);
 
@@ -551,7 +551,7 @@ mod tests {
         assert_eq!(attempts.load(AtomicOrdering::SeqCst), 1);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn retry_exhausts_all_attempts() {
         let attempts = AtomicU32::new(0);
 
@@ -576,7 +576,7 @@ mod tests {
         assert_eq!(policy.max_attempts, 0);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn timeout_succeeds_when_operation_completes_in_time() {
         let result = with_timeout(Duration::from_secs(5), "test_op", async {
             Ok::<_, TorError>(42)
@@ -586,10 +586,10 @@ mod tests {
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn timeout_fails_when_operation_exceeds_time() {
         let result = with_timeout(Duration::from_millis(10), "slow_op", async {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(100)).await;
             Ok::<_, TorError>(42)
         })
         .await;
@@ -600,7 +600,7 @@ mod tests {
         assert!(err.to_string().contains("slow_op"));
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn timeout_propagates_inner_error() {
         let result = with_timeout(Duration::from_secs(5), "test_op", async {
             Err::<u32, _>(TorError::network("inner error"))
@@ -636,14 +636,14 @@ mod tests {
         assert!(token2.is_cancelled());
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn with_cancellation_succeeds_when_not_cancelled() {
         let token = CancellationToken::new();
         let result = with_cancellation(&token, async { Ok::<_, TorError>(42) }).await;
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn with_cancellation_fails_when_already_cancelled() {
         let token = CancellationToken::new();
         token.cancel();
@@ -652,27 +652,34 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TorError::Cancelled));
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn with_cancellation_cancels_during_operation() {
+        use futures::future::{select, Either};
+        use std::pin::pin;
+
         let token = CancellationToken::new();
         let token_clone = token.clone();
 
-        let result = tokio::select! {
-            r = with_cancellation(&token, async {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                Ok::<_, TorError>(42)
-            }) => r,
-            _ = async {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                token_clone.cancel();
-            } => Err(TorError::Cancelled),
+        let operation = pin!(with_cancellation(&token, async {
+            sleep(Duration::from_secs(10)).await;
+            Ok::<_, TorError>(42)
+        }));
+
+        let cancel_after_delay = pin!(async {
+            sleep(Duration::from_millis(10)).await;
+            token_clone.cancel();
+        });
+
+        let result = match select(operation, cancel_after_delay).await {
+            Either::Left((r, _)) => r,
+            Either::Right((_, op)) => op.await,
         };
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), TorError::Cancelled));
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn with_timeout_and_cancellation_succeeds() {
         let token = CancellationToken::new();
         let result = with_timeout_and_cancellation(Duration::from_secs(5), "test", &token, async {
@@ -682,12 +689,12 @@ mod tests {
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn with_timeout_and_cancellation_times_out() {
         let token = CancellationToken::new();
         let result =
             with_timeout_and_cancellation(Duration::from_millis(10), "slow_op", &token, async {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                sleep(Duration::from_millis(100)).await;
                 Ok::<_, TorError>(42)
             })
             .await;
@@ -696,7 +703,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TorError::Timeout(_)));
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn with_timeout_and_cancellation_cancels() {
         let token = CancellationToken::new();
         token.cancel();

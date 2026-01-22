@@ -687,11 +687,12 @@ impl Clone for TorClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     // These tests require a larger stack due to embedded consensus data parsing.
     // Run with: RUST_MIN_STACK=16777216 cargo test -p webtor client::tests
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     #[ignore = "requires large stack for consensus parsing"]
     async fn test_tor_client_creation() {
         let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
@@ -701,7 +702,7 @@ mod tests {
         assert!(client.is_ok());
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     #[ignore = "requires large stack for consensus parsing"]
     async fn test_one_time_fetch() {
         // This will fail because we don't have WASM WebSocket implementation
@@ -716,7 +717,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     #[ignore = "requires large stack for consensus parsing"]
     async fn test_circuit_status() {
         let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())

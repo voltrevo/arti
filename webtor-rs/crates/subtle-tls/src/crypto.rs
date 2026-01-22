@@ -848,8 +848,6 @@ mod tests {
     use super::*;
     use wasm_bindgen_test::*;
 
-    wasm_bindgen_test_configure!(run_in_browser);
-
     #[wasm_bindgen_test]
     async fn test_random_bytes() {
         let bytes = random_bytes(32).unwrap();

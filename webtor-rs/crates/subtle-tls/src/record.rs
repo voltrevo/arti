@@ -387,8 +387,9 @@ impl RecordLayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
-    #[test]
+    #[wasm_bindgen_test]
     fn test_record_layer_new() {
         let layer = RecordLayer::new();
         assert!(!layer.has_read_cipher());

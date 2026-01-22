@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(response.text().unwrap(), "Hello, World!");
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn test_http_response() {
         let response = HttpResponse {
             status: 200,
@@ -737,7 +737,7 @@ mod tests {
         assert_eq!(json.ip, "127.0.0.1");
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn test_tor_http_client() {
         let relays = vec![
             create_test_relay("guard1", vec![flags::FAST, flags::STABLE, flags::GUARD]),

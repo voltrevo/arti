@@ -19,9 +19,6 @@
 
 use wasm_bindgen_test::*;
 
-// Uncomment for browser-only testing:
-// wasm_bindgen_test_configure!(run_in_browser);
-
 mod crypto_tests {
     use super::*;
     use subtle_tls::crypto::{self, AesGcm, Cipher, EcdhKeyPair, Hkdf, X25519KeyPair};

@@ -131,7 +131,3 @@ codegen-units = 1      # Single codegen unit for better optimization
 strip = "debuginfo"    # Strip debug info but keep symbols for wasm-bindgen
 panic = "abort"        # Smaller binary, no unwinding overhead
 debug = 0              # No debug info
-
-# Keep unwinding for tests to get better error messages
-[profile.test]
-panic = "unwind"

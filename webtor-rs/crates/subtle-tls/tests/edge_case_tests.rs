@@ -4,6 +4,7 @@
 
 use wasm_bindgen_test::*;
 
+// TODO: remove
 wasm_bindgen_test_configure!(run_in_browser);
 
 mod parsing_edge_cases {

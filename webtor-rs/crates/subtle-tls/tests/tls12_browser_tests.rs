@@ -19,8 +19,6 @@
 
 use wasm_bindgen_test::*;
 
-wasm_bindgen_test_configure!(run_in_browser);
-
 mod tls12_crypto_tests {
     use super::*;
     use subtle_tls::crypto::AesCbc;
