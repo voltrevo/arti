@@ -369,7 +369,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> SmuxStream<S> {
         }
 
         // Process all complete segments
-        while let Some(_) = self.process_next_segment().await? {}
+        while self.process_next_segment().await?.is_some() {}
 
         Ok(())
     }
@@ -805,7 +805,11 @@ mod tests {
             for split in 0..encoded.len() {
                 let prefix = &encoded[..split];
                 let res = SmuxSegment::decode(prefix).unwrap();
-                assert!(res.is_none(), "Expected None for prefix of length {}", split);
+                assert!(
+                    res.is_none(),
+                    "Expected None for prefix of length {}",
+                    split
+                );
             }
 
             let full = SmuxSegment::decode(&encoded).unwrap();

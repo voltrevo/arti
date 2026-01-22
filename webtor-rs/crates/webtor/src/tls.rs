@@ -221,10 +221,7 @@ impl AsyncRead for TlsStream {
         _cx: &mut Context<'_>,
         _buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        Poll::Ready(Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Not supported in WASM",
-        )))
+        Poll::Ready(Err(io::Error::other("Not supported in WASM")))
     }
 }
 
@@ -235,24 +232,15 @@ impl AsyncWrite for TlsStream {
         _cx: &mut Context<'_>,
         _buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Poll::Ready(Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Not supported in WASM",
-        )))
+        Poll::Ready(Err(io::Error::other("Not supported in WASM")))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Not supported in WASM",
-        )))
+        Poll::Ready(Err(io::Error::other("Not supported in WASM")))
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Not supported in WASM",
-        )))
+        Poll::Ready(Err(io::Error::other("Not supported in WASM")))
     }
 }
 

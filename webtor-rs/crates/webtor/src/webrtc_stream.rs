@@ -111,10 +111,7 @@ mod wasm {
             // onerror handler
             let on_error = Closure::wrap(Box::new(move |_e: web_sys::Event| {
                 warn!("WebRTC DataChannel error");
-                let _ = tx_err.unbounded_send(Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "DataChannel error",
-                )));
+                let _ = tx_err.unbounded_send(Err(io::Error::other("DataChannel error")));
             }) as Box<dyn FnMut(web_sys::Event)>);
             dc.set_onerror(Some(on_error.as_ref().unchecked_ref()));
 

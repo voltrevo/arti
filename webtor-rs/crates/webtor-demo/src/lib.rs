@@ -1,6 +1,9 @@
 //! Demo webpage for webtor-rs
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::{
+    rc::Rc,
+    sync::{Mutex, PoisonError},
+};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 use web_sys::console;
@@ -19,9 +22,9 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// Main demo application - simplified API for JavaScript
 #[wasm_bindgen]
 pub struct DemoApp {
-    tor_client: Arc<Mutex<Option<TorClient>>>,
-    status_callback: Arc<Mutex<Option<js_sys::Function>>>,
-    status_interval: Arc<Mutex<Option<i32>>>,
+    tor_client: Rc<Mutex<Option<TorClient>>>,
+    status_callback: Rc<Mutex<Option<js_sys::Function>>>,
+    status_interval: Rc<Mutex<Option<i32>>>,
 }
 
 #[wasm_bindgen]
@@ -30,9 +33,9 @@ impl DemoApp {
     pub fn new() -> Result<DemoApp, JsValue> {
         console::log_1(&"DemoApp created".into());
         Ok(DemoApp {
-            tor_client: Arc::new(Mutex::new(None)),
-            status_callback: Arc::new(Mutex::new(None)),
-            status_interval: Arc::new(Mutex::new(None)),
+            tor_client: Rc::new(Mutex::new(None)),
+            status_callback: Rc::new(Mutex::new(None)),
+            status_interval: Rc::new(Mutex::new(None)),
         })
     }
 
@@ -155,7 +158,7 @@ impl DemoApp {
             let response = client
                 .fetch_rust(&url)
                 .await
-                .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
             let text = response
                 .text()
@@ -173,7 +176,7 @@ impl DemoApp {
 
             let response = TorClient::fetch_one_time_rust(snowflake_url, &url, None, None)
                 .await
-                .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
             let text = response
                 .text()
@@ -198,7 +201,7 @@ impl DemoApp {
             client
                 .update_circuit_rust(30000)
                 .await
-                .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
             app.update_status("Ready")?;
             Ok(JsValue::UNDEFINED)

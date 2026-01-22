@@ -6,8 +6,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+type InnerLogFn = dyn Fn(&str, LogType) + Send + Sync;
+
 #[derive(Clone)]
-pub struct LogCallback(pub Arc<dyn Fn(&str, LogType) + Send + Sync>);
+pub struct LogCallback(pub Arc<InnerLogFn>);
 
 impl fmt::Debug for LogCallback {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

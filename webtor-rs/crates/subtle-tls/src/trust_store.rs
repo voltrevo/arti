@@ -130,12 +130,12 @@ pub struct TrustStore {
 impl TrustStore {
     /// Create a new trust store with embedded Let's Encrypt roots
     pub fn new() -> Result<Self> {
-        let mut embedded_roots = Vec::new();
-
         // Parse embedded root certificates
-        embedded_roots.push(RootCertificate::from_pem(ISRG_ROOT_X1_PEM)?);
-        embedded_roots.push(RootCertificate::from_pem(ISRG_ROOT_X2_PEM)?);
-        embedded_roots.push(RootCertificate::from_pem(DIGICERT_GLOBAL_ROOT_G2_PEM)?);
+        let embedded_roots = vec![
+            RootCertificate::from_pem(ISRG_ROOT_X1_PEM)?,
+            RootCertificate::from_pem(ISRG_ROOT_X2_PEM)?,
+            RootCertificate::from_pem(DIGICERT_GLOBAL_ROOT_G2_PEM)?,
+        ];
 
         info!(
             "Initialized trust store with {} embedded root CAs",
@@ -300,7 +300,7 @@ impl Default for TrustStore {
 
 // Global trust store instance
 thread_local! {
-    static TRUST_STORE: RefCell<Option<TrustStore>> = RefCell::new(None);
+    static TRUST_STORE: RefCell<Option<TrustStore>> = const { RefCell::new(None) };
 }
 
 /// Get or initialize the global trust store

@@ -61,9 +61,10 @@ pub struct TlsConnector {
 }
 
 /// TLS version preference
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TlsVersion {
     /// TLS 1.3 only
+    #[default]
     Tls13,
     /// TLS 1.2 only
     #[cfg(feature = "tls12")]
@@ -78,12 +79,6 @@ pub enum TlsVersion {
     /// and retries with TLS 1.2 when TLS 1.3 fails.
     #[cfg(feature = "tls12")]
     Prefer13,
-}
-
-impl Default for TlsVersion {
-    fn default() -> Self {
-        TlsVersion::Tls13
-    }
 }
 
 /// TLS configuration

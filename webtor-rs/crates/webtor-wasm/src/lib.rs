@@ -83,8 +83,8 @@ fn headers_to_js(headers: &std::collections::HashMap<String, String>) -> JsValue
 
 // Thread-local log callback for forwarding logs to JavaScript (WASM is single-threaded)
 thread_local! {
-    static LOG_CALLBACK: RefCell<Option<js_sys::Function>> = RefCell::new(None);
-    static DEBUG_ENABLED: RefCell<bool> = RefCell::new(false);
+    static LOG_CALLBACK: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
+    static DEBUG_ENABLED: RefCell<bool> = const { RefCell::new(false) };
 }
 
 /// Set the log callback function for receiving tracing logs in JavaScript
@@ -222,6 +222,7 @@ pub struct TorClient {
 #[wasm_bindgen]
 impl TorClient {
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(options: TorClientOptions) -> js_sys::Promise {
         console_log!("Creating new TorClient");
 

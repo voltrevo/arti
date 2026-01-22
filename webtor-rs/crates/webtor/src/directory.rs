@@ -403,7 +403,7 @@ impl DirectoryManager {
             info!(
                 "Fetching chunk batch {}/{} (chunks {}-{})",
                 batch_idx + 1,
-                (total_chunks + MAX_PARALLEL_CHUNKS - 1) / MAX_PARALLEL_CHUNKS,
+                total_chunks.div_ceil(MAX_PARALLEL_CHUNKS),
                 batch_start + 1,
                 (batch_start + batch.len()).min(total_chunks)
             );
@@ -483,7 +483,7 @@ impl DirectoryManager {
             .await
             .map_err(|e| TorError::Internal(format!("Failed to begin dir stream: {}", e)))?;
 
-        let digests_str: Vec<String> = digests.iter().map(|d| hex::encode_upper(d)).collect();
+        let digests_str: Vec<String> = digests.iter().map(hex::encode_upper).collect();
         let path = format!("/tor/micro/d/{}", digests_str.join("-"));
 
         let request = format!(

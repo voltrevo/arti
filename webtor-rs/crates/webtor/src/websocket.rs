@@ -188,10 +188,10 @@ mod wasm {
         ) -> Poll<io::Result<usize>> {
             match self.socket.send_with_u8_array(buf) {
                 Ok(_) => Poll::Ready(Ok(buf.len())),
-                Err(e) => Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("WebSocket send error: {:?}", e),
-                ))),
+                Err(e) => Poll::Ready(Err(io::Error::other(format!(
+                    "WebSocket send error: {:?}",
+                    e
+                )))),
             }
         }
 
@@ -202,10 +202,10 @@ mod wasm {
         fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
             match self.socket.close() {
                 Ok(_) => Poll::Ready(Ok(())),
-                Err(e) => Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("WebSocket close error: {:?}", e),
-                ))),
+                Err(e) => Poll::Ready(Err(io::Error::other(format!(
+                    "WebSocket close error: {:?}",
+                    e
+                )))),
             }
         }
     }

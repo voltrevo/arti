@@ -7,17 +7,9 @@ use tor_rtcompat::CoarseInstant;
 use tor_rtcompat::RealCoarseTimeProvider;
 use tor_rtcompat::{CoarseTimeProvider, SleepProvider};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WasmRuntime {
     coarse: RealCoarseTimeProvider,
-}
-
-impl WasmRuntime {
-    pub fn new() -> Self {
-        Self {
-            coarse: RealCoarseTimeProvider::new(),
-        }
-    }
 }
 
 impl CoarseTimeProvider for WasmRuntime {

@@ -248,7 +248,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> KcpStream<S> {
                 {
                     use crate::wasm_runtime::WasmRuntime;
                     use tor_rtcompat::SleepProvider;
-                    let runtime = WasmRuntime::new();
+                    let runtime = WasmRuntime::default();
                     runtime
                         .sleep(Duration::from_millis(check.min(10) as u64))
                         .await;
@@ -275,10 +275,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
             }
             Err(kcp::Error::RecvQueueEmpty) => {}
             Err(e) => {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("KCP recv error: {:?}", e),
-                )))
+                return Poll::Ready(Err(io::Error::other(format!("KCP recv error: {:?}", e))))
             }
         }
 
@@ -303,10 +300,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                 // Update KCP
                 let current = self.current_ms();
                 if let Err(e) = self.kcp.update(current) {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("KCP update error: {:?}", e),
-                    )));
+                    return Poll::Ready(Err(io::Error::other(format!(
+                        "KCP update error: {:?}",
+                        e
+                    ))));
                 }
 
                 // Write any output that update generated (ACKs, etc.)
@@ -338,10 +335,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                         cx.waker().wake_by_ref();
                         Poll::Pending
                     }
-                    Err(e) => Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("KCP recv error: {:?}", e),
-                    ))),
+                    Err(e) => {
+                        Poll::Ready(Err(io::Error::other(format!("KCP recv error: {:?}", e))))
+                    }
                 }
             }
             Poll::Ready(Err(e)) => {
@@ -369,18 +365,15 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
                 // Update KCP state first (required before flush)
                 let current = self.current_ms();
                 if let Err(e) = self.kcp.update(current) {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("KCP update error: {:?}", e),
-                    )));
+                    return Poll::Ready(Err(io::Error::other(format!(
+                        "KCP update error: {:?}",
+                        e
+                    ))));
                 }
 
                 // Force flush to produce output immediately
                 if let Err(e) = self.kcp.flush() {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("KCP flush error: {:?}", e),
-                    )));
+                    return Poll::Ready(Err(io::Error::other(format!("KCP flush error: {:?}", e))));
                 }
 
                 // Flush output
@@ -409,10 +402,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
                     Poll::Ready(Ok(n))
                 }
             }
-            Err(e) => Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("KCP send error: {:?}", e),
-            ))),
+            Err(e) => Poll::Ready(Err(io::Error::other(format!("KCP send error: {:?}", e)))),
         }
     }
 
@@ -439,10 +429,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
         // Flush KCP output
         let _current = self.current_ms();
         if let Err(e) = self.kcp.flush() {
-            return Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("KCP flush error: {:?}", e),
-            )));
+            return Poll::Ready(Err(io::Error::other(format!("KCP flush error: {:?}", e))));
         }
 
         // Flush output buffer from KCP flush

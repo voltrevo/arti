@@ -570,7 +570,7 @@ impl TorClient {
             + tor_rtcompat::CertifiedConn
             + 'static,
     {
-        let runtime = WasmRuntime::new();
+        let runtime = WasmRuntime::default();
 
         // Extract the peer certificate from the TLS stream BEFORE moving it
         // The peer certificate is needed later for the check() call

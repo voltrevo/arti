@@ -161,7 +161,7 @@ pub fn make_circ_params() -> Result<CircParameters> {
 
     // 4. Congestion Control Params
     let ccontrol = CongestionControlParamsBuilder::default()
-        .alg(Algorithm::FixedWindow(fixed_window_params.clone()))
+        .alg(Algorithm::FixedWindow(fixed_window_params))
         .fixed_window_params(fixed_window_params)
         .cwnd_params(cwnd_params)
         .rtt_params(rtt_params)

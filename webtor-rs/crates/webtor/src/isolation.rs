@@ -10,10 +10,11 @@ use std::hash::{Hash, Hasher};
 use url::Url;
 
 /// Stream isolation policy determining how requests are grouped into circuits
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum StreamIsolationPolicy {
     /// Isolate by first-party domain (eTLD+1 approximation)
     /// e.g., foo.example.com and bar.example.com share a circuit
+    #[default]
     PerDomain,
     /// Isolate by full hostname including subdomains
     /// e.g., foo.example.com and bar.example.com use different circuits
@@ -23,12 +24,6 @@ pub enum StreamIsolationPolicy {
     PerOrigin,
     /// No isolation - all requests share circuits (legacy behavior)
     None,
-}
-
-impl Default for StreamIsolationPolicy {
-    fn default() -> Self {
-        StreamIsolationPolicy::PerDomain
-    }
 }
 
 /// Isolation key that uniquely identifies a stream isolation group
