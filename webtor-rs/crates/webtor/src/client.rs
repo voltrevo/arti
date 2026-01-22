@@ -693,7 +693,6 @@ mod tests {
     // Run with: RUST_MIN_STACK=16777216 cargo test -p webtor client::tests
 
     #[wasm_bindgen_test]
-    #[ignore = "requires large stack for consensus parsing"]
     async fn test_tor_client_creation() {
         let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
             .with_create_circuit_early(false);
@@ -703,7 +702,6 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    #[ignore = "requires large stack for consensus parsing"]
     async fn test_one_time_fetch() {
         // This will fail because we don't have WASM WebSocket implementation
         let result = TorClient::fetch_one_time(
@@ -718,7 +716,6 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    #[ignore = "requires large stack for consensus parsing"]
     async fn test_circuit_status() {
         let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
             .with_create_circuit_early(false);

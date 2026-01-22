@@ -538,13 +538,13 @@ fn decompress_brotli(compressed: &[u8]) -> std::io::Result<String> {
 }
 
 /// Fetch a URL and return the response body as bytes (WASM only)
+/// Uses global fetch() which works in browsers, web workers, and Node.js 18+
 #[cfg(target_arch = "wasm32")]
 async fn fetch_url(url: &str) -> std::result::Result<Vec<u8>, String> {
+    use js_sys::{Function, Promise, Reflect};
     use wasm_bindgen::JsCast;
     use wasm_bindgen_futures::JsFuture;
     use web_sys::{Request, RequestInit, Response};
-
-    let window = web_sys::window().ok_or("No window")?;
 
     let opts = RequestInit::new();
     opts.set_method("GET");
@@ -552,7 +552,21 @@ async fn fetch_url(url: &str) -> std::result::Result<Vec<u8>, String> {
     let request = Request::new_with_str_and_init(url, &opts)
         .map_err(|e| format!("Failed to create request: {:?}", e))?;
 
-    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+    // Use global fetch() instead of window.fetch() for compatibility with
+    // Node.js, web workers, and browsers
+    let global = js_sys::global();
+    let fetch = Reflect::get(&global, &"fetch".into())
+        .map_err(|_| "fetch not found in global scope")?
+        .dyn_into::<Function>()
+        .map_err(|_| "fetch is not a function")?;
+
+    let promise = fetch
+        .call1(&global, &request)
+        .map_err(|e| format!("fetch call failed: {:?}", e))?
+        .dyn_into::<Promise>()
+        .map_err(|_| "fetch didn't return a Promise")?;
+
+    let resp_value = JsFuture::from(promise)
         .await
         .map_err(|e| format!("Fetch failed: {:?}", e))?;
 
