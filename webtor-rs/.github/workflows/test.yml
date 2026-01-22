@@ -33,11 +33,14 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Run cargo tests
-      run: cargo test --workspace
+    - name: Run cargo tests (native only)
+      run: cargo test --workspace --exclude subtle-tls --exclude webtor-wasm --exclude webtor-demo
 
-    - name: Run subtle-tls tests with TLS 1.2
-      run: cargo test -p subtle-tls --features tls12
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Run WASM tests
+      run: ./test.sh
 
     - name: Check WASM build (webtor)
       run: cargo check --package webtor --target wasm32-unknown-unknown
@@ -79,24 +82,24 @@ jobs:
         echo "$PWD/binaryen-version_118/bin" >> $GITHUB_PATH
 
     - name: Build WASM demo
-      run: wasm-pack build webtor-demo --target web --release
+      run: wasm-pack build crates/webtor-demo --target web --release
 
     - name: Optimize WASM with wasm-opt
       run: |
         wasm-opt -Oz --strip-dwarf --strip-producers \
-          -o webtor-demo/pkg/webtor_demo_bg.opt.wasm \
-          webtor-demo/pkg/webtor_demo_bg.wasm
-        mv webtor-demo/pkg/webtor_demo_bg.opt.wasm webtor-demo/pkg/webtor_demo_bg.wasm
+          -o crates/webtor-demo/pkg/webtor_demo_bg.opt.wasm \
+          crates/webtor-demo/pkg/webtor_demo_bg.wasm
+        mv crates/webtor-demo/pkg/webtor_demo_bg.opt.wasm crates/webtor-demo/pkg/webtor_demo_bg.wasm
 
     - name: Copy to static folder
       run: |
-        mkdir -p webtor-demo/static/pkg
-        cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
+        mkdir -p crates/webtor-demo/static/pkg
+        cp -r crates/webtor-demo/pkg/* crates/webtor-demo/static/pkg/
 
     - name: Report WASM bundle size
       run: |
-        UNCOMPRESSED=$(ls -lh webtor-demo/pkg/webtor_demo_bg.wasm | awk '{print $5}')
-        GZIPPED=$(gzip -c -9 webtor-demo/pkg/webtor_demo_bg.wasm | wc -c)
+        UNCOMPRESSED=$(ls -lh crates/webtor-demo/pkg/webtor_demo_bg.wasm | awk '{print $5}')
+        GZIPPED=$(gzip -c -9 crates/webtor-demo/pkg/webtor_demo_bg.wasm | wc -c)
         GZIPPED_MB=$(echo "scale=2; $GZIPPED / 1024 / 1024" | bc)
         echo "### WASM Bundle Size" >> $GITHUB_STEP_SUMMARY
         echo "| Metric | Size |" >> $GITHUB_STEP_SUMMARY

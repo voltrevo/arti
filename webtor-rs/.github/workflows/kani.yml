@@ -25,7 +25,7 @@ jobs:
       - name: Run Kani on subtle-tls
         id: kani
         run: |
-          cd subtle-tls
+          cd crates/subtle-tls
           cargo kani --tests
 
       - name: Summary

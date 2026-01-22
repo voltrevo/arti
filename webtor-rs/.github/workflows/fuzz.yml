@@ -37,12 +37,12 @@ jobs:
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-          subtle-tls/fuzz/target/
-          subtle-tls/fuzz/corpus/
+          crates/subtle-tls/fuzz/target/
+          crates/subtle-tls/fuzz/corpus/
         key: ${{ runner.os }}-fuzz-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Run fuzz tests
-      working-directory: subtle-tls/fuzz
+      working-directory: crates/subtle-tls/fuzz
       run: |
         DURATION=${{ github.event.inputs.duration || '18000' }}
         TARGET=${{ github.event.inputs.target || 'all' }}
@@ -71,12 +71,12 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: fuzz-crashes
-        path: subtle-tls/fuzz/artifacts/
+        path: crates/subtle-tls/fuzz/artifacts/
         if-no-files-found: ignore
 
     - name: Upload corpus
       uses: actions/upload-artifact@v4
       with:
         name: fuzz-corpus
-        path: subtle-tls/fuzz/corpus/
+        path: crates/subtle-tls/fuzz/corpus/
         if-no-files-found: ignore

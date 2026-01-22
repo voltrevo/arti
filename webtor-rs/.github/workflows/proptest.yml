@@ -31,8 +31,11 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-proptest-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Run property tests
-      run: cargo test --package webtor proptest -- --test-threads=1
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Run property tests via wasm-pack
+      run: wasm-pack test --node crates/webtor
 
     - name: Upload regression files on failure
       if: failure()

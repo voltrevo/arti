@@ -5,9 +5,9 @@ on:
     paths:
       - '*.md'
       - 'docs/**/*.md'
-      - 'subtle-tls/**/*.md'
+      - 'crates/subtle-tls/**/*.md'
       - '.devin/wiki.json'
-      - 'webtor-demo/pkg/**'
+      - 'crates/webtor-demo/pkg/**'
 
 jobs:
   verify-docs:
@@ -19,11 +19,11 @@ jobs:
         run: |
           echo "## WASM Bundle Size Verification" >> $GITHUB_STEP_SUMMARY
           
-          if [ -f "webtor-demo/pkg/webtor_demo_bg.wasm" ]; then
-            UNCOMPRESSED=$(stat -c%s webtor-demo/pkg/webtor_demo_bg.wasm)
+          if [ -f "crates/webtor-demo/pkg/webtor_demo_bg.wasm" ]; then
+            UNCOMPRESSED=$(stat -c%s crates/webtor-demo/pkg/webtor_demo_bg.wasm)
             UNCOMPRESSED_MB=$(echo "scale=2; $UNCOMPRESSED / 1048576" | bc)
             
-            COMPRESSED=$(gzip -c webtor-demo/pkg/webtor_demo_bg.wasm | wc -c)
+            COMPRESSED=$(gzip -c crates/webtor-demo/pkg/webtor_demo_bg.wasm | wc -c)
             COMPRESSED_MB=$(echo "scale=2; $COMPRESSED / 1048576" | bc)
             
             echo "| Metric | Actual |" >> $GITHUB_STEP_SUMMARY

@@ -58,14 +58,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            subtle-tls/fuzz/corpus/
-            webtor/fuzz/corpus/
+            crates/subtle-tls/fuzz/corpus/
+            crates/webtor/fuzz/corpus/
           key: ${{ runner.os }}-fuzz-corpus-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-fuzz-corpus-
 
       - name: Run subtle-tls fuzzers (30s each)
-        working-directory: subtle-tls/fuzz
+        working-directory: crates/subtle-tls/fuzz
         run: |
           for target in fuzz_certificate fuzz_server_hello fuzz_handshake_parse fuzz_record; do
             echo "Fuzzing: $target"
@@ -73,7 +73,7 @@ jobs:
           done
 
       - name: Run webtor fuzzers (30s each)
-        working-directory: webtor/fuzz
+        working-directory: crates/webtor/fuzz
         run: |
           cargo +nightly fuzz run fuzz_isolation_key -- -max_total_time=30 || exit 1
 
@@ -83,6 +83,6 @@ jobs:
         with:
           name: fuzz-crashes
           path: |
-            subtle-tls/fuzz/artifacts/
-            webtor/fuzz/artifacts/
+            crates/subtle-tls/fuzz/artifacts/
+            crates/webtor/fuzz/artifacts/
           if-no-files-found: ignore

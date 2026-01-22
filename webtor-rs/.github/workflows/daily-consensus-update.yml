@@ -28,12 +28,12 @@ jobs:
       - name: Fetch fresh consensus
         run: |
           chmod +x scripts/fetch-consensus.sh
-          ./scripts/fetch-consensus.sh webtor/src/cached
+          ./scripts/fetch-consensus.sh crates/webtor/src/cached
 
       - name: Check for changes
         id: check_changes
         run: |
-          if git diff --quiet webtor/src/cached/; then
+          if git diff --quiet crates/webtor/src/cached/; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No consensus changes detected"
           else
@@ -46,7 +46,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add webtor/src/cached/
+          git add crates/webtor/src/cached/
           git commit -m "chore: update cached Tor consensus $(date -u +%Y-%m-%d)"
           git push
 
@@ -71,17 +71,17 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM demo
-        run: wasm-pack build webtor-demo --target web --out-dir pkg --release
+        run: wasm-pack build crates/webtor-demo --target web --out-dir ../pkg --release
 
       - name: Prepare static files
         run: |
-          mkdir -p webtor-demo/static/pkg
-          cp -r webtor-demo/pkg/* webtor-demo/static/pkg/
+          mkdir -p crates/webtor-demo/static/pkg
+          cp -r crates/webtor-demo/pkg/* crates/webtor-demo/static/pkg/
           # Create brotli-compressed consensus files for lazy loading
-          brotli -f -k webtor/src/cached/consensus.txt
-          brotli -f -k webtor/src/cached/microdescriptors.txt
-          cp webtor/src/cached/consensus.txt.br webtor-demo/static/
-          cp webtor/src/cached/microdescriptors.txt.br webtor-demo/static/
+          brotli -f -k crates/webtor/src/cached/consensus.txt
+          brotli -f -k crates/webtor/src/cached/microdescriptors.txt
+          cp crates/webtor/src/cached/consensus.txt.br crates/webtor-demo/static/
+          cp crates/webtor/src/cached/microdescriptors.txt.br crates/webtor-demo/static/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -89,7 +89,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./webtor-demo/static
+          path: ./crates/webtor-demo/static
 
   deploy:
     environment:

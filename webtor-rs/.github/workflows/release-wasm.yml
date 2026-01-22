@@ -37,14 +37,14 @@ jobs:
         sudo mv binaryen-version_118/bin/wasm-opt /usr/local/bin/
 
     - name: Build webtor-wasm (release)
-      run: wasm-pack build webtor-wasm --target web --release
+      run: wasm-pack build crates/webtor-wasm --target web --release
 
     - name: Optimize WASM
       run: |
         wasm-opt -Oz --strip-dwarf --strip-producers \
-          -o webtor-wasm/pkg/webtor_wasm_bg_opt.wasm \
-          webtor-wasm/pkg/webtor_wasm_bg.wasm
-        mv webtor-wasm/pkg/webtor_wasm_bg_opt.wasm webtor-wasm/pkg/webtor_wasm_bg.wasm
+          -o crates/webtor-wasm/pkg/webtor_wasm_bg_opt.wasm \
+          crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
+        mv crates/webtor-wasm/pkg/webtor_wasm_bg_opt.wasm crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
 
     - name: Get version
       id: version
@@ -57,7 +57,7 @@ jobs:
 
     - name: Package WASM
       run: |
-        cd webtor-wasm/pkg
+        cd crates/webtor-wasm/pkg
         tar -czvf webtor-wasm-${{ steps.version.outputs.version }}.tar.gz \
           webtor_wasm.js \
           webtor_wasm.d.ts \
@@ -75,8 +75,8 @@ jobs:
 
     - name: Show WASM size
       run: |
-        ls -lh webtor-wasm/pkg/webtor_wasm_bg.wasm
-        gzip -c webtor-wasm/pkg/webtor_wasm_bg.wasm | wc -c | awk '{printf "Gzipped: %.2f MB\n", $1/1024/1024}'
+        ls -lh crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
+        gzip -c crates/webtor-wasm/pkg/webtor_wasm_bg.wasm | wc -c | awk '{printf "Gzipped: %.2f MB\n", $1/1024/1024}'
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -105,8 +105,8 @@ jobs:
           await client.waitForCircuit()
           ```
         files: |
-          webtor-wasm/pkg/webtor-wasm-${{ steps.version.outputs.version }}.tar.gz
-          webtor-wasm/pkg/webtor-wasm-${{ steps.version.outputs.version }}.zip
+          crates/webtor-wasm/pkg/webtor-wasm-${{ steps.version.outputs.version }}.tar.gz
+          crates/webtor-wasm/pkg/webtor-wasm-${{ steps.version.outputs.version }}.zip
         draft: false
         prerelease: false
 
@@ -123,38 +123,38 @@ jobs:
         VERSION=${{ steps.version.outputs.version }}
         
         # Upload individual files to versioned path
-        aws s3 cp webtor-wasm/pkg/webtor_wasm.js \
+        aws s3 cp crates/webtor-wasm/pkg/webtor_wasm.js \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/webtor_wasm.js \
           --endpoint-url ${R2_ENDPOINT}
         
-        aws s3 cp webtor-wasm/pkg/webtor_wasm.d.ts \
+        aws s3 cp crates/webtor-wasm/pkg/webtor_wasm.d.ts \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/webtor_wasm.d.ts \
           --endpoint-url ${R2_ENDPOINT}
         
-        aws s3 cp webtor-wasm/pkg/webtor_wasm_bg.wasm \
+        aws s3 cp crates/webtor-wasm/pkg/webtor_wasm_bg.wasm \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/webtor_wasm_bg.wasm \
           --endpoint-url ${R2_ENDPOINT} \
           --content-type "application/wasm"
         
-        aws s3 cp webtor-wasm/pkg/webtor_wasm_bg.wasm.d.ts \
+        aws s3 cp crates/webtor-wasm/pkg/webtor_wasm_bg.wasm.d.ts \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/webtor_wasm_bg.wasm.d.ts \
           --endpoint-url ${R2_ENDPOINT}
         
-        aws s3 cp webtor-wasm/pkg/package.json \
+        aws s3 cp crates/webtor-wasm/pkg/package.json \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/package.json \
           --endpoint-url ${R2_ENDPOINT}
         
         # Upload archives
-        aws s3 cp webtor-wasm/pkg/webtor-wasm-${VERSION}.tar.gz \
+        aws s3 cp crates/webtor-wasm/pkg/webtor-wasm-${VERSION}.tar.gz \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/webtor-wasm-${VERSION}.tar.gz \
           --endpoint-url ${R2_ENDPOINT}
         
-        aws s3 cp webtor-wasm/pkg/webtor-wasm-${VERSION}.zip \
+        aws s3 cp crates/webtor-wasm/pkg/webtor-wasm-${VERSION}.zip \
           s3://${R2_BUCKET}/webtor-wasm/${VERSION}/webtor-wasm-${VERSION}.zip \
           --endpoint-url ${R2_ENDPOINT}
         
         # Copy to "latest" for convenience
-        aws s3 sync webtor-wasm/pkg/ s3://${R2_BUCKET}/webtor-wasm/latest/ \
+        aws s3 sync crates/webtor-wasm/pkg/ s3://${R2_BUCKET}/webtor-wasm/latest/ \
           --endpoint-url ${R2_ENDPOINT} \
           --exclude "*" \
           --include "webtor_wasm.js" \
