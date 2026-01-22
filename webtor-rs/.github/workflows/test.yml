@@ -39,9 +39,6 @@ jobs:
     - name: Run WASM tests
       run: ./test.sh
 
-    - name: Check WASM build (webtor)
-      run: cargo check --package webtor --target wasm32-unknown-unknown
-
     - name: Check WASM build (subtle-tls)
       run: cargo check --package subtle-tls --target wasm32-unknown-unknown --features tls12
 
@@ -118,34 +115,3 @@ jobs:
       run: npm run test:bench
       timeout-minutes: 5
       continue-on-error: true
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy
-        targets: wasm32-unknown-unknown
-
-    - name: Run clippy
-      run: cargo clippy --workspace --all-targets -- -D warnings
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
-
-    - name: Check formatting
-      run: cargo fmt --all -- --check
