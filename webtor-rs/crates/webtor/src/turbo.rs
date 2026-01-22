@@ -477,9 +477,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn turbo_header_size_boundaries() {
-        let boundary_lengths = [
-            0usize, 1, 0x3F, 0x40, 0x41, 0x1FFF, 0x2000, 0x2001, 0xFFFFF,
-        ];
+        let boundary_lengths = [0usize, 1, 0x3F, 0x40, 0x41, 0x1FFF, 0x2000, 0x2001, 0xFFFFF];
 
         for len in boundary_lengths {
             let data = vec![0u8; len];
@@ -520,7 +518,11 @@ mod tests {
             for split in 0..encoded.len() {
                 let prefix = &encoded[..split];
                 let res = TurboFrame::decode(prefix).unwrap();
-                assert!(res.is_none(), "Expected None for prefix of length {}", split);
+                assert!(
+                    res.is_none(),
+                    "Expected None for prefix of length {}",
+                    split
+                );
             }
 
             let full = TurboFrame::decode(&encoded).unwrap();

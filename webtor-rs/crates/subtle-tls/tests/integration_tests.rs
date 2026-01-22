@@ -319,8 +319,8 @@ mod handshake_tests {
     use super::*;
     use subtle_tls::handshake::{
         parse_certificate_verify, parse_finished, parse_handshake_header, HandshakeState,
-        HANDSHAKE_CLIENT_HELLO, TLS_AES_128_GCM_SHA256,
-        TLS_CHACHA20_POLY1305_SHA256, TLS_VERSION_1_2,
+        HANDSHAKE_CLIENT_HELLO, TLS_AES_128_GCM_SHA256, TLS_CHACHA20_POLY1305_SHA256,
+        TLS_VERSION_1_2,
     };
 
     #[wasm_bindgen_test]

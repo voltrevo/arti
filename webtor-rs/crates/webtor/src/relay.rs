@@ -403,7 +403,9 @@ mod tests {
     ];
 
     fn random_fingerprint(rng: &mut impl rand::Rng) -> String {
-        (0..8).map(|_| format!("{:x}", rng.gen_range(0..16))).collect()
+        (0..8)
+            .map(|_| format!("{:x}", rng.gen_range(0..16)))
+            .collect()
     }
 
     fn random_flags(rng: &mut impl rand::Rng) -> HashSet<String> {
@@ -435,8 +437,9 @@ mod tests {
 
     fn random_criteria(rng: &mut impl rand::Rng) -> RelayCriteria {
         let num_exclude_fps = rng.gen_range(0..=3);
-        let exclude_fingerprints: HashSet<String> =
-            (0..num_exclude_fps).map(|_| random_fingerprint(rng)).collect();
+        let exclude_fingerprints: HashSet<String> = (0..num_exclude_fps)
+            .map(|_| random_fingerprint(rng))
+            .collect();
 
         RelayCriteria {
             need_flags: random_flags(rng),
