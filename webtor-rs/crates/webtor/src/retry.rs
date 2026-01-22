@@ -197,15 +197,20 @@ impl RetryPolicy {
 /// Debug-asserts if `policy.max_attempts == 0`
 ///
 /// # Example
-/// ```ignore
-/// retry_with_backoff(
-///     "fetch_consensus",
-///     RetryPolicy::bootstrap(),
-///     |e| e.is_retryable(),
-///     |attempt| async move {
-///         fetch_consensus().await
-///     },
-/// ).await
+/// ```no_run
+/// use webtor::{retry_with_backoff, RetryPolicy, TorError, Result};
+///
+/// async fn example() -> Result<String> {
+///     retry_with_backoff(
+///         "fetch_consensus",
+///         RetryPolicy::bootstrap(),
+///         |e| e.is_retryable(),
+///         |_attempt| async move {
+///             // Your fallible operation here
+///             Ok("success".to_string())
+///         },
+///     ).await
+/// }
 /// ```
 pub async fn retry_with_backoff<F, Fut, T>(
     operation_name: &str,
@@ -293,12 +298,17 @@ pub async fn sleep(duration: Duration) {
 /// * `future` - The async operation to execute
 ///
 /// # Example
-/// ```ignore
-/// with_timeout(
-///     Duration::from_secs(30),
-///     "establish_channel",
-///     establish_channel_impl()
-/// ).await
+/// ```no_run
+/// use webtor::{with_timeout, Result};
+/// use std::time::Duration;
+///
+/// async fn example() -> Result<String> {
+///     with_timeout(
+///         Duration::from_secs(30),
+///         "my_operation",
+///         async { Ok("done".to_string()) }
+///     ).await
+/// }
 /// ```
 pub async fn with_timeout<F, T>(duration: Duration, operation_name: &str, future: F) -> Result<T>
 where
@@ -342,11 +352,16 @@ where
 /// * `future` - The async operation to execute
 ///
 /// # Example
-/// ```ignore
-/// with_cancellation(
-///     &self.shutdown_token,
-///     establish_channel_impl()
-/// ).await
+/// ```no_run
+/// use webtor::{with_cancellation, CancellationToken, Result};
+///
+/// async fn example() -> Result<String> {
+///     let token = CancellationToken::new();
+///     with_cancellation(
+///         &token,
+///         async { Ok("done".to_string()) }
+///     ).await
+/// }
 /// ```
 pub async fn with_cancellation<F, T>(token: &CancellationToken, future: F) -> Result<T>
 where

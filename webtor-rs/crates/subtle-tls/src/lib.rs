@@ -14,13 +14,19 @@
 //! - AsyncRead/AsyncWrite interface
 //!
 //! # Example
-//! ```ignore
-//! use subtle_tls::TlsConnector;
-//! use futures::io::{AsyncReadExt, AsyncWriteExt};
+//! ```no_run
+//! use subtle_tls::{TlsConnector, Result};
+//! use futures::io::AsyncWriteExt;
 //!
-//! let connector = TlsConnector::new();
-//! let mut tls_stream = connector.connect(tcp_stream, "example.com").await?;
-//! tls_stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await?;
+//! async fn example<S>(tcp_stream: S) -> Result<()>
+//! where
+//!     S: futures::io::AsyncRead + futures::io::AsyncWrite + Unpin + 'static,
+//! {
+//!     let connector = TlsConnector::new();
+//!     let mut tls_stream = connector.connect(tcp_stream, "example.com").await?;
+//!     tls_stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await?;
+//!     Ok(())
+//! }
 //! ```
 
 pub mod cert;
