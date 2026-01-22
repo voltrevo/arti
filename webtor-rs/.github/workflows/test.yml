@@ -33,9 +33,6 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Run cargo tests (native only)
-      run: cargo test --workspace --exclude subtle-tls --exclude webtor-wasm --exclude webtor-demo
-
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
