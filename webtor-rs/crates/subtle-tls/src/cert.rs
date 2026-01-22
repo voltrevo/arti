@@ -920,7 +920,7 @@ mod tests {
 
         assert!(verifier.matches_hostname("example.com"));
         assert!(verifier.matches_hostname("EXAMPLE.COM"));
-        assert!(verifier.matches_hostname("*.example.com") == false); // Wildcard doesn't match apex
+        assert!(!verifier.matches_hostname("*.example.com")); // Wildcard doesn't match apex
         assert!(!verifier.matches_hostname("other.com"));
     }
 

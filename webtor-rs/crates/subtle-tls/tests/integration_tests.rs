@@ -427,11 +427,12 @@ mod handshake_tests {
     async fn test_parse_certificate_verify() {
         // Build a minimal CertificateVerify message
         // Format: algorithm(2) + signature_length(2) + signature(N)
-        let mut data = Vec::new();
-        data.push(0x04); // Algorithm high byte (RSA_PSS_RSAE_SHA256 = 0x0804)
-        data.push(0x04); // Algorithm low byte
-        data.push(0x00); // Signature length high byte
-        data.push(0x10); // Signature length low byte (16 bytes)
+        let mut data = vec![
+            0x04, // Algorithm high byte (RSA_PSS_RSAE_SHA256 = 0x0804)
+            0x04, // Algorithm low byte
+            0x00, // Signature length high byte
+            0x10, // Signature length low byte (16 bytes)
+        ];
         data.extend_from_slice(&[0xAA; 16]); // Signature
 
         let (algorithm, signature) = parse_certificate_verify(&data).unwrap();

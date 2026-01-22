@@ -184,7 +184,7 @@ async fn test_multiple_fetches() {
         let response = client
             .fetch(url)
             .await
-            .expect(&format!("Failed to fetch {}", url));
+            .unwrap_or_else(|_| panic!("Failed to fetch {}", url));
         let elapsed = start.elapsed();
         total_fetch_time += elapsed;
 
