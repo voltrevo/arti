@@ -16,13 +16,12 @@
 //! Note: Direct WebSocket to wss://snowflake.torproject.net/ is for volunteer
 //! proxies, not clients. Clients must use WebRTC via the broker.
 
+#![cfg(target_arch = "wasm32")]
+
 use crate::error::Result;
-#[cfg(target_arch = "wasm32")]
 use crate::kcp_stream::{KcpConfig, KcpStream};
-#[cfg(target_arch = "wasm32")]
 use crate::smux::SmuxStream;
 use crate::snowflake_broker::{BROKER_URL, DEFAULT_BRIDGE_FINGERPRINT};
-#[cfg(target_arch = "wasm32")]
 use crate::turbo::TurboStream;
 use futures::{AsyncRead, AsyncWrite};
 use std::io;
@@ -31,10 +30,8 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tracing::{info, warn};
 
-#[cfg(target_arch = "wasm32")]
 use crate::webrtc_stream::WebRtcStream;
 
-#[cfg(target_arch = "wasm32")]
 use subtle_tls::{TlsConfig, TlsConnector, TlsStream};
 
 /// Snowflake bridge configuration
@@ -116,8 +113,7 @@ impl SnowflakeBridge {
         Self { config }
     }
 
-    /// Connect to the Snowflake bridge via WebRTC (WASM) or fallback (native)
-    #[cfg(target_arch = "wasm32")]
+    /// Connect to the Snowflake bridge via WebRTC
     pub async fn connect(&self) -> Result<SnowflakeStream> {
         use crate::error::TorError;
 
@@ -212,20 +208,6 @@ impl SnowflakeBridge {
             inner: SnowflakeInner::WebRtc(tls_stream),
         })
     }
-
-    /// Native: WebRTC not implemented, return error
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn connect(&self) -> Result<SnowflakeStream> {
-        use crate::error::TorError;
-
-        // Native WebRTC requires the webrtc-rs crate which is complex to set up.
-        // For native builds, recommend using WebTunnel instead.
-        Err(TorError::Internal(
-            "Snowflake requires WebRTC which is only available in WASM. \
-             For native builds, use WebTunnel bridge instead."
-                .to_string(),
-        ))
-    }
 }
 
 impl Default for SnowflakeBridge {
@@ -235,20 +217,10 @@ impl Default for SnowflakeBridge {
 }
 
 /// Inner stream type (WebRTC on WASM, wrapped with TLS)
-#[cfg(target_arch = "wasm32")]
 type SnowflakeSmuxStack = SmuxStream<KcpStream<TurboStream<WebRtcStream>>>;
 
-#[cfg(target_arch = "wasm32")]
 enum SnowflakeInner {
     WebRtc(TlsStream<SnowflakeSmuxStack>),
-}
-
-/// Native stub - Snowflake not supported on native (use WebTunnel instead)
-#[cfg(not(target_arch = "wasm32"))]
-enum SnowflakeInner {
-    // Placeholder variant to make the enum non-empty
-    #[allow(dead_code)]
-    Placeholder,
 }
 
 /// Snowflake stream for Tor communication
@@ -303,13 +275,10 @@ impl SnowflakeStream {
     pub async fn close(&mut self) -> io::Result<()> {
         info!("Closing Snowflake stream");
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeInner::WebRtc(tls) => tls
                 .close()
                 .await
                 .map_err(|e| io::Error::other(e.to_string())),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeInner::Placeholder => unreachable!("Snowflake not available on native"),
         }
     }
 }
@@ -321,10 +290,7 @@ impl AsyncRead for SnowflakeStream {
         _buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeInner::WebRtc(tls) => Pin::new(tls).poll_read(_cx, _buf),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeInner::Placeholder => unreachable!("Snowflake not available on native"),
         }
     }
 }
@@ -336,28 +302,19 @@ impl AsyncWrite for SnowflakeStream {
         _buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeInner::WebRtc(tls) => Pin::new(tls).poll_write(_cx, _buf),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeInner::Placeholder => unreachable!("Snowflake not available on native"),
         }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeInner::WebRtc(tls) => Pin::new(tls).poll_flush(_cx),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeInner::Placeholder => unreachable!("Snowflake not available on native"),
         }
     }
 
     fn poll_close(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeInner::WebRtc(tls) => Pin::new(tls).poll_close(_cx),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeInner::Placeholder => unreachable!("Snowflake not available on native"),
         }
     }
 }

@@ -137,7 +137,7 @@ impl WebTunnelBridge {
         // may not validate or return Sec-WebSocket-Accept (WebTunnel doesn't require it)
         let ws_key = base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,
-            &rand::random::<[u8; 16]>(),
+            rand::random::<[u8; 16]>(),
         );
 
         let request = format!(
@@ -375,7 +375,7 @@ impl tor_rtcompat::CertifiedConn for WebTunnelStream {
         let (_, session) = self.inner.get_ref();
         session
             .export_keying_material(Vec::with_capacity(len), label, context)
-            .map_err(|e| io::Error::other(e))
+            .map_err(io::Error::other)
     }
 }
 

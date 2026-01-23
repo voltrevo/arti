@@ -5,6 +5,8 @@
 //!
 //! Run with: cargo test -p webtor --test e2e -- --ignored --nocapture
 
+#![cfg(target_arch = "wasm32")]
+
 use webtor::snowflake::{SnowflakeBridge, SnowflakeConfig};
 use webtor::{TorClient, TorClientOptions};
 

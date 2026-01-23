@@ -17,23 +17,19 @@
 //!       ↓
 //!   Tor protocol
 
+#![cfg(target_arch = "wasm32")]
+
 use crate::error::{Result, TorError};
-#[cfg(target_arch = "wasm32")]
 use crate::websocket::WebSocketStream;
 use futures::{AsyncRead, AsyncWrite};
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-#[cfg(target_arch = "wasm32")]
 use tracing::info;
 
-#[cfg(target_arch = "wasm32")]
 use crate::kcp_stream::{KcpConfig, KcpStream};
-#[cfg(target_arch = "wasm32")]
 use crate::smux::SmuxStream;
-#[cfg(target_arch = "wasm32")]
 use crate::turbo::TurboStream;
-#[cfg(target_arch = "wasm32")]
 use subtle_tls::{TlsConfig, TlsConnector, TlsStream};
 
 /// WebSocket Snowflake endpoints
@@ -83,19 +79,10 @@ impl SnowflakeWsConfig {
     }
 }
 
-/// Inner stream type for WASM
-#[cfg(target_arch = "wasm32")]
 type SnowflakeWsStack = SmuxStream<KcpStream<TurboStream<WebSocketStream>>>;
 
-#[cfg(target_arch = "wasm32")]
 enum SnowflakeWsInner {
     Connected(TlsStream<SnowflakeWsStack>),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-enum SnowflakeWsInner {
-    #[allow(dead_code)]
-    Placeholder,
 }
 
 /// WebSocket-based Snowflake stream
@@ -108,7 +95,6 @@ unsafe impl Send for SnowflakeWsStream {}
 
 impl SnowflakeWsStream {
     /// Connect to Snowflake via WebSocket
-    #[cfg(target_arch = "wasm32")]
     pub async fn connect(config: SnowflakeWsConfig) -> Result<Self> {
         info!("Connecting to Snowflake via WebSocket");
         info!("URL: {}", config.ws_url);
@@ -161,13 +147,6 @@ impl SnowflakeWsStream {
             inner: SnowflakeWsInner::Connected(tls_stream),
         })
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn connect(_config: SnowflakeWsConfig) -> Result<Self> {
-        Err(TorError::Internal(
-            "WebSocket Snowflake is only available in WASM".to_string(),
-        ))
-    }
 }
 
 impl tor_rtcompat::StreamOps for SnowflakeWsStream {}
@@ -175,12 +154,9 @@ impl tor_rtcompat::StreamOps for SnowflakeWsStream {}
 impl tor_rtcompat::CertifiedConn for SnowflakeWsStream {
     fn peer_certificate(&self) -> io::Result<Option<Vec<u8>>> {
         match &self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeWsInner::Connected(tls) => {
                 Ok(tls.peer_certificate().map(|cert| cert.to_vec()))
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeWsInner::Placeholder => unreachable!(),
         }
     }
 
@@ -191,13 +167,10 @@ impl tor_rtcompat::CertifiedConn for SnowflakeWsStream {
         _context: Option<&[u8]>,
     ) -> io::Result<Vec<u8>> {
         match &self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeWsInner::Connected(_tls) => {
                 tracing::warn!("export_keying_material not fully implemented");
                 Ok(vec![0u8; len])
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeWsInner::Placeholder => unreachable!(),
         }
     }
 }
@@ -209,10 +182,7 @@ impl AsyncRead for SnowflakeWsStream {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeWsInner::Connected(tls) => Pin::new(tls).poll_read(cx, buf),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeWsInner::Placeholder => unreachable!(),
         }
     }
 }
@@ -224,28 +194,19 @@ impl AsyncWrite for SnowflakeWsStream {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeWsInner::Connected(tls) => Pin::new(tls).poll_write(cx, buf),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeWsInner::Placeholder => unreachable!(),
         }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeWsInner::Connected(tls) => Pin::new(tls).poll_flush(cx),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeWsInner::Placeholder => unreachable!(),
         }
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut self.inner {
-            #[cfg(target_arch = "wasm32")]
             SnowflakeWsInner::Connected(tls) => Pin::new(tls).poll_close(cx),
-            #[cfg(not(target_arch = "wasm32"))]
-            SnowflakeWsInner::Placeholder => unreachable!(),
         }
     }
 }
