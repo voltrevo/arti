@@ -4,10 +4,12 @@ set -e
 # Parse arguments
 NATIVE=false
 INTEGRATION=false
+TARGET_ARGS=""
 for arg in "$@"; do
     case $arg in
         --native)
             NATIVE=true
+            TARGET_ARGS="--target $(rustc -vV | grep 'host:' | cut -d' ' -f2)"
             shift
             ;;
         --integration)
@@ -27,20 +29,19 @@ cargo fmt --all -- --check
 
 echo "=== Clippy ==="
 
-cargo clippy --all-targets -- -D warnings
+cargo clippy $TARGET_ARGS --all-targets -- -D warnings
 
 if [ "$NATIVE" = true ]; then
-    NATIVE_TARGET=$(rustc -vV | grep 'host:' | cut -d' ' -f2)
     FEATURES=""
     if [ "$INTEGRATION" = true ]; then
         FEATURES="--features integration-tests"
         echo ""
-        echo "Running native tests with integration tests (target: $NATIVE_TARGET)..."
+        echo "Running native tests with integration tests ($TARGET_ARGS)..."
     else
         echo ""
-        echo "Running native tests (target: $NATIVE_TARGET)..."
+        echo "Running native tests ($TARGET_ARGS)..."
     fi
-    cargo test --workspace --target "$NATIVE_TARGET" $FEATURES
+    cargo test --workspace $TARGET_ARGS $FEATURES
 else
     echo ""
     echo "Running wasm-pack tests for all crates..."
