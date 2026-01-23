@@ -38,7 +38,7 @@ where
     pub async fn connect(mut stream: S, server_name: &str, config: TlsConfig) -> Result<Self> {
         info!("Starting TLS 1.2 handshake with {}", server_name);
 
-        let mut handshake = Handshake12State::new(server_name).await?;
+        let mut handshake = Handshake12State::new(server_name)?;
         let mut record_layer = RecordLayer12::new();
 
         // Step 1: Send ClientHello

@@ -464,19 +464,6 @@ mod record_tests {
     use subtle_tls::record::RecordLayer;
 
     #[wasm_bindgen_test]
-    async fn test_record_layer_creation() {
-        let _layer = RecordLayer::new();
-        // Should be created without encryption - verifies constructor works
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_set_cipher_suite() {
-        let mut layer = RecordLayer::new();
-        layer.set_cipher_suite(TLS_AES_256_GCM_SHA384);
-        // Verifies the method doesn't panic
-    }
-
-    #[wasm_bindgen_test]
     async fn test_write_unencrypted_record() {
         let mut layer = RecordLayer::new();
         let mut output = Vec::new();
@@ -704,25 +691,12 @@ mod cert_tests {
     use subtle_tls::cert::CertificateVerifier;
 
     #[wasm_bindgen_test]
-    async fn test_hostname_exact_match() {
-        let _verifier = CertificateVerifier::new("example.com", false);
-        // This tests internal matching logic via skip_verification=false
-        // We can't directly test matches_hostname as it's private
-    }
-
-    #[wasm_bindgen_test]
     async fn test_skip_verification() {
         let verifier = CertificateVerifier::new("example.com", true);
         // With skip_verification=true, even an empty chain should pass
         // (the function returns Ok(()) immediately without validation)
         let result = verifier.verify_chain(&[]).await;
         assert!(result.is_ok());
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_verifier_creation() {
-        let _verifier = CertificateVerifier::new("test.example.com", false);
-        // Should not panic
     }
 }
 
@@ -761,7 +735,7 @@ mod error_tests {
 
 mod tls_config_tests {
     use super::*;
-    use subtle_tls::{TlsConfig, TlsConnector, TlsVersion};
+    use subtle_tls::{TlsConfig, TlsVersion};
 
     #[wasm_bindgen_test]
     async fn test_default_config() {
@@ -781,25 +755,6 @@ mod tls_config_tests {
         assert!(config.skip_verification);
         assert_eq!(config.alpn_protocols.len(), 2);
         assert_eq!(config.version, TlsVersion::Tls12);
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_connector_creation() {
-        let _connector = TlsConnector::new();
-        let _connector = TlsConnector::default();
-
-        let config = TlsConfig::default();
-        let _connector = TlsConnector::with_config(config);
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_tls_version_prefer13() {
-        let config = TlsConfig {
-            skip_verification: false,
-            alpn_protocols: vec!["http/1.1".to_string()],
-            version: TlsVersion::Prefer13,
-        };
-        assert_eq!(config.version, TlsVersion::Prefer13);
     }
 }
 
@@ -1034,16 +989,16 @@ mod tls12_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_handshake_state_creation() {
-        let state = Handshake12State::new("example.com").await.unwrap();
+    fn test_handshake_state_creation() {
+        let state = Handshake12State::new("example.com").unwrap();
         assert_eq!(state.server_name, "example.com");
         assert_eq!(state.client_random.len(), 32);
         assert_eq!(state.cipher_suite, 0); // Not yet negotiated
     }
 
     #[wasm_bindgen_test]
-    async fn test_client_hello_build() {
-        let state = Handshake12State::new("test.example.com").await.unwrap();
+    fn test_client_hello_build() {
+        let state = Handshake12State::new("test.example.com").unwrap();
         let client_hello = state.build_client_hello();
 
         // Should start with handshake type 1 (ClientHello)
@@ -1058,9 +1013,9 @@ mod tls12_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_client_hello_contains_sni() {
+    fn test_client_hello_contains_sni() {
         let server_name = "test.httpbin.org";
-        let state = Handshake12State::new(server_name).await.unwrap();
+        let state = Handshake12State::new(server_name).unwrap();
         let client_hello = state.build_client_hello();
 
         // The SNI should be in the extensions

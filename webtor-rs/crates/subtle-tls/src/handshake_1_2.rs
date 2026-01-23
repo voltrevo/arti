@@ -172,7 +172,7 @@ pub struct Handshake12State {
 
 impl Handshake12State {
     /// Create a new TLS 1.2 handshake state
-    pub async fn new(server_name: &str) -> Result<Self> {
+    pub fn new(server_name: &str) -> Result<Self> {
         let client_random = crypto::random_bytes(32)?;
 
         Ok(Self {

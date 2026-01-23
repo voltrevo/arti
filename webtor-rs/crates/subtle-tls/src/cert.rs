@@ -915,7 +915,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[wasm_bindgen_test]
-    fn test_hostname_matching() {
+    async fn test_hostname_matching() {
         let verifier = CertificateVerifier::new("example.com", false);
 
         assert!(verifier.matches_hostname("example.com"));

@@ -144,8 +144,8 @@ mod tls12_handshake_tests {
     };
 
     #[wasm_bindgen_test]
-    async fn test_handshake_state_initialization() {
-        let state = Handshake12State::new("httpbin.org").await.unwrap();
+    fn test_handshake_state_initialization() {
+        let state = Handshake12State::new("httpbin.org").unwrap();
 
         assert_eq!(state.server_name, "httpbin.org");
         assert_eq!(state.client_random.len(), 32);
@@ -154,8 +154,8 @@ mod tls12_handshake_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_client_hello_structure() {
-        let state = Handshake12State::new("example.com").await.unwrap();
+    fn test_client_hello_structure() {
+        let state = Handshake12State::new("example.com").unwrap();
         let client_hello = state.build_client_hello();
 
         // Handshake type 1 = ClientHello
@@ -176,8 +176,8 @@ mod tls12_handshake_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_client_hello_contains_extensions() {
-        let state = Handshake12State::new("test.example.org").await.unwrap();
+    fn test_client_hello_contains_extensions() {
+        let state = Handshake12State::new("test.example.org").unwrap();
         let client_hello = state.build_client_hello();
 
         // The SNI should be present
@@ -248,11 +248,6 @@ mod tls12_record_tests {
     use subtle_tls::handshake::{CONTENT_TYPE_APPLICATION_DATA, CONTENT_TYPE_HANDSHAKE};
     use subtle_tls::handshake_1_2::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256;
     use subtle_tls::record_1_2::RecordLayer12;
-
-    #[wasm_bindgen_test]
-    async fn test_record_layer_creation() {
-        let _layer = RecordLayer12::new();
-    }
 
     #[wasm_bindgen_test]
     async fn test_unencrypted_record_write() {
@@ -508,8 +503,8 @@ mod tls_version_negotiation_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_tls12_parse_server_hello_accepts_correct_version() {
-        let mut state = Handshake12State::new("example.com").await.unwrap();
+    fn test_tls12_parse_server_hello_accepts_correct_version() {
+        let mut state = Handshake12State::new("example.com").unwrap();
         let server_hello =
             build_tls12_server_hello(TLS_VERSION_1_2, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
@@ -523,8 +518,8 @@ mod tls_version_negotiation_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_tls12_parse_server_hello_rejects_tls11() {
-        let mut state = Handshake12State::new("example.com").await.unwrap();
+    fn test_tls12_parse_server_hello_rejects_tls11() {
+        let mut state = Handshake12State::new("example.com").unwrap();
         // Server responds with TLS 1.1 (0x0302) - should reject
         let server_hello = build_tls12_server_hello(0x0302, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
@@ -539,8 +534,8 @@ mod tls_version_negotiation_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_tls12_parse_server_hello_rejects_tls10() {
-        let mut state = Handshake12State::new("example.com").await.unwrap();
+    fn test_tls12_parse_server_hello_rejects_tls10() {
+        let mut state = Handshake12State::new("example.com").unwrap();
         // Server responds with TLS 1.0 (0x0301) - should reject
         let server_hello = build_tls12_server_hello(0x0301, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 
@@ -549,8 +544,8 @@ mod tls_version_negotiation_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_tls12_parse_server_hello_rejects_ssl3() {
-        let mut state = Handshake12State::new("example.com").await.unwrap();
+    fn test_tls12_parse_server_hello_rejects_ssl3() {
+        let mut state = Handshake12State::new("example.com").unwrap();
         // Server responds with SSL 3.0 (0x0300) - should reject
         let server_hello = build_tls12_server_hello(0x0300, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
 

@@ -917,7 +917,10 @@ pub fn run_tor_benchmark(test_url: String) -> js_sys::Promise {
         let client = match NativeTorClient::new(options_native).await {
             Ok(c) => Arc::new(c),
             Err(e) => {
-                return Err(JsValue::from_str(&format!("Failed to create TorClient: {}", e)));
+                return Err(JsValue::from_str(&format!(
+                    "Failed to create TorClient: {}",
+                    e
+                )));
             }
         };
 
@@ -980,7 +983,10 @@ pub fn run_quick_benchmark(test_url: String) -> js_sys::Promise {
         let client = match NativeTorClient::new(options_native).await {
             Ok(c) => Arc::new(c),
             Err(e) => {
-                return Err(JsValue::from_str(&format!("Failed to create TorClient: {}", e)));
+                return Err(JsValue::from_str(&format!(
+                    "Failed to create TorClient: {}",
+                    e
+                )));
             }
         };
 
