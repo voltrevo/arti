@@ -16,6 +16,7 @@ use crate::wasm_runtime::WasmRuntime;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::webtunnel::{create_webtunnel_stream, WebTunnelConfig};
 use http::Method;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -39,6 +40,8 @@ pub struct TorClient {
     update_task: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
     /// Shutdown token for cooperative cancellation of long-running operations
     shutdown_token: CancellationToken,
+    /// Flag to track if close() has been initiated (prevents recursive Drop)
+    close_initiated: Arc<AtomicBool>,
 }
 
 impl TorClient {
@@ -78,6 +81,7 @@ impl TorClient {
             channel,
             update_task: Arc::new(RwLock::new(None)),
             shutdown_token: CancellationToken::new(),
+            close_initiated: Arc::new(AtomicBool::new(false)),
         };
 
         // Create initial circuit if requested
@@ -347,6 +351,11 @@ impl TorClient {
 
     /// Close the Tor client and clean up resources
     pub async fn close(&self) {
+        // Prevent recursive close calls (e.g., from Drop during cleanup)
+        if self.close_initiated.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
         info!("Closing Tor client");
 
         // Signal cancellation to all in-flight operations
@@ -644,9 +653,13 @@ impl TorClient {
 
 impl Drop for TorClient {
     fn drop(&mut self) {
-        // For WASM, we can't spawn async tasks from Drop reliably.
-        // The explicit close() call in fetch_one_time handles cleanup.
-        // For native builds, we spawn a cleanup task.
+        // If close() was already called, don't spawn another cleanup task.
+        // This prevents infinite recursion when the spawned task's future is dropped.
+        if self.close_initiated.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        // Spawn a cleanup task to close the client asynchronously
         #[cfg(not(target_arch = "wasm32"))]
         {
             let client = self.clone();
@@ -654,7 +667,14 @@ impl Drop for TorClient {
                 client.close().await;
             });
         }
-        // On WASM, Drop is a no-op - callers must call close() explicitly
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let client = self.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                client.close().await;
+            });
+        }
     }
 }
 
@@ -669,6 +689,7 @@ impl Clone for TorClient {
             channel: self.channel.clone(),
             update_task: self.update_task.clone(),
             shutdown_token: self.shutdown_token.clone(),
+            close_initiated: self.close_initiated.clone(),
         }
     }
 }
@@ -677,9 +698,6 @@ impl Clone for TorClient {
 mod tests {
     use super::*;
     use crate::test_util::portable_test_async;
-
-    // These tests require a larger stack due to embedded consensus data parsing.
-    // Run with: RUST_MIN_STACK=16777216 cargo test -p webtor client::tests
 
     #[portable_test_async]
     async fn test_tor_client_creation() {
