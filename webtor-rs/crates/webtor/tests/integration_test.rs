@@ -1,13 +1,15 @@
 //! Integration tests for webtor with real Tor network
 //!
 //! These tests require network access and a working bridge configuration.
+//! They are gated behind the `integration-tests` feature so they don't run by default.
 //!
 //! Run with:
-//!   # Using WebTunnel (native)
-//!   WEBTUNNEL_URL='https://...' WEBTUNNEL_FINGERPRINT='...' cargo test -p webtor --test integration_test
+//!   WEBTUNNEL_URL='https://...' WEBTUNNEL_FINGERPRINT='...' cargo test -p webtor --features integration-tests --test integration_test
 //!
-//!   # Or set RUN_INTEGRATION_TESTS=1 to enable (will fail without bridge config)
-//!   RUN_INTEGRATION_TESTS=1 cargo test -p webtor --test integration_test
+//!   # Run a specific test
+//!   WEBTUNNEL_URL='https://...' WEBTUNNEL_FINGERPRINT='...' cargo test -p webtor --features integration-tests --test integration_test test_webtunnel_fetch_ipify
+
+#![cfg(feature = "integration-tests")]
 
 use std::time::Instant;
 use tracing::{info, Level};
