@@ -5,6 +5,7 @@
     "-W",
     "clippy::all"
   ],
+  "rust-analyzer.rustfmt.overrideCommand": ["rustfmt", "--edition", "2021"],
   "[rust]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
