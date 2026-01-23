@@ -46,9 +46,6 @@ impl TorClient {
     pub async fn new(options: TorClientOptions) -> Result<Self> {
         info!("TorClient::new START");
 
-        // Initialize WASM modules (placeholder for now)
-        Self::init_wasm_modules().await?;
-
         // Channel storage
         let channel = Arc::new(RwLock::new(None));
 
@@ -628,14 +625,6 @@ impl TorClient {
         });
 
         Ok(chan)
-    }
-
-    /// Initialize WASM modules (placeholder)
-    async fn init_wasm_modules() -> Result<()> {
-        // This will be implemented in the WASM bindings
-        // For now, just log that we're initializing
-        debug!("Initializing WASM modules");
-        Ok(())
     }
 
     /// Log a message (uses callback if provided)
