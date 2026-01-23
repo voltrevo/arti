@@ -45,7 +45,10 @@ async fn test_client_creation() {
     use webtor::{TorClient, TorClientOptions};
 
     // This test doesn't require network - just creates the client without connecting
-    let options = TorClientOptions::snowflake().with_create_circuit_early(false);
+    let options = TorClientOptions {
+        create_circuit_early: false,
+        ..TorClientOptions::snowflake()
+    };
 
     let client = TorClient::new(options).await;
     assert!(client.is_ok(), "Client creation should succeed");
@@ -80,10 +83,12 @@ async fn test_webtunnel_fetch_ipify() {
     let start = Instant::now();
 
     // Create client with WebTunnel bridge
-    let options = TorClientOptions::webtunnel(url, fingerprint)
-        .with_create_circuit_early(true)
-        .with_connection_timeout(60_000) // 60s for initial connection
-        .with_circuit_timeout(180_000); // 3min for circuit
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 60_000, // 60s for initial connection
+        circuit_timeout: 180_000,   // 3min for circuit
+        ..TorClientOptions::webtunnel(url, fingerprint)
+    };
 
     let client = TorClient::new(options)
         .await
@@ -163,10 +168,12 @@ async fn test_multiple_fetches() {
 
     info!("Testing multiple fetches through single circuit");
 
-    let options = TorClientOptions::webtunnel(url, fingerprint)
-        .with_create_circuit_early(true)
-        .with_connection_timeout(60_000)
-        .with_circuit_timeout(180_000);
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 60_000,
+        circuit_timeout: 180_000,
+        ..TorClientOptions::webtunnel(url, fingerprint)
+    };
 
     let client = TorClient::new(options)
         .await
@@ -221,7 +228,10 @@ async fn test_circuit_status() {
 
     use webtor::{TorClient, TorClientOptions};
 
-    let options = TorClientOptions::webtunnel(url, fingerprint).with_create_circuit_early(true);
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        ..TorClientOptions::webtunnel(url, fingerprint)
+    };
 
     let client = TorClient::new(options)
         .await
@@ -250,7 +260,10 @@ async fn test_consensus_fetch() {
     use webtor::{TorClient, TorClientOptions};
 
     // Create client without early circuit
-    let options = TorClientOptions::snowflake().with_create_circuit_early(false);
+    let options = TorClientOptions {
+        create_circuit_early: false,
+        ..TorClientOptions::snowflake()
+    };
 
     let client = TorClient::new(options)
         .await
@@ -300,10 +313,12 @@ async fn test_timing_analysis_with_diff() {
 
     // Phase 1: Client creation (no early circuit)
     let phase1_start = Instant::now();
-    let options = TorClientOptions::webtunnel(url.clone(), fingerprint.clone())
-        .with_create_circuit_early(false)
-        .with_connection_timeout(60_000)
-        .with_circuit_timeout(180_000);
+    let options = TorClientOptions {
+        create_circuit_early: false,
+        connection_timeout: 60_000,
+        circuit_timeout: 180_000,
+        ..TorClientOptions::webtunnel(url.clone(), fingerprint.clone())
+    };
 
     let client = TorClient::new(options)
         .await

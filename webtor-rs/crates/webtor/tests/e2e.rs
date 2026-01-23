@@ -59,11 +59,12 @@ async fn test_webtunnel_https_request() {
     println!("Bridge fingerprint: {}", WEBTUNNEL_FINGERPRINT);
     println!();
 
-    let options =
-        TorClientOptions::webtunnel(WEBTUNNEL_URL.to_string(), WEBTUNNEL_FINGERPRINT.to_string())
-            .with_create_circuit_early(true)
-            .with_connection_timeout(30_000) // 30 seconds
-            .with_circuit_timeout(120_000); // 2 minutes
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 30_000, // 30 seconds
+        circuit_timeout: 120_000,   // 2 minutes
+        ..TorClientOptions::webtunnel(WEBTUNNEL_URL.to_string(), WEBTUNNEL_FINGERPRINT.to_string())
+    };
 
     println!("Creating Tor client...");
     let client = TorClient::new(options)
@@ -124,10 +125,11 @@ async fn test_webtunnel_connection_only() {
 
     println!("=== E2E Test: WebTunnel connection test ===");
 
-    let options =
-        TorClientOptions::webtunnel(WEBTUNNEL_URL.to_string(), WEBTUNNEL_FINGERPRINT.to_string())
-            .with_create_circuit_early(true)
-            .with_connection_timeout(30_000);
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 30_000,
+        ..TorClientOptions::webtunnel(WEBTUNNEL_URL.to_string(), WEBTUNNEL_FINGERPRINT.to_string())
+    };
 
     let client = TorClient::new(options)
         .await
@@ -163,9 +165,11 @@ async fn test_try_multiple_bridges() {
             url
         );
 
-        let options = TorClientOptions::webtunnel(url.to_string(), fingerprint.to_string())
-            .with_create_circuit_early(true)
-            .with_connection_timeout(20_000);
+        let options = TorClientOptions {
+            create_circuit_early: true,
+            connection_timeout: 20_000,
+            ..TorClientOptions::webtunnel(url.to_string(), fingerprint.to_string())
+        };
 
         match TorClient::new(options).await {
             Ok(client) => {
@@ -254,10 +258,12 @@ async fn test_snowflake_alternate_broker() {
     println!();
 
     // On native, this will fail immediately
-    let options = TorClientOptions::snowflake()
-        .with_create_circuit_early(true)
-        .with_connection_timeout(60_000)
-        .with_circuit_timeout(180_000);
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 60_000,
+        circuit_timeout: 180_000,
+        ..TorClientOptions::snowflake()
+    };
 
     println!("Creating Tor client with Snowflake...");
     match TorClient::new(options).await {
@@ -298,10 +304,12 @@ async fn test_snowflake_tor_circuit() {
     println!("      This test will fail on native. Use WebTunnel instead.");
     println!();
 
-    let options = TorClientOptions::snowflake()
-        .with_create_circuit_early(true)
-        .with_connection_timeout(60_000) // 60 seconds for Snowflake
-        .with_circuit_timeout(180_000); // 3 minutes for circuit
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 60_000, // 60 seconds for Snowflake
+        circuit_timeout: 180_000,   // 3 minutes for circuit
+        ..TorClientOptions::snowflake()
+    };
 
     println!("Creating Tor client with Snowflake...");
     match TorClient::new(options).await {

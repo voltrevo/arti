@@ -54,10 +54,10 @@ let client = TorClient::new(
 ).await?;
 
 // Configure stream isolation (default: PerDomain)
-let client = TorClient::new(
-    TorClientOptions::snowflake()
-        .with_stream_isolation(StreamIsolationPolicy::PerDomain)
-).await?;
+let client = TorClient::new(TorClientOptions {
+    stream_isolation: StreamIsolationPolicy::PerDomain,
+    ..TorClientOptions::snowflake()
+}).await?;
 
 // Bootstrap and make requests
 client.bootstrap().await?;

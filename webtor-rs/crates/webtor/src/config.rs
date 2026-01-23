@@ -230,49 +230,6 @@ impl TorClientOptions {
         }
     }
 
-    pub fn with_connection_timeout(mut self, timeout: u64) -> Self {
-        self.connection_timeout = timeout;
-        self
-    }
-
-    pub fn with_circuit_timeout(mut self, timeout: u64) -> Self {
-        self.circuit_timeout = timeout;
-        self
-    }
-
-    pub fn with_create_circuit_early(mut self, create_early: bool) -> Self {
-        self.create_circuit_early = create_early;
-        self
-    }
-
-    pub fn with_circuit_update_interval(mut self, interval: Option<u64>) -> Self {
-        self.circuit_update_interval = interval;
-        self
-    }
-
-    pub fn with_circuit_update_advance(mut self, advance: u64) -> Self {
-        self.circuit_update_advance = advance;
-        self
-    }
-
-    pub fn with_bridge_fingerprint(mut self, fingerprint: String) -> Self {
-        self.bridge_fingerprint = Some(fingerprint);
-        self
-    }
-
-    pub fn with_stream_isolation(mut self, policy: StreamIsolationPolicy) -> Self {
-        self.stream_isolation = policy;
-        self
-    }
-
-    pub fn with_on_log<F>(mut self, on_log: F) -> Self
-    where
-        F: Fn(&str, LogType) + Send + Sync + 'static,
-    {
-        self.on_log = Some(LogCallback(Arc::new(on_log)));
-        self
-    }
-
     pub fn connection_timeout_duration(&self) -> Duration {
         Duration::from_millis(self.connection_timeout)
     }

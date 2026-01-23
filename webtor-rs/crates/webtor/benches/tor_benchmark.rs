@@ -106,8 +106,10 @@ async fn run_benchmarks() {
     // Benchmark 1: Client creation (no connection)
     println!("--- Benchmark: Client Creation ---");
     let result = benchmark_utils::time_async("TorClient::new (no early connect)", 5, || async {
-        let options = TorClientOptions::webtunnel(url.clone(), fingerprint.clone())
-            .with_create_circuit_early(false);
+        let options = TorClientOptions {
+            create_circuit_early: false,
+            ..TorClientOptions::webtunnel(url.clone(), fingerprint.clone())
+        };
         TorClient::new(options)
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
@@ -120,10 +122,12 @@ async fn run_benchmarks() {
     // Benchmark 2: Full connection establishment
     println!("--- Benchmark: Full Connection ---");
     let start = Instant::now();
-    let options = TorClientOptions::webtunnel(url.clone(), fingerprint.clone())
-        .with_create_circuit_early(true)
-        .with_connection_timeout(30_000)
-        .with_circuit_timeout(120_000);
+    let options = TorClientOptions {
+        create_circuit_early: true,
+        connection_timeout: 30_000,
+        circuit_timeout: 120_000,
+        ..TorClientOptions::webtunnel(url.clone(), fingerprint.clone())
+    };
 
     match TorClient::new(options).await {
         Ok(client) => {

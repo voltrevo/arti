@@ -25,44 +25,19 @@ pub struct HttpRequest {
     pub timeout: Duration,
 }
 
-impl Default for HttpRequest {
-    fn default() -> Self {
+impl HttpRequest {
+    pub fn new(url: Url) -> Self {
         Self {
-            url: Url::parse("http://example.com/").unwrap(),
+            url,
             method: Method::GET,
             headers: HashMap::new(),
             body: None,
             timeout: Duration::from_secs(30),
         }
     }
-}
 
-impl HttpRequest {
-    pub fn new(url: Url) -> Self {
-        Self {
-            url,
-            ..Default::default()
-        }
-    }
-
-    pub fn with_method(mut self, method: Method) -> Self {
-        self.method = method;
-        self
-    }
-
-    pub fn with_header(mut self, key: &str, value: &str) -> Self {
+    pub fn add_header(&mut self, key: &str, value: &str) {
         self.headers.insert(key.to_string(), value.to_string());
-        self
-    }
-
-    pub fn with_body(mut self, body: Vec<u8>) -> Self {
-        self.body = Some(body);
-        self
-    }
-
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
     }
 
     /// Build the HTTP request as raw bytes
@@ -281,9 +256,9 @@ impl TorHttpClient {
     /// Convenience method for POST requests
     pub async fn post(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse> {
         let url = Url::parse(url)?;
-        let request = HttpRequest::new(url)
-            .with_method(Method::POST)
-            .with_body(body);
+        let mut request = HttpRequest::new(url);
+        request.method = Method::POST;
+        request.body = Some(body);
         self.request(request).await
     }
 }
@@ -671,10 +646,10 @@ mod tests {
     #[portable_test_async]
     async fn test_http_request_creation() {
         let url = Url::parse("https://httpbin.org/ip").unwrap();
-        let request = HttpRequest::new(url.clone())
-            .with_method(Method::GET)
-            .with_header("User-Agent", "Webtor/0.1.0")
-            .with_timeout(Duration::from_secs(30));
+        let mut request = HttpRequest::new(url.clone());
+        request.method = Method::GET;
+        request.add_header("User-Agent", "Webtor/0.1.0");
+        request.timeout = Duration::from_secs(30);
 
         assert_eq!(request.url, url);
         assert_eq!(request.method, Method::GET);
@@ -688,7 +663,8 @@ mod tests {
     #[portable_test]
     fn test_build_request() {
         let url = Url::parse("http://example.com/path?query=1").unwrap();
-        let request = HttpRequest::new(url).with_header("X-Custom", "value");
+        let mut request = HttpRequest::new(url);
+        request.add_header("X-Custom", "value");
 
         let bytes = request.build_request("example.com");
         let request_str = String::from_utf8(bytes).unwrap();

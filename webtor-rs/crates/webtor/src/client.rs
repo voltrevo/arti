@@ -144,11 +144,13 @@ impl TorClient {
             url, snowflake_url
         );
 
-        let options = TorClientOptions::new(snowflake_url.to_string())
-            .with_create_circuit_early(true) // Ensure channel is established
-            .with_circuit_update_interval(None) // No auto-updates for one-time use
-            .with_connection_timeout(connection_timeout.unwrap_or(15_000))
-            .with_circuit_timeout(circuit_timeout.unwrap_or(90_000));
+        let options = TorClientOptions {
+            create_circuit_early: true,
+            circuit_update_interval: None,
+            connection_timeout: connection_timeout.unwrap_or(15_000),
+            circuit_timeout: circuit_timeout.unwrap_or(90_000),
+            ..TorClientOptions::new(snowflake_url.to_string())
+        };
 
         let client = Self::new(options).await?;
 
@@ -177,9 +179,9 @@ impl TorClient {
     /// Make a POST request
     pub async fn post(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse> {
         let url = Url::parse(url)?;
-        let request = HttpRequest::new(url)
-            .with_method(Method::POST)
-            .with_body(body);
+        let mut request = HttpRequest::new(url);
+        request.method = Method::POST;
+        request.body = Some(body);
 
         self.http_client.request(request).await
     }
@@ -194,18 +196,13 @@ impl TorClient {
         timeout: Option<Duration>,
     ) -> Result<HttpResponse> {
         let url = Url::parse(url)?;
-        let mut request = HttpRequest::new(url).with_method(method);
-
-        for (key, value) in headers {
-            request = request.with_header(&key, &value);
-        }
-
-        if let Some(body) = body {
-            request = request.with_body(body);
-        }
+        let mut request = HttpRequest::new(url);
+        request.method = method;
+        request.headers = headers;
+        request.body = body;
 
         if let Some(timeout) = timeout {
-            request = request.with_timeout(timeout);
+            request.timeout = timeout;
         }
 
         self.http_client.request(request).await
@@ -701,8 +698,10 @@ mod tests {
 
     #[portable_test_async]
     async fn test_tor_client_creation() {
-        let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
-            .with_create_circuit_early(false);
+        let options = TorClientOptions {
+            create_circuit_early: false,
+            ..TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
+        };
 
         let client = TorClient::new(options).await;
         assert!(client.is_ok());
@@ -724,8 +723,10 @@ mod tests {
 
     #[portable_test_async]
     async fn test_circuit_status() {
-        let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
-            .with_create_circuit_early(false);
+        let options = TorClientOptions {
+            create_circuit_early: false,
+            ..TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
+        };
 
         let client = TorClient::new(options).await.unwrap();
         let status = client.get_circuit_status().await;

@@ -173,43 +173,6 @@ impl TorClientOptions {
             inner: NativeTorClientOptions::snowflake_webrtc(),
         }
     }
-
-    #[wasm_bindgen(js_name = withConnectionTimeout)]
-    pub fn with_connection_timeout(mut self, timeout: u32) -> Self {
-        self.inner = self.inner.with_connection_timeout(timeout as u64);
-        self
-    }
-
-    #[wasm_bindgen(js_name = withCircuitTimeout)]
-    pub fn with_circuit_timeout(mut self, timeout: u32) -> Self {
-        self.inner = self.inner.with_circuit_timeout(timeout as u64);
-        self
-    }
-
-    #[wasm_bindgen(js_name = withCreateCircuitEarly)]
-    pub fn with_create_circuit_early(mut self, create_early: bool) -> Self {
-        self.inner = self.inner.with_create_circuit_early(create_early);
-        self
-    }
-
-    #[wasm_bindgen(js_name = withCircuitUpdateInterval)]
-    pub fn with_circuit_update_interval(mut self, interval: Option<u32>) -> Self {
-        let interval_ms = interval.map(|i| i as u64);
-        self.inner = self.inner.with_circuit_update_interval(interval_ms);
-        self
-    }
-
-    #[wasm_bindgen(js_name = withCircuitUpdateAdvance)]
-    pub fn with_circuit_update_advance(mut self, advance: u32) -> Self {
-        self.inner = self.inner.with_circuit_update_advance(advance as u64);
-        self
-    }
-
-    #[wasm_bindgen(js_name = withBridgeFingerprint)]
-    pub fn with_bridge_fingerprint(mut self, fingerprint: String) -> Self {
-        self.inner = self.inner.with_bridge_fingerprint(fingerprint);
-        self
-    }
 }
 
 /// JavaScript-friendly TorClient
