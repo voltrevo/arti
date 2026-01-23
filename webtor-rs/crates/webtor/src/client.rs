@@ -502,9 +502,8 @@ impl TorClient {
                     &format!("Connecting via WebTunnel to {}", url),
                     LogType::Info,
                 );
-                let mut config =
-                    WebTunnelConfig::new(url.clone(), fingerprint.clone())
-                        .with_timeout(self.options.connection_timeout_duration());
+                let mut config = WebTunnelConfig::new(url.clone(), fingerprint.clone())
+                    .with_timeout(self.options.connection_timeout_duration());
                 if let Some(sni) = server_name {
                     config = config.with_server_name(sni.clone());
                 }

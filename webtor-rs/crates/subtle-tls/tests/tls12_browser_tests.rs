@@ -18,10 +18,9 @@
 #![cfg(feature = "tls12")]
 
 mod common;
-use common::{portable_test, portable_test_async};
+use common::portable_test;
 
 mod tls12_crypto_tests {
-    use super::*;
     use subtle_tls::crypto::AesCbc;
     use subtle_tls::prf;
 
@@ -244,7 +243,6 @@ mod tls12_handshake_tests {
 }
 
 mod tls12_record_tests {
-    use super::*;
     use futures::io::Cursor;
     use subtle_tls::handshake::{CONTENT_TYPE_APPLICATION_DATA, CONTENT_TYPE_HANDSHAKE};
     use subtle_tls::handshake_1_2::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256;
