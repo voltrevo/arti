@@ -277,9 +277,9 @@ impl TorError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::*;
+    use crate::test_util::portable_test;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn error_kinds_and_retryability_are_stable() {
         let cases: Vec<(TorError, TorErrorKind, &str, bool)> = vec![
             (
@@ -392,7 +392,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn error_kind_codes_are_uppercase() {
         let kinds = [
             TorErrorKind::Network,

@@ -367,10 +367,10 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for TurboStream<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::portable_test;
     use rand::Rng;
-    use wasm_bindgen_test::*;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_frame_encode_decode_small() {
         let data = b"Hello, World!";
         let frame = TurboFrame::new(data.to_vec());
@@ -386,7 +386,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_frame_encode_decode_medium() {
         let data = vec![0u8; 100]; // > 63 bytes, needs 2-byte header
         let frame = TurboFrame::new(data.clone());
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_frame_encode_decode_large() {
         let data = vec![0u8; 10000]; // > 8191 bytes, needs 3-byte header
         let frame = TurboFrame::new(data.clone());
@@ -419,7 +419,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_padding_frame() {
         let data = b"padding data";
         let frame = TurboFrame::padding(data.to_vec());
@@ -431,7 +431,7 @@ mod tests {
         assert!(decoded.is_padding);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_partial_decode() {
         let data = b"Hello";
         let frame = TurboFrame::new(data.to_vec());
@@ -452,7 +452,7 @@ mod tests {
         (0..len).map(|_| rng.gen()).collect()
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn turbo_frame_roundtrips() {
         let mut rng = rand::thread_rng();
 
@@ -475,7 +475,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn turbo_header_size_boundaries() {
         let boundary_lengths = [0usize, 1, 0x3F, 0x40, 0x41, 0x1FFF, 0x2000, 0x2001, 0xFFFFF];
 
@@ -499,7 +499,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn turbo_partial_decode_returns_none() {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -530,7 +530,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn turbo_oversized_header_rejected() {
         // MAX_FRAME_SIZE = 1 << 20 = 0x100000 (1MB)
         // Max 3-byte header length = 0x3F << 14 | 0x7F << 7 | 0x7F = 0xFFFFF

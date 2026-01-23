@@ -17,19 +17,20 @@
 //! Note: Tests marked with `// Requires SubtleCrypto (browser)` will fail in Node.js
 //! but pass in browser environment.
 
-use wasm_bindgen_test::*;
+mod common;
+use common::{portable_test, portable_test_async};
 
 mod crypto_tests {
     use super::*;
     use subtle_tls::crypto::{self, AesGcm, Cipher, EcdhKeyPair, Hkdf, X25519KeyPair};
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_x25519_key_generation() {
         let keypair = X25519KeyPair::generate().unwrap();
         assert_eq!(keypair.public_key_bytes.len(), 32);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_x25519_key_exchange() {
         let alice = X25519KeyPair::generate().unwrap();
         let bob = X25519KeyPair::generate().unwrap();
@@ -44,7 +45,7 @@ mod crypto_tests {
         assert_eq!(alice_secret, bob_secret);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_x25519_rejects_invalid_key_length() {
         let alice = X25519KeyPair::generate().unwrap();
         let invalid_key = vec![0u8; 31]; // Wrong length
@@ -53,7 +54,7 @@ mod crypto_tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_p256_ecdh_key_generation() {
         let keypair = EcdhKeyPair::generate().await.unwrap();
         // P-256 uncompressed point: 0x04 || x (32 bytes) || y (32 bytes) = 65 bytes
@@ -61,7 +62,7 @@ mod crypto_tests {
         assert_eq!(keypair.public_key_bytes[0], 0x04);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_p256_ecdh_key_exchange() {
         let alice = EcdhKeyPair::generate().await.unwrap();
         let bob = EcdhKeyPair::generate().await.unwrap();
@@ -79,7 +80,7 @@ mod crypto_tests {
         assert_eq!(alice_secret, bob_secret);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_128_gcm_encrypt_decrypt() {
         let key = vec![0x42u8; 16];
         let cipher = AesGcm::new_128(&key).await.unwrap();
@@ -96,7 +97,7 @@ mod crypto_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_256_gcm_encrypt_decrypt() {
         let key = vec![0x42u8; 32];
         let cipher = AesGcm::new_256(&key).await.unwrap();
@@ -110,7 +111,7 @@ mod crypto_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_gcm_rejects_wrong_key_size() {
         let key = vec![0x42u8; 17]; // Wrong size
         let result = AesGcm::new_128(&key).await;
@@ -120,7 +121,7 @@ mod crypto_tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_gcm_detects_tampering() {
         let key = vec![0x42u8; 16];
         let cipher = AesGcm::new_128(&key).await.unwrap();
@@ -138,7 +139,7 @@ mod crypto_tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_gcm_detects_wrong_aad() {
         let key = vec![0x42u8; 16];
         let cipher = AesGcm::new_128(&key).await.unwrap();
@@ -154,7 +155,7 @@ mod crypto_tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_cipher_enum_aes_128() {
         let key = vec![0x42u8; 16];
         let cipher = Cipher::aes_128_gcm(&key).await.unwrap();
@@ -171,7 +172,7 @@ mod crypto_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_cipher_enum_chacha20_poly1305() {
         let key = vec![0x42u8; 32];
         let cipher = Cipher::chacha20_poly1305(&key).unwrap();
@@ -191,7 +192,7 @@ mod crypto_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_chacha20_poly1305_detects_tampering() {
         let key = vec![0x42u8; 32];
         let cipher = Cipher::chacha20_poly1305(&key).unwrap();
@@ -207,7 +208,7 @@ mod crypto_tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_sha256() {
         let hash = crypto::sha256(b"hello").await.unwrap();
         assert_eq!(hash.len(), 32);
@@ -221,13 +222,13 @@ mod crypto_tests {
         assert_eq!(hash, expected);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_sha384() {
         let hash = crypto::sha384(b"hello").await.unwrap();
         assert_eq!(hash.len(), 48);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_sha256_empty() {
         let hash = crypto::sha256(b"").await.unwrap();
         // Known SHA-256 hash of empty string
@@ -239,7 +240,7 @@ mod crypto_tests {
         assert_eq!(hash, expected);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_hkdf_extract() {
         let salt = vec![0x00u8; 32];
         let ikm = vec![0x0bu8; 22];
@@ -248,7 +249,7 @@ mod crypto_tests {
         assert_eq!(prk.len(), 32);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_hkdf_expand() {
         let prk = vec![0x42u8; 32];
         let info = b"test info";
@@ -264,7 +265,7 @@ mod crypto_tests {
         assert_eq!(okm_64.len(), 64);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_hkdf_expand_label() {
         let secret = vec![0x42u8; 32];
         let label = "test";
@@ -283,7 +284,7 @@ mod crypto_tests {
         assert_eq!(iv.len(), 12);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_hkdf_derive_secret() {
         let secret = vec![0x42u8; 32];
         let label = "derived";
@@ -295,7 +296,7 @@ mod crypto_tests {
         assert_eq!(derived.len(), 32);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_random_bytes() {
         let bytes1 = crypto::random_bytes(32).unwrap();
         let bytes2 = crypto::random_bytes(32).unwrap();
@@ -306,7 +307,7 @@ mod crypto_tests {
         assert_ne!(bytes1, bytes2);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_random_bytes_various_lengths() {
         for len in [1, 16, 32, 64, 128, 256] {
             let bytes = crypto::random_bytes(len).unwrap();
@@ -323,7 +324,7 @@ mod handshake_tests {
         TLS_VERSION_1_2,
     };
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_handshake_state_creation() {
         let state = HandshakeState::new("example.com").await.unwrap();
 
@@ -334,7 +335,7 @@ mod handshake_tests {
         assert_eq!(state.ecdh_key.public_key_bytes.len(), 65);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_build_client_hello() {
         let state = HandshakeState::new("example.com").await.unwrap();
         let client_hello = state.build_client_hello();
@@ -356,7 +357,7 @@ mod handshake_tests {
         assert_eq!(&client_hello[6..38], &state.client_random[..]);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_client_hello_contains_cipher_suites() {
         let state = HandshakeState::new("example.com").await.unwrap();
         let client_hello = state.build_client_hello();
@@ -380,7 +381,7 @@ mod handshake_tests {
         assert_eq!(cs2, TLS_CHACHA20_POLY1305_SHA256);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_client_hello_contains_sni() {
         let server_name = "test.example.com";
         let state = HandshakeState::new(server_name).await.unwrap();
@@ -400,7 +401,7 @@ mod handshake_tests {
         assert!(found_sni, "SNI not found in ClientHello");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_parse_handshake_header() {
         let data = [HANDSHAKE_CLIENT_HELLO, 0x00, 0x01, 0x00];
         let (msg_type, length) = parse_handshake_header(&data).unwrap();
@@ -409,21 +410,21 @@ mod handshake_tests {
         assert_eq!(length, 256);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_parse_handshake_header_too_short() {
         let data = [0x01, 0x00, 0x00];
         let result = parse_handshake_header(&data);
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_parse_finished() {
         let verify_data = vec![0x01u8; 32];
         let parsed = parse_finished(&verify_data).unwrap();
         assert_eq!(parsed, verify_data);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_parse_certificate_verify() {
         // Build a minimal CertificateVerify message
         // Format: algorithm(2) + signature_length(2) + signature(N)
@@ -441,7 +442,7 @@ mod handshake_tests {
         assert_eq!(signature, vec![0xAA; 16]);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_transcript_update() {
         let mut state = HandshakeState::new("example.com").await.unwrap();
         assert!(state.transcript.is_empty());
@@ -463,7 +464,7 @@ mod record_tests {
     };
     use subtle_tls::record::RecordLayer;
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_write_unencrypted_record() {
         let mut layer = RecordLayer::new();
         let mut output = Vec::new();
@@ -485,7 +486,7 @@ mod record_tests {
         assert_eq!(&output[5..], data);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_read_unencrypted_record() {
         let mut layer = RecordLayer::new();
 
@@ -507,7 +508,7 @@ mod record_tests {
         assert_eq!(read_data, data);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_encrypted_record_roundtrip_aes_128() {
         let mut layer = RecordLayer::new();
         layer.set_cipher_suite(TLS_AES_128_GCM_SHA256);
@@ -538,7 +539,7 @@ mod record_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_encrypted_record_roundtrip_aes_256() {
         let mut layer = RecordLayer::new();
         layer.set_cipher_suite(TLS_AES_256_GCM_SHA384);
@@ -564,7 +565,7 @@ mod record_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_encrypted_record_roundtrip_chacha20() {
         let mut layer = RecordLayer::new();
         layer.set_cipher_suite(TLS_CHACHA20_POLY1305_SHA256);
@@ -590,7 +591,7 @@ mod record_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_sequence_number_increment() {
         let mut layer = RecordLayer::new();
         layer.set_cipher_suite(TLS_AES_128_GCM_SHA256);
@@ -634,20 +635,20 @@ mod trust_store_tests {
     use super::*;
     use subtle_tls::trust_store::{TrustStore, EMBEDDED_ROOT_COUNT};
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_trust_store_creation() {
         let store = TrustStore::new().unwrap();
         assert!(!store.has_extended_roots());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_embedded_root_count() {
         let store = TrustStore::new().unwrap();
         let roots = store.get_roots();
         assert_eq!(roots.len(), EMBEDDED_ROOT_COUNT);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_isrg_roots_present() {
         let store = TrustStore::new().unwrap();
         let roots = store.get_roots();
@@ -659,7 +660,7 @@ mod trust_store_tests {
         assert!(has_isrg_x2, "ISRG Root X2 should be in trust store");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_digicert_root_present() {
         let store = TrustStore::new().unwrap();
         let roots = store.get_roots();
@@ -668,13 +669,13 @@ mod trust_store_tests {
         assert!(has_digicert, "DigiCert root should be in trust store");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_ca_bundle_url() {
         let store = TrustStore::new().unwrap();
         assert!(store.ca_bundle_url().starts_with("https://"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_custom_ca_bundle_url() {
         let store = TrustStore::new()
             .unwrap()
@@ -690,7 +691,7 @@ mod cert_tests {
     use super::*;
     use subtle_tls::cert::CertificateVerifier;
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_skip_verification() {
         let verifier = CertificateVerifier::new("example.com", true);
         // With skip_verification=true, even an empty chain should pass
@@ -704,7 +705,7 @@ mod error_tests {
     use super::*;
     use subtle_tls::TlsError;
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_error_display() {
         let err = TlsError::handshake("test handshake error");
         assert!(err.to_string().contains("Handshake"));
@@ -720,7 +721,7 @@ mod error_tests {
         assert!(err.to_string().contains("SubtleCrypto"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_error_variants() {
         let _ = TlsError::protocol("protocol error");
         let _ = TlsError::record("record error");
@@ -737,7 +738,7 @@ mod tls_config_tests {
     use super::*;
     use subtle_tls::{TlsConfig, TlsVersion};
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_default_config() {
         let config = TlsConfig::default();
         assert!(!config.skip_verification);
@@ -745,7 +746,7 @@ mod tls_config_tests {
         assert_eq!(config.version, TlsVersion::Tls13);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_custom_config() {
         let config = TlsConfig {
             skip_verification: true,
@@ -770,7 +771,7 @@ mod tls12_tests {
     };
     use subtle_tls::prf::{self, KeyMaterial};
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_prf_basic() {
         let secret = vec![0x42u8; 32];
         let label = b"test label";
@@ -784,7 +785,7 @@ mod tls12_tests {
         assert_eq!(result, result2);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_prf_different_lengths() {
         let secret = vec![0x42u8; 32];
         let label = b"expand";
@@ -803,7 +804,7 @@ mod tls12_tests {
         assert_eq!(&result_64[..], &result_128[..64]);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_master_secret_derivation() {
         let pms = vec![0x03u8; 48]; // Pre-master secret
         let client_random = vec![0xaa; 32];
@@ -822,7 +823,7 @@ mod tls12_tests {
         assert_ne!(ms, ms2);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_key_block_derivation() {
         let master_secret = vec![0x42u8; 48];
         let client_random = vec![0xaa; 32];
@@ -836,7 +837,7 @@ mod tls12_tests {
         assert_eq!(key_block.len(), 40);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_key_material_extraction_gcm() {
         // AES-128-GCM: mac_key=0, key=16, iv=4
         let key_block = vec![0x42u8; 40];
@@ -850,7 +851,7 @@ mod tls12_tests {
         assert_eq!(km.server_write_iv.len(), 4);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_key_material_extraction_cbc_sha256() {
         // AES-128-CBC-SHA256: mac_key=32, key=16, iv=0
         let key_block = vec![0x42u8; 96];
@@ -864,7 +865,7 @@ mod tls12_tests {
         assert_eq!(km.server_write_iv.len(), 0);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_compute_verify_data() {
         let master_secret = vec![0x42u8; 48];
         let handshake_hash = vec![0xaa; 32];
@@ -891,7 +892,7 @@ mod tls12_tests {
         assert_ne!(client_verify, server_verify);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_compute_mac_sha256() {
         let mac_key = vec![0x42u8; 32];
         let fragment = b"test data";
@@ -917,7 +918,7 @@ mod tls12_tests {
         assert_ne!(mac, mac2);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_cbc_128_roundtrip() {
         let key = vec![0x42u8; 16];
         let cipher = AesCbc::new_128(&key).await.unwrap();
@@ -934,7 +935,7 @@ mod tls12_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[wasm_bindgen_test::wasm_bindgen_test]
     async fn test_aes_cbc_256_roundtrip() {
         let key = vec![0x42u8; 32];
         let cipher = AesCbc::new_256(&key).await.unwrap();
@@ -947,7 +948,7 @@ mod tls12_tests {
         assert_eq!(decrypted, plaintext);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_cipher_suite_params_gcm_128() {
         let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256).unwrap();
         assert_eq!(params.mac_key_len, 0);
@@ -957,7 +958,7 @@ mod tls12_tests {
         assert_eq!(params.key_block_len(), 40);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_cipher_suite_params_gcm_256() {
         let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384).unwrap();
         assert_eq!(params.mac_key_len, 0);
@@ -967,7 +968,7 @@ mod tls12_tests {
         assert_eq!(params.key_block_len(), 72);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_cipher_suite_params_cbc_sha256() {
         let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256).unwrap();
         assert_eq!(params.mac_key_len, 32);
@@ -978,7 +979,7 @@ mod tls12_tests {
         assert_eq!(params.key_block_len(), 96);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_cipher_suite_params_cbc_sha1() {
         let params = CipherSuiteParams::for_suite(TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA).unwrap();
         assert_eq!(params.mac_key_len, 20);
@@ -988,7 +989,7 @@ mod tls12_tests {
         assert_eq!(params.mac_len, 20);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_handshake_state_creation() {
         let state = Handshake12State::new("example.com").unwrap();
         assert_eq!(state.server_name, "example.com");
@@ -996,7 +997,7 @@ mod tls12_tests {
         assert_eq!(state.cipher_suite, 0); // Not yet negotiated
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_client_hello_build() {
         let state = Handshake12State::new("test.example.com").unwrap();
         let client_hello = state.build_client_hello();
@@ -1012,7 +1013,7 @@ mod tls12_tests {
         assert_eq!(&client_hello[6..38], &state.client_random[..]);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_client_hello_contains_sni() {
         let server_name = "test.httpbin.org";
         let state = Handshake12State::new(server_name).unwrap();

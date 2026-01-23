@@ -65,6 +65,9 @@ tor-rtcompat = { workspace = true }
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
+
 # Kani is installed separately via cargo install kani-verifier
 # These dev-dependencies are for Kani harnesses when running `cargo kani`
 # See: https://model-checking.github.io/kani/

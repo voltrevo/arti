@@ -846,59 +846,66 @@ pub async fn sha384(data: &[u8]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::*;
+    use crate::test_util::portable_test;
 
-    #[wasm_bindgen_test]
-    async fn test_random_bytes() {
+    #[portable_test]
+    fn test_random_bytes() {
         let bytes = random_bytes(32).unwrap();
         assert_eq!(bytes.len(), 32);
     }
 
-    #[wasm_bindgen_test]
-    async fn test_ecdh_key_generation() {
-        let key_pair = EcdhKeyPair::generate().await.unwrap();
-        // P-256 uncompressed point is 65 bytes (0x04 || x || y)
-        assert_eq!(key_pair.public_key_bytes.len(), 65);
-        assert_eq!(key_pair.public_key_bytes[0], 0x04);
-    }
+    // SubtleCrypto-dependent tests - WASM only
+    #[cfg(target_arch = "wasm32")]
+    mod wasm_tests {
+        use super::*;
+        use crate::test_util::wasm_test_async;
 
-    #[wasm_bindgen_test]
-    async fn test_ecdh_key_exchange() {
-        let alice = EcdhKeyPair::generate().await.unwrap();
-        let bob = EcdhKeyPair::generate().await.unwrap();
+        #[wasm_test_async]
+        async fn test_ecdh_key_generation() {
+            let key_pair = EcdhKeyPair::generate().await.unwrap();
+            // P-256 uncompressed point is 65 bytes (0x04 || x || y)
+            assert_eq!(key_pair.public_key_bytes.len(), 65);
+            assert_eq!(key_pair.public_key_bytes[0], 0x04);
+        }
 
-        let alice_secret = alice
-            .derive_shared_secret(&bob.public_key_bytes)
-            .await
-            .unwrap();
-        let bob_secret = bob
-            .derive_shared_secret(&alice.public_key_bytes)
-            .await
-            .unwrap();
+        #[wasm_test_async]
+        async fn test_ecdh_key_exchange() {
+            let alice = EcdhKeyPair::generate().await.unwrap();
+            let bob = EcdhKeyPair::generate().await.unwrap();
 
-        assert_eq!(alice_secret, bob_secret);
-        assert_eq!(alice_secret.len(), 32);
-    }
+            let alice_secret = alice
+                .derive_shared_secret(&bob.public_key_bytes)
+                .await
+                .unwrap();
+            let bob_secret = bob
+                .derive_shared_secret(&alice.public_key_bytes)
+                .await
+                .unwrap();
 
-    #[wasm_bindgen_test]
-    async fn test_aes_gcm_128() {
-        let key = vec![0u8; 16];
-        let cipher = AesGcm::new_128(&key).await.unwrap();
+            assert_eq!(alice_secret, bob_secret);
+            assert_eq!(alice_secret.len(), 32);
+        }
 
-        let nonce = vec![0u8; 12];
-        let aad = b"additional data";
-        let plaintext = b"Hello, World!";
+        #[wasm_test_async]
+        async fn test_aes_gcm_128() {
+            let key = vec![0u8; 16];
+            let cipher = AesGcm::new_128(&key).await.unwrap();
 
-        let ciphertext = cipher.encrypt(&nonce, aad, plaintext).await.unwrap();
-        assert!(ciphertext.len() > plaintext.len()); // Has tag appended
+            let nonce = vec![0u8; 12];
+            let aad = b"additional data";
+            let plaintext = b"Hello, World!";
 
-        let decrypted = cipher.decrypt(&nonce, aad, &ciphertext).await.unwrap();
-        assert_eq!(decrypted, plaintext);
-    }
+            let ciphertext = cipher.encrypt(&nonce, aad, plaintext).await.unwrap();
+            assert!(ciphertext.len() > plaintext.len()); // Has tag appended
 
-    #[wasm_bindgen_test]
-    async fn test_sha256() {
-        let hash = sha256(b"hello").await.unwrap();
-        assert_eq!(hash.len(), 32);
+            let decrypted = cipher.decrypt(&nonce, aad, &ciphertext).await.unwrap();
+            assert_eq!(decrypted, plaintext);
+        }
+
+        #[wasm_test_async]
+        async fn test_sha256() {
+            let hash = sha256(b"hello").await.unwrap();
+            assert_eq!(hash.len(), 32);
+        }
     }
 }

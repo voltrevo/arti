@@ -789,7 +789,7 @@ impl CircuitStatusInfo {
 mod tests {
     use super::*;
     use crate::relay::{flags, Relay};
-    use wasm_bindgen_test::*;
+    use crate::test_util::{portable_test, portable_test_async};
 
     fn create_test_relay(fingerprint: &str, flags: Vec<&str>) -> Relay {
         Relay::new(
@@ -802,7 +802,7 @@ mod tests {
         )
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_circuit_creation() {
         let relays = vec![
             create_test_relay("relay1", vec![flags::FAST, flags::STABLE, flags::GUARD]),
@@ -820,7 +820,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_circuit_status() {
         let mut circuit = Circuit::new("test_circuit".to_string(), None);
 
@@ -839,7 +839,7 @@ mod tests {
         assert!(circuit.is_closed());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_circuit_isolation_key_binding() {
         let mut circuit = Circuit::new("test_circuit".to_string(), None);
         assert!(circuit.isolation_key.is_none());
@@ -854,7 +854,7 @@ mod tests {
         assert_eq!(circuit.isolation_key, Some(key1));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_circuit_new_has_no_isolation_key() {
         let circuit = Circuit::new("test".to_string(), None);
         assert!(circuit.isolation_key.is_none());

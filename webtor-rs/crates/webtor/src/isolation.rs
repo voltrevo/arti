@@ -121,37 +121,37 @@ fn extract_domain(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::*;
+    use crate::test_util::portable_test;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_per_subdomain_uses_full_host() {
         let url = Url::parse("https://foo.bar.example.com:443/path").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerSubdomain).unwrap();
         assert_eq!(key.0, "foo.bar.example.com");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_per_domain_uses_registrable_domain() {
         let url = Url::parse("https://foo.bar.example.com").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "example.com");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_per_origin_includes_scheme_and_port() {
         let url = Url::parse("https://example.com:4443/path").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerOrigin).unwrap();
         assert_eq!(key.0, "https://example.com:4443");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_per_origin_with_default_port() {
         let url = Url::parse("https://example.com/path").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerOrigin).unwrap();
         assert_eq!(key.0, "https://example.com:443");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_http_and_https_same_domain() {
         let http_url = Url::parse("http://example.com/").unwrap();
         let https_url = Url::parse("https://example.com/").unwrap();
@@ -167,35 +167,35 @@ mod tests {
         assert_ne!(http_key, https_key);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_ip_address_handling() {
         let url = Url::parse("http://192.168.1.1:8080/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "192.168.1.1");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_onion_address() {
         let url = Url::parse("http://exampleonion123456.onion/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "exampleonion123456.onion");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_two_part_tld() {
         let url = Url::parse("https://www.example.co.uk/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::PerDomain).unwrap();
         assert_eq!(key.0, "example.co.uk");
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_no_isolation_returns_none() {
         let url = Url::parse("https://example.com/").unwrap();
         let key = IsolationKey::from_url(&url, StreamIsolationPolicy::None);
         assert!(key.is_none());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_isolation_key_equality() {
         let key1 = IsolationKey::from_string("example.com");
         let key2 = IsolationKey::from_string("example.com");
@@ -205,7 +205,7 @@ mod tests {
         assert_ne!(key1, key3);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_subdomains_same_domain_per_domain() {
         let url1 = Url::parse("https://foo.example.com/").unwrap();
         let url2 = Url::parse("https://bar.example.com/").unwrap();
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(key1, key2);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_subdomains_different_per_subdomain() {
         let url1 = Url::parse("https://foo.example.com/").unwrap();
         let url2 = Url::parse("https://bar.example.com/").unwrap();
@@ -248,7 +248,7 @@ mod tests {
         format!("/{}", random_alpha_string(rng, len))
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn isolation_key_from_url_never_panics() {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -269,7 +269,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn per_domain_always_shorter_or_equal_to_per_subdomain() {
         let mut rng = rand::thread_rng();
 
@@ -293,7 +293,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn per_origin_includes_scheme() {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -315,7 +315,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn same_url_same_key() {
         let mut rng = rand::thread_rng();
 

@@ -338,35 +338,12 @@ pub async fn compute_mac_sha384(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::*;
+    use crate::test_util::portable_test;
 
-    wasm_bindgen_test_configure!(run_in_browser);
-
-    #[wasm_bindgen_test]
-    async fn test_prf_basic() {
-        let secret = vec![0u8; 32];
-        let label = b"test label";
-        let seed = vec![0u8; 32];
-
-        let result = prf(&secret, label, &seed, 48).await.unwrap();
-        assert_eq!(result.len(), 48);
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_master_secret_derivation() {
-        let pms = vec![0u8; 48];
-        let client_random = vec![0u8; 32];
-        let server_random = vec![0u8; 32];
-
-        let ms = derive_master_secret(&pms, &client_random, &server_random)
-            .await
-            .unwrap();
-        assert_eq!(ms.len(), 48);
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_key_block_extraction() {
-        let key_block = vec![0u8; 104]; // Enough for CBC with SHA-256 MAC
+    #[portable_test]
+    fn test_key_block_extraction() {
+        // CBC with SHA-256 MAC needs: 2*(32+16+16) = 128 bytes
+        let key_block = vec![0u8; 128];
 
         let km = KeyMaterial::from_key_block(&key_block, 32, 16, 16).unwrap();
         assert_eq!(km.client_write_mac_key.len(), 32);
@@ -375,5 +352,36 @@ mod tests {
         assert_eq!(km.server_write_key.len(), 16);
         assert_eq!(km.client_write_iv.len(), 16);
         assert_eq!(km.server_write_iv.len(), 16);
+    }
+
+    // SubtleCrypto-dependent tests - WASM only
+    #[cfg(target_arch = "wasm32")]
+    mod wasm_tests {
+        use super::*;
+        use crate::test_util::wasm_test_async;
+
+        wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+        #[wasm_test_async]
+        async fn test_prf_basic() {
+            let secret = vec![0u8; 32];
+            let label = b"test label";
+            let seed = vec![0u8; 32];
+
+            let result = prf(&secret, label, &seed, 48).await.unwrap();
+            assert_eq!(result.len(), 48);
+        }
+
+        #[wasm_test_async]
+        async fn test_master_secret_derivation() {
+            let pms = vec![0u8; 48];
+            let client_random = vec![0u8; 32];
+            let server_random = vec![0u8; 32];
+
+            let ms = derive_master_secret(&pms, &client_random, &server_random)
+                .await
+                .unwrap();
+            assert_eq!(ms.len(), 48);
+        }
     }
 }

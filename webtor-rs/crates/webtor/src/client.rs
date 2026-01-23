@@ -503,7 +503,8 @@ impl TorClient {
                     LogType::Info,
                 );
                 let mut config =
-                    WebTunnelConfig::new(url.clone(), fingerprint.clone()).with_timeout(timeout);
+                    WebTunnelConfig::new(url.clone(), fingerprint.clone())
+                        .with_timeout(self.options.connection_timeout_duration());
                 if let Some(sni) = server_name {
                     config = config.with_server_name(sni.clone());
                 }
@@ -676,12 +677,12 @@ impl Clone for TorClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::wasm_bindgen_test;
+    use crate::test_util::portable_test_async;
 
     // These tests require a larger stack due to embedded consensus data parsing.
     // Run with: RUST_MIN_STACK=16777216 cargo test -p webtor client::tests
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_tor_client_creation() {
         let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
             .with_create_circuit_early(false);
@@ -690,7 +691,7 @@ mod tests {
         assert!(client.is_ok());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_one_time_fetch() {
         // This will fail because we don't have WASM WebSocket implementation
         let result = TorClient::fetch_one_time(
@@ -704,7 +705,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_circuit_status() {
         let options = TorClientOptions::new("wss://snowflake.torproject.net/".to_string())
             .with_create_circuit_early(false);

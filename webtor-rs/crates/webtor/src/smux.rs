@@ -666,10 +666,10 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for SmuxStream<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::portable_test;
     use rand::Rng;
-    use wasm_bindgen_test::*;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_segment_encode_decode() {
         let segment = SmuxSegment::psh(3, b"Hello".to_vec());
         let encoded = segment.encode();
@@ -685,7 +685,7 @@ mod tests {
         assert_eq!(consumed, encoded.len());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_segment_syn() {
         let segment = SmuxSegment::syn(5);
         assert_eq!(segment.command, SmuxCommand::Syn);
@@ -693,7 +693,7 @@ mod tests {
         assert!(segment.data.is_empty());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_segment_upd() {
         let segment = SmuxSegment::upd(3, 1000, 65535);
         assert_eq!(segment.command, SmuxCommand::Upd);
@@ -704,7 +704,7 @@ mod tests {
         assert_eq!(update.window, 65535);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_partial_decode() {
         let segment = SmuxSegment::psh(3, b"Hello".to_vec());
         let encoded = segment.encode();
@@ -716,7 +716,7 @@ mod tests {
         assert!(SmuxSegment::decode(&encoded).unwrap().is_some());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_invalid_version() {
         let mut buf = SmuxSegment::psh(3, b"test".to_vec()).encode();
         buf[0] = 1; // Wrong version
@@ -741,7 +741,7 @@ mod tests {
         (0..len).map(|_| rng.gen()).collect()
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn smux_segment_roundtrips() {
         let mut rng = rand::thread_rng();
 
@@ -768,7 +768,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn smux_update_roundtrips() {
         let mut rng = rand::thread_rng();
 
@@ -784,7 +784,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn smux_partial_decode_returns_none() {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -817,7 +817,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn smux_rejects_invalid_version() {
         let mut rng = rand::thread_rng();
 
@@ -841,7 +841,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn smux_rejects_invalid_command() {
         let mut rng = rand::thread_rng();
 
@@ -860,7 +860,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn smux_update_rejects_short_payload() {
         for len in 0..8 {
             let data = vec![0u8; len];

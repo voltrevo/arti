@@ -345,8 +345,8 @@ pub mod selection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::portable_test;
     use rand::Rng;
-    use wasm_bindgen_test::*;
 
     fn create_test_relay(fingerprint: &str, flags: Vec<&str>) -> Relay {
         Relay::new(
@@ -359,7 +359,7 @@ mod tests {
         )
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_relay_selection() {
         let relays = vec![
             create_test_relay("relay1", vec![flags::FAST, flags::STABLE, flags::V2DIR]),
@@ -450,7 +450,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn relay_selection_respects_invariants() {
         let mut rng = rand::thread_rng();
 
@@ -540,7 +540,7 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn select_relay_picks_from_select_relays() {
         let mut rng = rand::thread_rng();
 

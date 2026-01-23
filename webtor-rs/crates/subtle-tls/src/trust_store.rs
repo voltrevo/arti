@@ -316,27 +316,27 @@ pub const EMBEDDED_ROOTS_SIZE: usize = 3500; // ~3.5KB for 3 certs
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::wasm_bindgen_test;
+    use crate::test_util::portable_test;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_parse_embedded_roots() {
         let store = TrustStore::new().unwrap();
         assert_eq!(store.embedded_roots.len(), 3);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_isrg_root_x1() {
         let root = RootCertificate::from_pem(ISRG_ROOT_X1_PEM).unwrap();
         assert!(root.subject.contains("ISRG Root X1"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_isrg_root_x2() {
         let root = RootCertificate::from_pem(ISRG_ROOT_X2_PEM).unwrap();
         assert!(root.subject.contains("ISRG Root X2"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_digicert_root() {
         let root = RootCertificate::from_pem(DIGICERT_GLOBAL_ROOT_G2_PEM).unwrap();
         assert!(root.subject.contains("DigiCert"));

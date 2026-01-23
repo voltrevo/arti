@@ -29,6 +29,9 @@
 //! }
 //! ```
 
+#[cfg(test)]
+pub mod test_util;
+
 pub mod cert;
 pub mod crypto;
 pub mod error;

@@ -463,10 +463,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{portable_test, portable_test_async};
     use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
-    use wasm_bindgen_test::*;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn delay_calculation_is_correct() {
         let policy = RetryPolicy {
             max_attempts: 5,
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(policy.delay_for_attempt(5), Duration::from_millis(8000));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn delay_respects_max_delay() {
         let policy = RetryPolicy {
             max_attempts: 10,
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(policy.delay_for_attempt(10), Duration::from_secs(30));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn preset_policies_are_reasonable() {
         let network = RetryPolicy::network();
         assert_eq!(network.max_attempts, 5);
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(bootstrap.max_attempts, 3);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn retry_succeeds_on_first_attempt() {
         let result = retry_with_backoff(
             "test_op",
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn retry_succeeds_after_failures() {
         let attempts = AtomicU32::new(0);
 
@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(attempts.load(AtomicOrdering::SeqCst), 3);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn retry_fails_on_non_retryable_error() {
         let attempts = AtomicU32::new(0);
 
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(attempts.load(AtomicOrdering::SeqCst), 1);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn retry_exhausts_all_attempts() {
         let attempts = AtomicU32::new(0);
 
@@ -585,13 +585,13 @@ mod tests {
         assert_eq!(attempts.load(AtomicOrdering::SeqCst), 3);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn zero_attempts_policy_has_zero_max_attempts() {
         let policy = RetryPolicy::new(0);
         assert_eq!(policy.max_attempts, 0);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn timeout_succeeds_when_operation_completes_in_time() {
         let result = with_timeout(Duration::from_secs(5), "test_op", async {
             Ok::<_, TorError>(42)
@@ -601,7 +601,7 @@ mod tests {
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn timeout_fails_when_operation_exceeds_time() {
         let result = with_timeout(Duration::from_millis(10), "slow_op", async {
             sleep(Duration::from_millis(100)).await;
@@ -615,7 +615,7 @@ mod tests {
         assert!(err.to_string().contains("slow_op"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn timeout_propagates_inner_error() {
         let result = with_timeout(Duration::from_secs(5), "test_op", async {
             Err::<u32, _>(TorError::network("inner error"))
@@ -627,20 +627,20 @@ mod tests {
         assert!(err.to_string().contains("inner error"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn cancellation_token_starts_uncancelled() {
         let token = CancellationToken::new();
         assert!(!token.is_cancelled());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn cancellation_token_cancel_sets_flag() {
         let token = CancellationToken::new();
         token.cancel();
         assert!(token.is_cancelled());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn cancellation_token_clone_shares_state() {
         let token1 = CancellationToken::new();
         let token2 = token1.clone();
@@ -651,14 +651,14 @@ mod tests {
         assert!(token2.is_cancelled());
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn with_cancellation_succeeds_when_not_cancelled() {
         let token = CancellationToken::new();
         let result = with_cancellation(&token, async { Ok::<_, TorError>(42) }).await;
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn with_cancellation_fails_when_already_cancelled() {
         let token = CancellationToken::new();
         token.cancel();
@@ -667,7 +667,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TorError::Cancelled));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn with_cancellation_cancels_during_operation() {
         use futures::future::{select, Either};
         use std::pin::pin;
@@ -694,7 +694,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TorError::Cancelled));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn with_timeout_and_cancellation_succeeds() {
         let token = CancellationToken::new();
         let result = with_timeout_and_cancellation(Duration::from_secs(5), "test", &token, async {
@@ -704,7 +704,7 @@ mod tests {
         assert_eq!(result.unwrap(), 42);
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn with_timeout_and_cancellation_times_out() {
         let token = CancellationToken::new();
         let result =
@@ -718,7 +718,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TorError::Timeout(_)));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn with_timeout_and_cancellation_cancels() {
         let token = CancellationToken::new();
         token.cancel();

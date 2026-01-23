@@ -4,6 +4,9 @@
 //! compiled to WebAssembly and embedded in web pages. It supports anonymous
 //! HTTP/HTTPS requests through the Tor network using Snowflake bridges.
 
+#[cfg(test)]
+pub mod test_util;
+
 pub mod circuit;
 pub mod client;
 pub mod config;

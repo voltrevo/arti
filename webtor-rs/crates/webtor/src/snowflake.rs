@@ -383,9 +383,9 @@ pub async fn create_snowflake_stream_with_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::*;
+    use crate::test_util::portable_test;
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_snowflake_config_default() {
         let config = SnowflakeConfig::new();
         assert_eq!(config.broker_url, BROKER_URL);
@@ -393,13 +393,13 @@ mod tests {
         assert_eq!(config.connection_timeout, Duration::from_secs(60));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_snowflake_config_with_timeout() {
         let config = SnowflakeConfig::new().with_timeout(Duration::from_secs(120));
         assert_eq!(config.connection_timeout, Duration::from_secs(120));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_snowflake_config_with_fingerprint() {
         let config = SnowflakeConfig::new().with_fingerprint("ABCD1234".to_string());
         assert_eq!(config.fingerprint, "ABCD1234");

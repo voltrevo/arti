@@ -912,9 +912,9 @@ pub async fn verify_certificate_verify(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wasm_bindgen_test::wasm_bindgen_test;
+    use crate::test_util::{portable_test, portable_test_async};
 
-    #[wasm_bindgen_test]
+    #[portable_test_async]
     async fn test_hostname_matching() {
         let verifier = CertificateVerifier::new("example.com", false);
 
@@ -924,7 +924,7 @@ mod tests {
         assert!(!verifier.matches_hostname("other.com"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_wildcard_matching() {
         let verifier = CertificateVerifier::new("foo.example.com", false);
 
@@ -933,7 +933,7 @@ mod tests {
         assert!(!verifier.matches_hostname("*.other.com"));
     }
 
-    #[wasm_bindgen_test]
+    #[portable_test]
     fn test_ecdsa_signature_conversion() {
         // Example DER-encoded ECDSA signature
         let der_sig = [
