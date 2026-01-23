@@ -5,6 +5,7 @@ use crate::relay::{Relay, RelayManager};
 use crate::time::system_time_now;
 use futures::{AsyncReadExt, AsyncWriteExt};
 use std::collections::HashMap;
+#[cfg(target_arch = "wasm32")]
 use std::io::Read;
 use std::sync::Arc;
 use tokio::sync::RwLock;

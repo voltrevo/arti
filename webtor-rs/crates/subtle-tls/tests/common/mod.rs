@@ -15,5 +15,6 @@ pub use core::prelude::rust_2021::test as portable_test;
 #[cfg(target_arch = "wasm32")]
 pub use wasm_bindgen_test::wasm_bindgen_test as portable_test_async;
 
+#[allow(unused_imports)]
 #[cfg(not(target_arch = "wasm32"))]
 pub use tokio::test as portable_test_async;

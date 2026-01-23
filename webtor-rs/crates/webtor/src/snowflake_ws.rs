@@ -18,11 +18,13 @@
 //!   Tor protocol
 
 use crate::error::{Result, TorError};
+#[cfg(target_arch = "wasm32")]
 use crate::websocket::WebSocketStream;
 use futures::{AsyncRead, AsyncWrite};
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+#[cfg(target_arch = "wasm32")]
 use tracing::info;
 
 #[cfg(target_arch = "wasm32")]

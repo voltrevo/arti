@@ -2,7 +2,9 @@
 
 use crate::error::{Result, TorError};
 use std::future::Future;
+#[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_arch = "wasm32")]
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, warn};
