@@ -141,7 +141,6 @@ pub struct RelayCriteria {
     pub exclude_flags: HashSet<String>,
     pub exclude_fingerprints: HashSet<String>,
     pub min_bandwidth: u64,
-    pub max_selection: usize,
 }
 
 impl Default for RelayCriteria {
@@ -151,7 +150,6 @@ impl Default for RelayCriteria {
             exclude_flags: HashSet::new(),
             exclude_fingerprints: HashSet::new(),
             min_bandwidth: 0,
-            max_selection: 10,
         }
     }
 }
@@ -187,11 +185,6 @@ impl RelayCriteria {
         self.min_bandwidth = bandwidth;
         self
     }
-
-    pub fn with_max_selection(mut self, max: usize) -> Self {
-        self.max_selection = max;
-        self
-    }
 }
 
 /// Relay manager for selecting appropriate relays
@@ -206,7 +199,7 @@ impl RelayManager {
 
     /// Select relays matching the given criteria
     pub fn select_relays(&self, criteria: &RelayCriteria) -> Result<Vec<Relay>> {
-        let mut candidates: Vec<&Relay> = self
+        let candidates: Vec<&Relay> = self
             .relays
             .iter()
             .filter(|relay| {
@@ -240,15 +233,7 @@ impl RelayManager {
             ));
         }
 
-        // Sort by consensus weight (higher is better)
-        candidates.sort_by_key(|relay| std::cmp::Reverse(relay.consensus_weight));
-
-        // Take top candidates
-        let selected: Vec<Relay> = candidates
-            .into_iter()
-            .take(criteria.max_selection)
-            .cloned()
-            .collect();
+        let selected: Vec<Relay> = candidates.into_iter().cloned().collect();
 
         info!(
             "Selected {} relays from {} total",
@@ -260,7 +245,7 @@ impl RelayManager {
         Ok(selected)
     }
 
-    /// Select a single relay randomly from candidates
+    /// Select a single relay using consensus weighted random selection
     pub fn select_relay(&self, criteria: &RelayCriteria) -> Result<Relay> {
         use rand::seq::SliceRandom;
 
@@ -270,13 +255,13 @@ impl RelayManager {
             return Err(TorError::relay_selection("No suitable relays found"));
         }
 
-        // Select a random relay from the top candidates to avoid deterministic paths
-        // and ensure load balancing
+        // Weighted random selection based on consensus weight.
+        // Relays with higher consensus weight are selected proportionally more often.
         let mut rng = rand::thread_rng();
         candidates
-            .choose(&mut rng)
+            .choose_weighted(&mut rng, |relay| relay.consensus_weight as f64)
             .cloned()
-            .ok_or_else(|| TorError::relay_selection("Failed to choose random relay"))
+            .map_err(|e| TorError::relay_selection(format!("Weighted selection failed: {}", e)))
     }
 
     /// Get relay by fingerprint
@@ -446,7 +431,6 @@ mod tests {
             exclude_flags: random_flags(rng),
             exclude_fingerprints,
             min_bandwidth: rng.gen_range(0..500_000),
-            max_selection: rng.gen_range(1..=10),
         }
     }
 
@@ -464,14 +448,6 @@ mod tests {
 
             match result {
                 Ok(selected) => {
-                    // Size bound
-                    assert!(
-                        selected.len() <= criteria.max_selection,
-                        "Selected {} relays but max is {}",
-                        selected.len(),
-                        criteria.max_selection
-                    );
-
                     for r in &selected {
                         // Required flags present
                         for f in &criteria.need_flags {
@@ -504,14 +480,6 @@ mod tests {
                             r.fingerprint,
                             r.bandwidth,
                             criteria.min_bandwidth
-                        );
-                    }
-
-                    // Ordering: sorted by consensus_weight descending
-                    for win in selected.windows(2) {
-                        assert!(
-                            win[0].consensus_weight >= win[1].consensus_weight,
-                            "Relays not sorted by consensus_weight"
                         );
                     }
                 }
