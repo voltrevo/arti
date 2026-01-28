@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * Regression Test - Tests all preset URLs from the demo website
- * 
+ *
  * Tests each URL to ensure no regression in TLS/HTTP functionality.
- * Note: httpbin.org is TLS 1.2 only and will fail (expected).
- * 
+ * Note: Only TLS 1.3 is supported. Servers that don't support TLS 1.3 will fail.
+ *
  * Usage:
  *   ./build.sh
  *   node tests/e2e/test-regression.mjs [--headed] [--quick]
@@ -18,17 +18,16 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '../..');
 
-// All preset URLs from the demo website
+// All preset URLs from the demo website (TLS 1.3 only)
 const PRESET_URLS = [
     // Test Endpoints
-    { url: 'https://check.torproject.org/', name: 'Tor Check', tls13: true },
-    { url: 'https://api.ipify.org?format=json', name: 'IP Check (ipify)', tls13: true },
-    { url: 'https://httpbin.org/user-agent', name: 'HTTPBin', tls13: false }, // TLS 1.2 only - may fail
-    
+    { url: 'https://check.torproject.org/', name: 'Tor Check' },
+    { url: 'https://api.ipify.org?format=json', name: 'IP Check (ipify)' },
+
     // Ethereum RPC
-    { url: 'https://eth.llamarpc.com', name: 'Llama RPC', tls13: true },
-    { url: 'https://ethereum-rpc.publicnode.com', name: 'Publicnode RPC', tls13: true, flaky: true }, // Sometimes blocks Tor
-    { url: 'https://rpc.mevblocker.io', name: 'MEV Blocker RPC', tls13: true },
+    { url: 'https://eth.llamarpc.com', name: 'Llama RPC' },
+    { url: 'https://ethereum-rpc.publicnode.com', name: 'Publicnode RPC', flaky: true }, // Sometimes blocks Tor
+    { url: 'https://rpc.mevblocker.io', name: 'MEV Blocker RPC' },
 ];
 
 const CONFIG = {
@@ -160,13 +159,9 @@ async function runRegressionTests() {
                 console.log(`✅ OK (${testResult.fetch_ms}ms)`);
                 results.push({ ...preset, status: 'passed', latency: testResult.fetch_ms });
             } else {
-                const isTlsError = testResult.error.includes('TLS') || testResult.error.includes('close_notify');
                 const isTimeout = testResult.error.includes('Timeout');
-                
-                if (!preset.tls13 && isTlsError) {
-                    console.log(`⚠️  Expected TLS 1.2 failure`);
-                    results.push({ ...preset, status: 'expected_fail', error: testResult.error });
-                } else if (preset.flaky && isTimeout) {
+
+                if (preset.flaky && isTimeout) {
                     console.log(`⚠️  Flaky (timeout - may block Tor)`);
                     results.push({ ...preset, status: 'flaky', error: testResult.error });
                 } else {
@@ -187,22 +182,19 @@ async function runRegressionTests() {
     console.log('\n=== Results Summary ===\n');
     
     const passed = results.filter(r => r.status === 'passed').length;
-    const expectedFail = results.filter(r => r.status === 'expected_fail').length;
     const flaky = results.filter(r => r.status === 'flaky').length;
     const failed = results.filter(r => r.status === 'failed').length;
 
     console.log(`| URL | Status | Latency |`);
     console.log(`|-----|--------|---------|`);
     for (const r of results) {
-        const statusIcon = r.status === 'passed' ? '✅' : 
-                          r.status === 'expected_fail' ? '⚠️' : 
+        const statusIcon = r.status === 'passed' ? '✅' :
                           r.status === 'flaky' ? '⚠️' : '❌';
         const latency = r.latency ? `${Math.round(r.latency)}ms` : r.error?.substring(0, 30) || '-';
         console.log(`| ${r.name} | ${statusIcon} | ${latency} |`);
     }
 
     console.log(`\nPassed: ${passed}/${PRESET_URLS.length}`);
-    console.log(`Expected failures (TLS 1.2): ${expectedFail}`);
     console.log(`Flaky (may block Tor): ${flaky}`);
     console.log(`Unexpected failures: ${failed}`);
 

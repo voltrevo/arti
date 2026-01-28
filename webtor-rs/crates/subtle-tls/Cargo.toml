@@ -4,16 +4,15 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Webtor Contributors"]
 license = "MIT"
-description = "TLS 1.2/1.3 implementation using browser SubtleCrypto API for WASM"
+description = "TLS 1.3 implementation using browser SubtleCrypto API for WASM"
 repository = "https://github.com/voltrevo/webtor-rs"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 [features]
-default = ["tls13", "tls12"]
+default = ["tls13"]
 tls13 = []
-tls12 = []
 
 [dependencies]
 # Async runtime

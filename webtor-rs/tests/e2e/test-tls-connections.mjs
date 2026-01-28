@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * Comprehensive TLS Connection Tests
- * 
- * Tests TLS 1.2 and TLS 1.3 connections in headless browser environment.
+ *
+ * Tests TLS 1.3 connections in headless browser environment.
  * Validates the subtle-tls implementation works correctly in WASM.
- * 
+ *
  * Usage:
  *   ./build.sh --dev
  *   node tests/e2e/test-tls-connections.mjs [--headed] [--debug]

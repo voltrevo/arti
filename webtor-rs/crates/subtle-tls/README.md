@@ -1,14 +1,14 @@
 # subtle-tls
 
-TLS 1.3 and 1.2 client implementation using the browser SubtleCrypto API for WASM environments.
+TLS 1.3 client implementation using the browser SubtleCrypto API for WASM environments.
 
 ## Overview
 
-This crate provides TLS 1.3 encryption with automatic TLS 1.2 fallback for WASM environments where native crypto libraries like `ring` cannot be used. It leverages the browser's SubtleCrypto API for cryptographic operations.
+This crate provides TLS 1.3 encryption for WASM environments where native crypto libraries like `ring` cannot be used. It leverages the browser's SubtleCrypto API for cryptographic operations.
 
 ## Features
 
-- TLS 1.3 client implementation with automatic TLS 1.2 fallback
+- TLS 1.3 client implementation
 - Key exchange: P-256 ECDH (via SubtleCrypto), X25519 (via pure Rust)
 - Cipher suites: AES-128-GCM, AES-256-GCM (via SubtleCrypto), ChaCha20-Poly1305 (via pure Rust)
 - Certificate chain validation with hostname verification
@@ -103,7 +103,7 @@ subtle-tls/
 ## Security Considerations
 
 - This implementation is for educational and experimental use
-- Supports TLS 1.3 (preferred) with TLS 1.2 fallback; older protocol versions are not supported
+- Supports TLS 1.3 only; older protocol versions are not supported
 - Certificate validation uses embedded Let's Encrypt roots by default
 - The `skip_verification` option should NEVER be used in production
 - ChaCha20-Poly1305 uses pure Rust (not SubtleCrypto) since browsers don't support it

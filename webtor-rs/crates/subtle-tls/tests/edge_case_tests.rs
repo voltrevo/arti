@@ -3,7 +3,7 @@
 //! Tests boundary conditions, malformed inputs, and error handling.
 
 mod common;
-use common::{portable_test, portable_test_async};
+use common::portable_test_async;
 
 mod parsing_edge_cases {
     use super::*;
@@ -270,39 +270,5 @@ mod hkdf_edge_cases {
         let result = Hkdf::expand_label(&secret, "key", &[], 16).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 16);
-    }
-}
-
-#[cfg(feature = "tls12")]
-mod tls12_edge_cases {
-    use super::*;
-    use subtle_tls::prf;
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_prf_empty_seed() {
-        let result = prf::prf(&[0x42u8; 32], b"label", &[], 48).await;
-        assert!(result.is_ok());
-    }
-
-    #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_prf_zero_output() {
-        let result = prf::prf(&[0x42u8; 32], b"label", &[0u8; 32], 0).await;
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
-    }
-
-    #[portable_test]
-    fn test_key_material_exact_size() {
-        // Exactly 40 bytes for AES-128-GCM
-        let key_block = vec![0x42u8; 40];
-        let km = prf::KeyMaterial::from_key_block(&key_block, 0, 16, 4);
-        assert!(km.is_ok());
-    }
-
-    #[portable_test]
-    fn test_key_material_too_short() {
-        let key_block = vec![0x42u8; 30]; // Too short for AES-128-GCM
-        let km = prf::KeyMaterial::from_key_block(&key_block, 0, 16, 4);
-        assert!(km.is_err());
     }
 }

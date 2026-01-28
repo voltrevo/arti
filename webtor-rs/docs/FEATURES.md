@@ -47,13 +47,12 @@ Tor Protocol
 
 ## Cryptography
 
-### TLS (1.3 + 1.2)
+### TLS 1.3
 - WebCrypto API (SubtleCrypto) for browser compatibility
 - ECDH key exchange (P-256, P-384, P-521) and X25519
-- AES-GCM encryption (TLS 1.3 and 1.2)
+- AES-GCM encryption
 - ChaCha20-Poly1305 (pure Rust)
 - SHA-256/SHA-384 hashing
-- TLS 1.3 preferred with automatic TLS 1.2 fallback when needed
 
 ### Tor Encryption
 - ntor-v3 handshake (modern key exchange)
@@ -64,7 +63,7 @@ Tor Protocol
 
 ### HTTP Client
 - GET/POST requests through Tor
-- HTTPS support with TLS 1.3 (preferred) and TLS 1.2 fallback
+- HTTPS support with TLS 1.3
 - Proper certificate validation (webpki-roots)
 - Automatic content decompression
 
@@ -90,7 +89,7 @@ Tor Protocol
 ## Limitations
 
 ### TLS Version Compatibility
-TLS 1.3 is preferred with automatic TLS 1.2 fallback. Older protocol versions (TLS 1.1 and below) are not supported. A small number of legacy servers may still have compatibility issues.
+Only TLS 1.3 is supported. Older protocol versions (TLS 1.2 and below) are not supported. Servers that do not support TLS 1.3 will fail to connect.
 
 ### WebRTC Required
 Snowflake transport requires WebRTC support in the browser.

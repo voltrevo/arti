@@ -40,7 +40,7 @@ jobs:
       run: ./test.sh
 
     - name: Check WASM build (subtle-tls)
-      run: cargo check --package subtle-tls --target wasm32-unknown-unknown --features tls12
+      run: cargo check --package subtle-tls --target wasm32-unknown-unknown
 
   e2e-tests:
     name: E2E Tests
