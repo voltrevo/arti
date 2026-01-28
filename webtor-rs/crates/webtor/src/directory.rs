@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tor_checkable::Timebound;
 use tor_netdoc::doc::microdesc::MicrodescReader;
-use tor_netdoc::doc::netstatus::MdConsensus;
+use tor_netdoc::doc::netstatus::{MdConsensus, RelayWeight};
 use tor_netdoc::AllowAnnotations;
 use tor_proto::channel::Channel;
 use tor_proto::client::circuit::TimeoutEstimator;
@@ -174,6 +174,10 @@ impl DirectoryManager {
                 );
 
                 relay.ed25519_identity = Some(hex::encode(microdesc.ed25519_id().as_bytes()));
+                relay.consensus_weight = match router.weight() {
+                    RelayWeight::Measured(w) => *w,
+                    _ => 0,
+                };
 
                 relays.push(relay);
             }
@@ -283,6 +287,10 @@ impl DirectoryManager {
                 );
 
                 relay.ed25519_identity = Some(hex::encode(microdesc.ed25519_id().as_bytes()));
+                relay.consensus_weight = match router.weight() {
+                    RelayWeight::Measured(w) => *w,
+                    _ => 0,
+                };
 
                 relays.push(relay);
             }
