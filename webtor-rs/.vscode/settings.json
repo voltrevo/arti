@@ -9,5 +9,8 @@
   "[rust]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
-  }
+  },
+  "git.ignoredRepositories": [
+    "~/.cargo/git/checkouts"
+  ]
 }
