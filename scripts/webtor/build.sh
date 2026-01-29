@@ -2,7 +2,11 @@
 
 set -e
 
-echo "🚀 Building Webtor-rs project..."
+echo "🚀 Building webtor..."
+
+cd "$(dirname "$0")"
+GIT_ROOT=$(git rev-parse --show-toplevel)
+cd "$GIT_ROOT"
 
 # Colors for output
 RED='\033[0;31m'
@@ -24,8 +28,8 @@ print_error() {
 
 print_usage() {
     print_status "Usage:"
-    print_status "  ./build.sh            # Development build (fast compile, no optimization)"
-    print_status "  ./build.sh --release  # Production build (optimized, slower compile)"
+    print_status "  scripts/webtor/build.sh            # Development build (fast compile, no optimization)"
+    print_status "  scripts/webtor/build.sh --release  # Production build (optimized, slower compile)"
 }
 
 # Parse arguments
@@ -69,7 +73,7 @@ check_deps() {
         print_error "Missing dependencies: ${missing_deps[*]}"
         print_error ""
         print_error "Run the setup script to install all dependencies:"
-        print_error "  ./setup-deps.sh"
+        print_error "  scripts/webtor/setup-deps.sh"
         exit 1
     fi
 }
@@ -78,26 +82,21 @@ check_deps
 
 # Warn if wasm-opt is not available (optional but recommended for release builds)
 if [ "$BUILD_MODE" = "--release" ] && ! command -v wasm-opt &> /dev/null; then
-    print_warning "wasm-opt is not installed. Install it for better WASM optimization:"
-    print_warning "  ./setup-deps.sh"
+    print_error "wasm-opt is not installed. Install it for WASM optimization:"
+    print_error "  scripts/webtor/setup-deps.sh"
+    exit 1
 fi
 
 print_status "Build mode: $BUILD_MODE"
 
-print_status "Building webtor-wasm (WebAssembly bindings)..."
-cd crates/webtor-wasm
+print_status "Building webtor (WebAssembly bindings)..."
+cd crates/webtor
 wasm-pack build --target web --out-dir pkg $BUILD_MODE
 if [ $? -ne 0 ]; then
     print_error "Failed to build webtor-wasm"
     exit 1
 fi
 cd ../..
-
-print_status "Copying WASM to examples..."
-mkdir -p examples/showcase/pkg
-mkdir -p examples/simple/pkg
-cp -r crates/webtor-wasm/pkg/* examples/showcase/pkg/
-cp -r crates/webtor-wasm/pkg/* examples/simple/pkg/
 
 # Run wasm-opt if available (for additional size optimization)
 optimize_wasm() {
@@ -122,24 +121,12 @@ print_wasm_size() {
 
 # Optimize WASM binaries if wasm-opt is available
 if [ "$BUILD_MODE" = "--release" ]; then
-    optimize_wasm crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
-    # Also optimize the copies in examples
-    optimize_wasm examples/showcase/pkg/webtor_wasm_bg.wasm
-    optimize_wasm examples/simple/pkg/webtor_wasm_bg.wasm
+    optimize_wasm crates/webtor/pkg/webtor_wasm_bg.wasm
 fi
 
 # Show WASM sizes
 echo ""
-print_wasm_size crates/webtor-wasm/pkg/webtor_wasm_bg.wasm
+print_wasm_size crates/webtor/pkg/webtor_wasm_bg.wasm
 
 echo ""
 print_status "Build completed successfully!"
-echo ""
-print_usage
-echo ""
-print_status "To run the showcase example:"
-print_status "  cd examples/showcase && python3 -m http.server 8000"
-print_status "  Open http://localhost:8000 in your browser"
-echo ""
-print_status "To run the simple React example:"
-print_status "  cd examples/simple && npm install && npm run dev"
