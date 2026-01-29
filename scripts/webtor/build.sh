@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 echo "🚀 Building webtor..."
 
@@ -92,41 +92,33 @@ print_status "Build mode: $BUILD_MODE"
 print_status "Building webtor (WebAssembly bindings)..."
 cd crates/webtor
 wasm-pack build --target web --out-dir pkg $BUILD_MODE
-if [ $? -ne 0 ]; then
-    print_error "Failed to build webtor-wasm"
-    exit 1
-fi
 cd ../..
 
 # Run wasm-opt if available (for additional size optimization)
 optimize_wasm() {
     local path="$1"
-    if [ -f "$path" ] && command -v wasm-opt &> /dev/null; then
-        print_status "Running wasm-opt on $(basename "$path")..."
-        wasm-opt -Oz --strip-dwarf --strip-producers \
-            -o "${path}.opt" "$path"
-        mv "${path}.opt" "$path"
-    fi
+    print_status "Running wasm-opt on $(basename "$path")..."
+    wasm-opt -Oz --strip-dwarf --strip-producers \
+        -o "${path}.opt" "$path"
+    mv "${path}.opt" "$path"
 }
 
 # Print WASM sizes (uncompressed and gzipped)
 print_wasm_size() {
     local path="$1"
-    if [ -f "$path" ]; then
-        local size=$(ls -lh "$path" | awk '{print $5}')
-        local gz_size=$(gzip -c -9 "$path" | wc -c | awk '{printf "%.2f MB", $1/1024/1024}')
-        print_status "$(basename "$path"): $size (uncompressed), $gz_size (gzipped)"
-    fi
+    local size=$(ls -lh "$path" | awk '{print $5}')
+    local gz_size=$(gzip -c -9 "$path" | wc -c | awk '{printf "%.2f MB", $1/1024/1024}')
+    print_status "$(basename "$path"): $size (uncompressed), $gz_size (gzipped)"
 }
 
 # Optimize WASM binaries if wasm-opt is available
 if [ "$BUILD_MODE" = "--release" ]; then
-    optimize_wasm crates/webtor/pkg/webtor_wasm_bg.wasm
+    optimize_wasm crates/webtor/pkg/webtor_bg.wasm
 fi
 
 # Show WASM sizes
 echo ""
-print_wasm_size crates/webtor/pkg/webtor_wasm_bg.wasm
+print_wasm_size crates/webtor/pkg/webtor_bg.wasm
 
 echo ""
 print_status "Build completed successfully!"
