@@ -11,7 +11,7 @@ description = "WebAssembly bindings for webtor"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-webtor = { path = "../webtor" }
+webtor-rs = { path = "../webtor-rs" }
 http = "1.1"
 
 # WASM bindings

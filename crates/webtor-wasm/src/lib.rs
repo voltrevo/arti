@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
-use webtor::{TorClient as NativeTorClient, TorClientOptions as NativeTorClientOptions, TorError};
+use webtor_rs::{TorClient as NativeTorClient, TorClientOptions as NativeTorClientOptions, TorError};
 
 /// Structured error for JavaScript consumption
 /// Provides machine-readable error classification for UX and retry decisions

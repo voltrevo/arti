@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use url::Url;
-use webtor::isolation::{IsolationKey, StreamIsolationPolicy};
+use webtor_rs::isolation::{IsolationKey, StreamIsolationPolicy};
 
 fuzz_target!(|data: &[u8]| {
     // Try to parse the input as a URL string

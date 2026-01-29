@@ -78,7 +78,7 @@ async fn main() {
 }
 
 async fn run_benchmarks() {
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     // Check for WebTunnel configuration
     let webtunnel_url = std::env::var("WEBTUNNEL_URL").ok();

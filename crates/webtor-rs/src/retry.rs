@@ -200,7 +200,7 @@ impl RetryPolicy {
 ///
 /// # Example
 /// ```no_run
-/// use webtor::{retry_with_backoff, RetryPolicy, TorError, Result};
+/// use webtor_rs::{retry_with_backoff, RetryPolicy, TorError, Result};
 ///
 /// async fn example() -> Result<String> {
 ///     retry_with_backoff(
@@ -301,7 +301,7 @@ pub async fn sleep(duration: Duration) {
 ///
 /// # Example
 /// ```no_run
-/// use webtor::{with_timeout, Result};
+/// use webtor_rs::{with_timeout, Result};
 /// use std::time::Duration;
 ///
 /// async fn example() -> Result<String> {
@@ -355,7 +355,7 @@ where
 ///
 /// # Example
 /// ```no_run
-/// use webtor::{with_cancellation, CancellationToken, Result};
+/// use webtor_rs::{with_cancellation, CancellationToken, Result};
 ///
 /// async fn example() -> Result<String> {
 ///     let token = CancellationToken::new();

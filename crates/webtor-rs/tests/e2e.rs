@@ -7,8 +7,8 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use webtor::snowflake::{SnowflakeBridge, SnowflakeConfig};
-use webtor::{TorClient, TorClientOptions};
+use webtor_rs::snowflake::{SnowflakeBridge, SnowflakeConfig};
+use webtor_rs::{TorClient, TorClientOptions};
 
 /// WebTunnel bridge from community bridges list
 /// These are real bridges - they may go offline. Try a different one if it fails.

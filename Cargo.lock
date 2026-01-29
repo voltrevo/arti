@@ -9299,7 +9299,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "webtor"
+name = "webtor-rs"
 version = "0.5.7"
 dependencies = [
  "anyhow",
@@ -9380,7 +9380,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
- "webtor",
+ "webtor-rs",
 ]
 
 [[package]]

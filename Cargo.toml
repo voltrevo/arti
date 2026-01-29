@@ -77,7 +77,7 @@ members = [
     "crates/arti-rpc-client-core",
 
     "crates/subtle-tls",
-    "crates/webtor",
+    "crates/webtor-rs",
     "crates/webtor-wasm",
 
     "maint/fixup-features",

@@ -42,7 +42,7 @@ fn get_webtunnel_config() -> Option<(String, String)> {
 
 #[tokio::test]
 async fn test_client_creation() {
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     // This test doesn't require network - just creates the client without connecting
     let options = TorClientOptions {
@@ -75,7 +75,7 @@ async fn test_webtunnel_fetch_ipify() {
         }
     };
 
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     info!("Starting WebTunnel integration test");
     info!("Bridge URL: {}", url);
@@ -164,7 +164,7 @@ async fn test_multiple_fetches() {
         None => return,
     };
 
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     info!("Testing multiple fetches through single circuit");
 
@@ -226,7 +226,7 @@ async fn test_circuit_status() {
         None => return,
     };
 
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     let options = TorClientOptions {
         create_circuit_early: true,
@@ -257,7 +257,7 @@ async fn test_circuit_status() {
 /// Test to verify consensus fetching works
 #[tokio::test]
 async fn test_consensus_fetch() {
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     // Create client without early circuit
     let options = TorClientOptions {
@@ -300,7 +300,7 @@ async fn test_timing_analysis_with_diff() {
         }
     };
 
-    use webtor::{TorClient, TorClientOptions};
+    use webtor_rs::{TorClient, TorClientOptions};
 
     println!("\n============================================================");
     println!("TIMING ANALYSIS: Full Flow with Consensus Diff");
