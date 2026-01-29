@@ -1,53 +1,53 @@
 [package]
 name = "webtor"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.5.7"
+edition = "2021"
+authors = ["Webtor Contributors"]
+license = "MIT"
+repository = "https://github.com/voltrevo/webtor-rs"
 description = "Core Tor client implementation for web browsers"
 
 [dependencies]
 # Core async runtime
-tokio = { workspace = true }
-futures = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
+tokio = { version = "1", features = ["sync", "macros", "io-util", "rt", "time"] }
+futures = "0.3"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
 
 # Tor protocol implementation
-tor-rtcompat = { workspace = true }
-tor-proto = { workspace = true }
-tor-protover = { workspace = true }
-tor-units = { workspace = true }
-tor-netdoc = { workspace = true }
-tor-linkspec = { workspace = true }
-tor-llcrypto = { workspace = true }
-tor-cell = { workspace = true }
-tor-error = { workspace = true }
-tor-async-utils = { workspace = true }
-tor-memquota = { workspace = true }
-wasm-bindgen-futures = { workspace = true }
+tor-rtcompat = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
+tor-proto = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
+tor-protover = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-units = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-netdoc = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
+tor-linkspec = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-llcrypto = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-cell = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-error = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-async-utils = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-memquota = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+wasm-bindgen-futures = "0.4"
 
 # Cryptography
-rsa = { workspace = true }
-x25519-dalek = { workspace = true }
-ed25519-dalek = { workspace = true }
-chacha20poly1305 = { workspace = true }
-sha1 = { workspace = true }
-sha3 = { workspace = true }
-hex = { workspace = true }
-base64 = { workspace = true }
+rsa = "0.9"
+x25519-dalek = "2.0"
+ed25519-dalek = "2.0"
+chacha20poly1305 = "0.10"
+sha1 = "0.10"
+sha3 = "0.10"
+hex = "0.4"
+base64 = "0.22"
 
 # Networking
-url = { workspace = true }
-http = { workspace = true }
+url = "2.5"
+http = "1.1"
 
 # Public Suffix List for eTLD+1 extraction
 public-suffix = "0.1"
 
 # Serialization
-serde = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Compression
@@ -55,17 +55,70 @@ flate2 = "1.0"
 brotli = "7.0"
 uuid = { version = "1.0", features = ["v4", "js"] }
 rand = { version = "0.8", features = ["std", "std_rng"] }
-web-sys = { workspace = true }
-wasm-bindgen = { workspace = true }
-js-sys = { workspace = true }
+web-sys = { version = "0.3.69", features = [
+    "console",
+    "WebSocket",
+    "MessageEvent",
+    "ErrorEvent",
+    "CloseEvent",
+    "BinaryType",
+    "ReadableStream",
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlInputElement",
+    "HtmlButtonElement",
+    "HtmlTextAreaElement",
+    "HtmlDivElement",
+    "Text",
+    "Node",
+    "NodeList",
+    "DocumentFragment",
+    "Event",
+    "EventTarget",
+    "MouseEvent",
+    "InputEvent",
+    "KeyboardEvent",
+    "Blob",
+    "FileReader",
+    "Response",
+    "Request",
+    "Headers",
+    "RequestInit",
+    # WebRTC features for Snowflake
+    "RtcPeerConnection",
+    "RtcPeerConnectionIceEvent",
+    "RtcIceCandidate",
+    "RtcIceCandidateInit",
+    "RtcSessionDescription",
+    "RtcSessionDescriptionInit",
+    "RtcSdpType",
+    "RtcConfiguration",
+    "RtcIceServer",
+    "RtcDataChannel",
+    "RtcDataChannelEvent",
+    "RtcDataChannelInit",
+    "RtcDataChannelState",
+    "RtcIceConnectionState",
+    "RtcIceGatheringState",
+    "RtcSignalingState",
+    "RtcDataChannelType",
+    # HTTP fetch features
+    "RequestMode",
+    # Performance API for timing
+    "Performance"
+] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
 httparse = "1.10.1"
-tor-checkable = { workspace = true }
+tor-checkable = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
 
 # KCP reliable transport
-kcp = { workspace = true }
+kcp = "0.6"
 
 # WASM utilities
-gloo-timers = { workspace = true }
+gloo-timers = { version = "0.3", features = ["futures"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # WASM TLS (SubtleCrypto-based)
@@ -74,14 +127,14 @@ async-trait = "0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Native TLS (non-WASM only) - ring doesn't compile to WASM
-rustls = { workspace = true }
-futures-rustls = { workspace = true }
-webpki-roots = { workspace = true }
-rustls-pki-types = { workspace = true }
-tokio-rustls = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+futures-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+webpki-roots = "0.26"
+rustls-pki-types = "1.8"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 
 # Native WebSocket (non-WASM only)
-tokio-tungstenite = { workspace = true }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 # Tokio compatibility utilities (includes CancellationToken)
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -94,7 +147,7 @@ integration-tests = []
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
-wasm-bindgen-test = { workspace = true }
+wasm-bindgen-test = "0.3"
 
 # Integration benchmark (manual, requires network)
 [[bench]]

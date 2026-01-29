@@ -76,6 +76,10 @@ members = [
 
     "crates/arti-rpc-client-core",
 
+    "crates/subtle-tls",
+    "crates/webtor",
+    "crates/webtor-wasm",
+
     "maint/fixup-features",
     "maint/keygen-openssh-test",
 

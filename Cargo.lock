@@ -9,6 +9,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aead"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
+dependencies = [
+ "crypto-common",
+ "generic-array",
+]
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -39,6 +49,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "alloc-no-stdlib"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
+
+[[package]]
+name = "alloc-stdlib"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94fb8275041c72129eb51b7d0322c29b8387a0386127718b096429201a5d6ece"
+dependencies = [
+ "alloc-no-stdlib",
 ]
 
 [[package]]
@@ -212,7 +237,7 @@ dependencies = [
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "futures-copy",
  "hickory-proto",
@@ -235,7 +260,7 @@ dependencies = [
  "regex",
  "rlimit",
  "rustls",
- "safelog",
+ "safelog 0.7.1",
  "secmem-proc",
  "serde",
  "serde_json",
@@ -246,26 +271,26 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 0.9.11+spec-1.1.0",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-cell",
- "tor-config",
- "tor-config-path",
- "tor-error",
- "tor-general-addr",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-cell 0.38.0",
+ "tor-config 0.38.0",
+ "tor-config-path 0.38.0",
+ "tor-error 0.38.0",
+ "tor-general-addr 0.38.0",
  "tor-hsclient",
- "tor-hscrypto",
+ "tor-hscrypto 0.38.0",
  "tor-hsrproxy",
  "tor-hsservice",
- "tor-key-forge",
- "tor-keymgr",
- "tor-log-ratelim",
- "tor-memquota",
- "tor-proto",
+ "tor-key-forge 0.38.0",
+ "tor-keymgr 0.38.0",
+ "tor-log-ratelim 0.38.0",
+ "tor-memquota 0.38.0",
+ "tor-proto 0.38.0",
  "tor-rpc-connect",
  "tor-rpcbase",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tor-socksproto",
  "tracing",
  "tracing-appender",
@@ -287,15 +312,15 @@ dependencies = [
  "arti-client",
  "clap",
  "float-ord",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "rand 0.9.2",
  "serde",
  "serde_json",
  "tokio",
  "tokio-socks",
- "tor-config",
- "tor-rtcompat",
+ "tor-config 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-subscriber",
 ]
@@ -312,7 +337,7 @@ dependencies = [
  "derive_more",
  "dyn-clone",
  "educe",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "hostname-validator",
  "humantime",
@@ -321,7 +346,7 @@ dependencies = [
  "once_cell",
  "postage",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_json",
  "strum",
@@ -330,33 +355,33 @@ dependencies = [
  "time",
  "tokio",
  "toml 0.9.11+spec-1.1.0",
- "tor-async-utils",
- "tor-basic-utils",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
  "tor-chanmgr",
  "tor-circmgr",
- "tor-config",
- "tor-config-path",
+ "tor-config 0.38.0",
+ "tor-config-path 0.38.0",
  "tor-dircommon",
  "tor-dirmgr",
- "tor-error",
+ "tor-error 0.38.0",
  "tor-geoip",
  "tor-guardmgr",
  "tor-hsclient",
- "tor-hscrypto",
+ "tor-hscrypto 0.38.0",
  "tor-hsservice",
- "tor-keymgr",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-memquota",
+ "tor-keymgr 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-protover",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-protover 0.38.0",
  "tor-ptmgr",
  "tor-relay-selection",
  "tor-rpcbase",
- "tor-rtcompat",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
@@ -377,35 +402,35 @@ dependencies = [
  "derive_builder_fork_arti",
  "derive_more",
  "directories",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "libc",
  "rand 0.9.2",
  "rustls",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "strum",
  "thiserror 2.0.17",
  "tokio",
  "tor-chanmgr",
  "tor-circmgr",
- "tor-config",
- "tor-config-path",
+ "tor-config 0.38.0",
+ "tor-config-path 0.38.0",
  "tor-dircommon",
  "tor-dirmgr",
- "tor-error",
- "tor-general-addr",
+ "tor-error 0.38.0",
+ "tor-general-addr 0.38.0",
  "tor-guardmgr",
- "tor-keymgr",
- "tor-llcrypto",
- "tor-log-ratelim",
- "tor-memquota",
+ "tor-keymgr 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-log-ratelim 0.38.0",
+ "tor-memquota 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-relay-crypto",
- "tor-rtcompat",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-relay-crypto 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-subscriber",
  "void",
@@ -415,11 +440,11 @@ dependencies = [
 name = "arti-rpc-client-core"
 version = "0.38.0"
 dependencies = [
- "caret",
+ "caret 0.8.1",
  "cfg-if",
  "derive_more",
  "educe",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "paste",
  "percent-encoding",
  "rand 0.9.2",
@@ -428,9 +453,9 @@ dependencies = [
  "serde_json",
  "socketpair",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-config-path",
- "tor-error",
+ "tor-basic-utils 0.38.0",
+ "tor-config-path 0.38.0",
+ "tor-error 0.38.0",
  "tor-rpc-connect",
  "tor-socksproto",
  "void",
@@ -450,24 +475,24 @@ dependencies = [
  "erased-serde",
  "futures",
  "futures-await-test",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "pin-project",
  "rand 0.9.2",
  "serde",
  "serde_json",
- "slotmap-careful",
+ "slotmap-careful 0.5.1",
  "thiserror 2.0.17",
  "tiny-keccak",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
- "tor-error",
- "tor-llcrypto",
- "tor-proto",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-error 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-proto 0.38.0",
  "tor-rpc-connect",
  "tor-rpcbase",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tracing",
  "typetag",
  "weak-table",
@@ -487,11 +512,11 @@ dependencies = [
  "pin-project",
  "rand 0.9.2",
  "tokio",
- "tor-basic-utils",
- "tor-config",
+ "tor-basic-utils 0.38.0",
+ "tor-config 0.38.0",
  "tor-dirmgr",
- "tor-netdoc",
- "tor-rtcompat",
+ "tor-netdoc 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-subscriber",
 ]
@@ -508,9 +533,9 @@ dependencies = [
  "test-temp-dir",
  "thiserror 2.0.17",
  "tokio",
- "tor-error",
- "tor-proto",
- "tor-rtcompat",
+ "tor-error 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
  "ureq",
 ]
 
@@ -522,17 +547,45 @@ checksum = "d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16"
 
 [[package]]
 name = "asn1-rs"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5493c3bedbacf7fd7382c6346bbd66687d12bbaad3a89a2d2c303ee6cf20b048"
+dependencies = [
+ "asn1-rs-derive 0.5.1",
+ "asn1-rs-impl",
+ "displaydoc",
+ "nom",
+ "num-traits",
+ "rusticata-macros",
+ "thiserror 1.0.69",
+ "time",
+]
+
+[[package]]
+name = "asn1-rs"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56624a96882bb8c26d61312ae18cb45868e5a9992ea73c58e45c3101e56a1e60"
 dependencies = [
- "asn1-rs-derive",
+ "asn1-rs-derive 0.6.0",
  "asn1-rs-impl",
  "displaydoc",
  "nom",
  "num-traits",
  "rusticata-macros",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "asn1-rs-derive"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "965c2d33e53cb6b267e148a4cb0760bc01f4904c1cd4bb4002a085bb016d1490"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+ "synstructure",
 ]
 
 [[package]]
@@ -944,12 +997,12 @@ dependencies = [
  "futures",
  "hyper",
  "hyper-util",
- "safelog",
+ "safelog 0.7.1",
  "tokio",
  "tokio-util",
- "tor-cell",
+ "tor-cell 0.38.0",
  "tor-hsservice",
- "tor-proto",
+ "tor-proto 0.38.0",
  "tower",
  "tracing-subscriber",
 ]
@@ -1085,6 +1138,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "brotli"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc97b8f16f944bba54f0433f07e30be199b6dc2bd25937444bbad560bcea29bd"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+ "brotli-decompressor",
+]
+
+[[package]]
+name = "brotli-decompressor"
+version = "4.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a334ef7c9e23abf0ce748e8cd309037da93e606ad52eb372e4ce327a0dcfbdfd"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1130,6 +1204,11 @@ name = "caret"
 version = "0.8.1"
 
 [[package]]
+name = "caret"
+version = "0.8.1"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1164,6 +1243,30 @@ name = "cfg_aliases"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
+
+[[package]]
+name = "chacha20"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3613f74bd2eac03dad61bd53dbe620703d4371614fe0bc3b9f04dd36fe4e818"
+dependencies = [
+ "cfg-if",
+ "cipher",
+ "cpufeatures",
+]
+
+[[package]]
+name = "chacha20poly1305"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
+dependencies = [
+ "aead",
+ "chacha20",
+ "cipher",
+ "poly1305",
+ "zeroize",
+]
 
 [[package]]
 name = "chrono"
@@ -1319,9 +1422,9 @@ dependencies = [
  "arti-client",
  "clap",
  "tokio",
- "tor-error",
- "tor-proto",
- "tor-rtcompat",
+ "tor-error 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1364,6 +1467,16 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1589,6 +1702,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array",
+ "rand_core 0.6.4",
  "typenum",
 ]
 
@@ -1730,11 +1844,25 @@ dependencies = [
 
 [[package]]
 name = "der-parser"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cd0a5c643689626bec213c4d8bd4d96acc8ffdb4ad4bb6bc16abf27d5f4b553"
+dependencies = [
+ "asn1-rs 0.6.2",
+ "displaydoc",
+ "nom",
+ "num-bigint",
+ "num-traits",
+ "rusticata-macros",
+]
+
+[[package]]
+name = "der-parser"
 version = "10.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07da5016415d5a3c4dd39b11ed26f915f52fc4e0dc197d87908bc916e51bc1a6"
 dependencies = [
- "asn1-rs",
+ "asn1-rs 0.7.1",
  "cookie-factory",
  "displaydoc",
  "nom",
@@ -1960,7 +2088,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tokio-native-tls",
- "tor-rtcompat",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2434,6 +2562,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-mistrust"
+version = "0.13.1"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive_builder_fork_arti",
+ "dirs",
+ "libc",
+ "pwd-grp",
+ "serde",
+ "thiserror 2.0.17",
+ "walkdir",
+]
+
+[[package]]
 name = "fslock"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2523,9 +2665,9 @@ dependencies = [
  "libc",
  "pin-project",
  "tokio",
- "tor-error",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-error 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "windows-sys 0.61.2",
 ]
 
@@ -2680,6 +2822,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9985c9503b412198aa4197559e9a318524ebc4519c229bfa05a535828c950b9d"
 
 [[package]]
+name = "gloo-console"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a17868f56b4a24f677b17c8cb69958385102fa879418052d60b50bc1727e261"
+dependencies = [
+ "gloo-utils",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "gloo-timers"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2689,6 +2844,19 @@ dependencies = [
  "futures-core",
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "gloo-utils"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5555354113b18c547c1d3a98fbf7fb32a9ff4f6fa112ce823a21641a0ba3aa"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -2963,15 +3131,15 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "safelog",
+ "safelog 0.7.1",
  "tokio",
  "tokio-native-tls",
  "tokio-util",
- "tor-cell",
+ "tor-cell 0.38.0",
  "tor-hsservice",
- "tor-proto",
+ "tor-proto 0.38.0",
  "tracing-subscriber",
- "webpki-roots",
+ "webpki-roots 1.0.5",
 ]
 
 [[package]]
@@ -3322,6 +3490,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kcp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9be8f8058681ab8b7e4959a1ee88a4446f43b7c787f174d9d1b32ba493737a59"
+dependencies = [
+ "bytes",
+ "log",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3339,9 +3518,9 @@ dependencies = [
  "rand 0.9.2",
  "rand_core 0.9.5",
  "ssh-key",
- "tor-basic-utils",
- "tor-keymgr",
- "tor-llcrypto",
+ "tor-basic-utils 0.38.0",
+ "tor-keymgr 0.38.0",
+ "tor-llcrypto 0.38.0",
 ]
 
 [[package]]
@@ -3598,6 +3777,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "minicov"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4869b6a491569605d66d3952bcdf03df789e5b536e5f0cf7758a7f08a55ae24d"
+dependencies = [
+ "cc",
+ "walkdir",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3851,10 +4040,10 @@ dependencies = [
  "time",
  "tokio",
  "tor-chanmgr",
- "tor-error",
+ "tor-error 0.38.0",
  "tor-guardmgr",
- "tor-proto",
- "tor-rtcompat",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing-subscriber",
 ]
 
@@ -3893,6 +4082,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oid-registry"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8d8034d9489cdaf79228eb9f6a3b8d7bb32ba00d6645ebd48eef4077ceb5bd9"
+dependencies = [
+ "asn1-rs 0.6.2",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3911,6 +4109,14 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 [[package]]
 name = "oneshot-fused-workaround"
 version = "0.5.1"
+dependencies = [
+ "futures",
+]
+
+[[package]]
+name = "oneshot-fused-workaround"
+version = "0.5.1"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
 dependencies = [
  "futures",
 ]
@@ -4387,6 +4593,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly1305"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
+dependencies = [
+ "cpufeatures",
+ "opaque-debug",
+ "universal-hash",
+]
+
+[[package]]
 name = "polyval"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4588,12 +4805,18 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tor-chanmgr",
- "tor-linkspec",
+ "tor-linkspec 0.38.0",
  "tor-ptmgr",
- "tor-rtcompat",
+ "tor-rtcompat 0.38.0",
  "tor-socksproto",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "public-suffix"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51315bca45305dd8aa64b831b33e71abac528ca8058c0651346a39b8d3009498"
 
 [[package]]
 name = "pwd-grp"
@@ -4946,6 +5169,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "retry-error"
+version = "0.10.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "humantime",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5185,6 +5416,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "safelog"
+version = "0.7.1"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive_more",
+ "educe",
+ "either",
+ "fluid-let",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5360,6 +5603,17 @@ checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
 dependencies = [
  "ordered-float",
  "serde",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5688,6 +5942,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "slotmap-careful"
+version = "0.5.1"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "paste",
+ "serde",
+ "slotmap",
+ "thiserror 2.0.17",
+ "void",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5899,6 +6165,29 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "subtle-tls"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "futures",
+ "getrandom 0.2.17",
+ "hmac",
+ "js-sys",
+ "rand 0.8.5",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "x25519-dalek",
+ "x509-parser",
+]
 
 [[package]]
 name = "syn"
@@ -6215,6 +6504,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-rustls"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
+dependencies = [
+ "rustls",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-socks"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6236,6 +6535,33 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "tokio-test"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
+dependencies = [
+ "futures-core",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -6408,14 +6734,29 @@ dependencies = [
  "educe",
  "futures",
  "futures-await-test",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "pin-project",
  "postage",
  "thiserror 2.0.17",
  "tokio",
- "tor-error",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-error 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
+ "void",
+]
+
+[[package]]
+name = "tor-async-utils"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive-deftly",
+ "educe",
+ "futures",
+ "oneshot-fused-workaround 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "pin-project",
+ "postage",
+ "thiserror 2.0.17",
  "void",
 ]
 
@@ -6441,6 +6782,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-basic-utils"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive_more",
+ "hex",
+ "itertools 0.14.0",
+ "libc",
+ "paste",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "serde",
+ "slab",
+ "smallvec",
+ "thiserror 2.0.17",
+ "weak-table",
+]
+
+[[package]]
 name = "tor-bytes"
 version = "0.38.0"
 dependencies = [
@@ -6450,10 +6810,27 @@ dependencies = [
  "educe",
  "getrandom 0.3.4",
  "hex-literal",
- "safelog",
+ "safelog 0.7.1",
  "thiserror 2.0.17",
- "tor-error",
- "tor-llcrypto",
+ "tor-error 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-bytes"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "bytes",
+ "derive-deftly",
+ "digest",
+ "educe",
+ "getrandom 0.3.4",
+ "safelog 0.7.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "thiserror 2.0.17",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "zeroize",
 ]
 
@@ -6464,7 +6841,7 @@ dependencies = [
  "amplify",
  "bitflags 2.10.0",
  "bytes",
- "caret",
+ "caret 0.8.1",
  "derive-deftly",
  "derive_more",
  "educe",
@@ -6475,16 +6852,45 @@ dependencies = [
  "rand 0.9.2",
  "smallvec",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cert",
- "tor-error",
- "tor-hscrypto",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-memquota",
- "tor-protover",
- "tor-units",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cert 0.38.0",
+ "tor-error 0.38.0",
+ "tor-hscrypto 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
+ "tor-protover 0.38.0",
+ "tor-units 0.38.0",
+ "void",
+]
+
+[[package]]
+name = "tor-cell"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "amplify",
+ "bitflags 2.10.0",
+ "bytes",
+ "caret 0.8.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "derive-deftly",
+ "derive_more",
+ "educe",
+ "itertools 0.14.0",
+ "paste",
+ "rand 0.9.2",
+ "smallvec",
+ "thiserror 2.0.17",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cert 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-linkspec 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-memquota 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-protover 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-units 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "void",
 ]
 
@@ -6493,7 +6899,7 @@ name = "tor-cert"
 version = "0.38.0"
 dependencies = [
  "base64ct",
- "caret",
+ "caret 0.8.1",
  "derive_builder_fork_arti",
  "derive_more",
  "digest",
@@ -6505,12 +6911,28 @@ dependencies = [
  "rand 0.9.2",
  "rsa",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
- "tor-checkable",
- "tor-error",
- "tor-llcrypto",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-error 0.38.0",
+ "tor-llcrypto 0.38.0",
  "x509-cert",
+]
+
+[[package]]
+name = "tor-cert"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "caret 0.8.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "derive_builder_fork_arti",
+ "derive_more",
+ "digest",
+ "thiserror 2.0.17",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-checkable 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -6518,7 +6940,7 @@ name = "tor-chanmgr"
 version = "0.38.0"
 dependencies = [
  "async-trait",
- "caret",
+ "caret 0.8.1",
  "cfg-if",
  "derive_builder_fork_arti",
  "derive_more",
@@ -6528,27 +6950,27 @@ dependencies = [
  "futures-await-test",
  "hex-literal",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "postage",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "thiserror 2.0.17",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-cell",
- "tor-config",
- "tor-error",
- "tor-keymgr",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-memquota",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-cell 0.38.0",
+ "tor-config 0.38.0",
+ "tor-error 0.38.0",
+ "tor-keymgr 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
  "tor-netdir",
- "tor-proto",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tor-socksproto",
- "tor-units",
+ "tor-units 0.38.0",
  "tracing",
  "void",
 ]
@@ -6560,7 +6982,18 @@ dependencies = [
  "humantime",
  "signature",
  "thiserror 2.0.17",
- "tor-llcrypto",
+ "tor-llcrypto 0.38.0",
+]
+
+[[package]]
+name = "tor-checkable"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "humantime",
+ "signature",
+ "thiserror 2.0.17",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -6582,34 +7015,34 @@ dependencies = [
  "humantime-serde",
  "itertools 0.14.0",
  "once_cell",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "pin-project",
  "rand 0.9.2",
- "retry-error",
- "safelog",
+ "retry-error 0.10.0",
+ "safelog 0.7.1",
  "serde",
  "thiserror 2.0.17",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-cell",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-cell 0.38.0",
  "tor-chanmgr",
- "tor-config",
+ "tor-config 0.38.0",
  "tor-dircommon",
- "tor-error",
+ "tor-error 0.38.0",
  "tor-geoip",
  "tor-guardmgr",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-memquota",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-protover",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-protover 0.38.0",
  "tor-relay-selection",
- "tor-rtcompat",
- "tor-rtmock",
- "tor-units",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
+ "tor-units 0.38.0",
  "tracing",
  "visibility",
  "void",
@@ -6628,7 +7061,7 @@ dependencies = [
  "educe",
  "either",
  "figment",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "humantime-serde",
  "itertools 0.14.0",
@@ -6645,11 +7078,44 @@ dependencies = [
  "test-temp-dir",
  "thiserror 2.0.17",
  "toml 0.9.11+spec-1.1.0",
- "tor-basic-utils",
- "tor-error",
- "tor-rtcompat",
+ "tor-basic-utils 0.38.0",
+ "tor-error 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "tracing-test",
+ "void",
+]
+
+[[package]]
+name = "tor-config"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "amplify",
+ "cfg-if",
+ "derive-deftly",
+ "derive_builder_fork_arti",
+ "educe",
+ "either",
+ "figment",
+ "fs-mistrust 0.13.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "futures",
+ "humantime-serde",
+ "itertools 0.14.0",
+ "notify",
+ "paste",
+ "postage",
+ "regex",
+ "serde",
+ "serde-value",
+ "serde_ignored",
+ "strum",
+ "thiserror 2.0.17",
+ "toml 0.9.11+spec-1.1.0",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tracing",
  "void",
 ]
 
@@ -6667,9 +7133,22 @@ dependencies = [
  "shellexpand",
  "thiserror 2.0.17",
  "toml 0.9.11+spec-1.1.0",
- "tor-config",
- "tor-error",
- "tor-general-addr",
+ "tor-config 0.38.0",
+ "tor-error 0.38.0",
+ "tor-general-addr 0.38.0",
+]
+
+[[package]]
+name = "tor-config-path"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "directories",
+ "serde",
+ "shellexpand",
+ "thiserror 2.0.17",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-general-addr 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -6679,7 +7158,7 @@ dependencies = [
  "digest",
  "hex",
  "thiserror 2.0.17",
- "tor-llcrypto",
+ "tor-llcrypto 0.38.0",
 ]
 
 [[package]]
@@ -6699,14 +7178,14 @@ dependencies = [
  "memchr",
  "thiserror 2.0.17",
  "tor-circmgr",
- "tor-error",
- "tor-hscrypto",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-netdoc",
- "tor-proto",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-error 0.38.0",
+ "tor-hscrypto 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-netdoc 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tracing",
 ]
 
@@ -6721,12 +7200,12 @@ dependencies = [
  "humantime-serde",
  "serde",
  "toml 0.9.11+spec-1.1.0",
- "tor-basic-utils",
- "tor-checkable",
- "tor-config",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-netdoc",
+ "tor-basic-utils 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-config 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-netdoc 0.38.0",
  "tracing",
 ]
 
@@ -6744,7 +7223,7 @@ dependencies = [
  "event-listener 5.4.1",
  "filetime",
  "float_eq",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "fslock",
  "futures",
  "hex",
@@ -6753,12 +7232,12 @@ dependencies = [
  "humantime-serde",
  "itertools 0.14.0",
  "memmap2",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "paste",
  "postage",
  "rand 0.9.2",
  "rusqlite",
- "safelog",
+ "safelog 0.7.1",
  "scopeguard",
  "serde",
  "serde_json",
@@ -6768,26 +7247,26 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "time",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-checkable",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-checkable 0.38.0",
  "tor-circmgr",
- "tor-config",
+ "tor-config 0.38.0",
  "tor-consdiff",
  "tor-dirclient",
  "tor-dircommon",
- "tor-error",
+ "tor-error 0.38.0",
  "tor-geoip",
  "tor-guardmgr",
- "tor-linkspec",
- "tor-llcrypto",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-protover",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-protover 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tracing",
  "tracing-test",
 ]
@@ -6810,7 +7289,7 @@ dependencies = [
  "r2d2",
  "r2d2_sqlite",
  "rand 0.9.2",
- "retry-error",
+ "retry-error 0.10.0",
  "rusqlite",
  "saturating-time",
  "sha2",
@@ -6820,13 +7299,13 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "tor-basic-utils",
+ "tor-basic-utils 0.38.0",
  "tor-dirclient",
  "tor-dircommon",
- "tor-error",
- "tor-llcrypto",
- "tor-netdoc",
- "tor-rtcompat",
+ "tor-error 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-netdoc 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "weak-table",
  "zstd",
@@ -6841,12 +7320,28 @@ dependencies = [
  "futures",
  "http",
  "paste",
- "retry-error",
+ "retry-error 0.10.0",
  "static_assertions",
  "strum",
  "thiserror 2.0.17",
  "tracing",
  "tracing-test",
+ "void",
+]
+
+[[package]]
+name = "tor-error"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive_more",
+ "futures",
+ "paste",
+ "retry-error 0.10.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "static_assertions",
+ "strum",
+ "thiserror 2.0.17",
+ "tracing",
  "void",
 ]
 
@@ -6874,6 +7369,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-general-addr"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive_more",
+ "thiserror 2.0.17",
+ "void",
+]
+
+[[package]]
 name = "tor-geoip"
 version = "0.38.0"
 dependencies = [
@@ -6894,39 +7399,39 @@ dependencies = [
  "dyn-clone",
  "educe",
  "float_eq",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "humantime",
  "humantime-serde",
  "itertools 0.14.0",
  "num_enum",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "pin-project",
  "postage",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_json",
  "strum",
  "tempfile",
  "thiserror 2.0.17",
  "toml 0.9.11+spec-1.1.0",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-config",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-config 0.38.0",
  "tor-dircommon",
- "tor-error",
- "tor-linkspec",
- "tor-llcrypto",
+ "tor-error 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-protover",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-protover 0.38.0",
  "tor-relay-selection",
- "tor-rtcompat",
- "tor-rtmock",
- "tor-units",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
+ "tor-units 0.38.0",
  "tracing",
 ]
 
@@ -6942,38 +7447,38 @@ dependencies = [
  "futures",
  "humantime",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "postage",
  "rand 0.9.2",
- "retry-error",
- "safelog",
- "slotmap-careful",
+ "retry-error 0.10.0",
+ "safelog 0.7.1",
+ "slotmap-careful 0.5.1",
  "strum",
  "thiserror 2.0.17",
  "tokio",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cell",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cell 0.38.0",
  "tor-chanmgr",
- "tor-checkable",
+ "tor-checkable 0.38.0",
  "tor-circmgr",
- "tor-config",
+ "tor-config 0.38.0",
  "tor-dirclient",
- "tor-error",
+ "tor-error 0.38.0",
  "tor-guardmgr",
- "tor-hscrypto",
- "tor-keymgr",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-memquota",
+ "tor-hscrypto 0.38.0",
+ "tor-keymgr 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-protover",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-protover 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tracing",
  "tracing-test",
 ]
@@ -6996,20 +7501,48 @@ dependencies = [
  "itertools 0.14.0",
  "paste",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "signature",
  "subtle",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
- "tor-error",
- "tor-key-forge",
- "tor-llcrypto",
- "tor-memquota",
- "tor-units",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-error 0.38.0",
+ "tor-key-forge 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
+ "tor-units 0.38.0",
  "void",
  "zeroize",
+]
+
+[[package]]
+name = "tor-hscrypto"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "data-encoding",
+ "derive-deftly",
+ "derive_more",
+ "digest",
+ "hex",
+ "humantime",
+ "itertools 0.14.0",
+ "paste",
+ "rand 0.9.2",
+ "safelog 0.7.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "serde",
+ "signature",
+ "subtle",
+ "thiserror 2.0.17",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-key-forge 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-units 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "void",
 ]
 
 [[package]]
@@ -7022,23 +7555,23 @@ dependencies = [
  "futures-copy",
  "itertools 0.14.0",
  "metrics",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "rangemap",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_json",
  "serde_with",
  "strum",
  "thiserror 2.0.17",
  "toml 0.9.11+spec-1.1.0",
- "tor-async-utils",
- "tor-cell",
- "tor-config",
- "tor-error",
+ "tor-async-utils 0.38.0",
+ "tor-cell 0.38.0",
+ "tor-config 0.38.0",
+ "tor-error 0.38.0",
  "tor-hsservice",
- "tor-log-ratelim",
- "tor-proto",
- "tor-rtcompat",
+ "tor-log-ratelim 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "void",
 ]
@@ -7058,7 +7591,7 @@ dependencies = [
  "digest",
  "educe",
  "equix",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "growable-bloom-filter",
  "hex",
@@ -7069,45 +7602,45 @@ dependencies = [
  "metrics",
  "num-traits",
  "once_cell",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "postage",
  "rand 0.9.2",
  "rand_core 0.9.5",
- "retry-error",
+ "retry-error 0.10.0",
  "rmp-serde",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_json",
  "serde_with",
- "slotmap-careful",
+ "slotmap-careful 0.5.1",
  "strum",
  "tempfile",
  "test-temp-dir",
  "thiserror 2.0.17",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cell",
- "tor-checkable",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cell 0.38.0",
+ "tor-checkable 0.38.0",
  "tor-circmgr",
- "tor-config",
- "tor-config-path",
+ "tor-config 0.38.0",
+ "tor-config-path 0.38.0",
  "tor-dirclient",
- "tor-error",
- "tor-hscrypto",
- "tor-key-forge",
- "tor-keymgr",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-log-ratelim",
+ "tor-error 0.38.0",
+ "tor-hscrypto 0.38.0",
+ "tor-key-forge 0.38.0",
+ "tor-keymgr 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-log-ratelim 0.38.0",
  "tor-netdir",
- "tor-netdoc",
- "tor-persist",
- "tor-proto",
- "tor-protover",
+ "tor-netdoc 0.38.0",
+ "tor-persist 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-protover 0.38.0",
  "tor-relay-selection",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tracing",
  "tracing-test",
  "void",
@@ -7127,12 +7660,33 @@ dependencies = [
  "signature",
  "ssh-key",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cert",
- "tor-checkable",
- "tor-error",
- "tor-llcrypto",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cert 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-error 0.38.0",
+ "tor-llcrypto 0.38.0",
+]
+
+[[package]]
+name = "tor-key-forge"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive-deftly",
+ "derive_more",
+ "downcast-rs",
+ "paste",
+ "rand 0.9.2",
+ "rsa",
+ "signature",
+ "ssh-key",
+ "thiserror 2.0.17",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cert 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-checkable 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -7148,31 +7702,70 @@ dependencies = [
  "derive_more",
  "downcast-rs",
  "dyn-clone",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "glob-match",
  "humantime",
  "inventory",
  "itertools 0.14.0",
  "paste",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_json",
  "signature",
  "ssh-key",
  "tempfile",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cert",
- "tor-checkable",
- "tor-config",
- "tor-config-path",
- "tor-error",
- "tor-hscrypto",
- "tor-key-forge",
- "tor-llcrypto",
- "tor-persist",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cert 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-config 0.38.0",
+ "tor-config-path 0.38.0",
+ "tor-error 0.38.0",
+ "tor-hscrypto 0.38.0",
+ "tor-key-forge 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-persist 0.38.0",
+ "tracing",
+ "visibility",
+ "walkdir",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-keymgr"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "amplify",
+ "arrayvec",
+ "cfg-if",
+ "derive-deftly",
+ "derive_builder_fork_arti",
+ "derive_more",
+ "downcast-rs",
+ "dyn-clone",
+ "fs-mistrust 0.13.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "glob-match",
+ "humantime",
+ "inventory",
+ "itertools 0.14.0",
+ "rand 0.9.2",
+ "safelog 0.7.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "serde",
+ "signature",
+ "ssh-key",
+ "thiserror 2.0.17",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-config 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-config-path 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-hscrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-key-forge 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-persist 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "tracing",
  "visibility",
  "walkdir",
@@ -7185,25 +7778,51 @@ version = "0.38.0"
 dependencies = [
  "base64ct",
  "by_address",
- "caret",
+ "caret 0.8.1",
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more",
  "hex",
  "hex-literal",
  "itertools 0.14.0",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_test",
  "serde_with",
  "strum",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
- "tor-config",
- "tor-llcrypto",
- "tor-memquota",
- "tor-protover",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-config 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-memquota 0.38.0",
+ "tor-protover 0.38.0",
+]
+
+[[package]]
+name = "tor-linkspec"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "base64ct",
+ "by_address",
+ "caret 0.8.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "derive-deftly",
+ "derive_builder_fork_arti",
+ "derive_more",
+ "hex",
+ "itertools 0.14.0",
+ "safelog 0.7.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "serde",
+ "serde_with",
+ "strum",
+ "thiserror 2.0.17",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-config 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-memquota 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-protover 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -7215,7 +7834,7 @@ dependencies = [
  "cipher",
  "ctr",
  "curve25519-dalek",
- "der-parser",
+ "der-parser 10.0.0",
  "derive-deftly",
  "derive_more",
  "digest",
@@ -7232,7 +7851,7 @@ dependencies = [
  "rand_jitter",
  "rdrand",
  "rsa",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_test",
  "sha1",
@@ -7241,10 +7860,49 @@ dependencies = [
  "signature",
  "subtle",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-error",
- "tor-memquota",
+ "tor-basic-utils 0.38.0",
+ "tor-error 0.38.0",
+ "tor-memquota 0.38.0",
  "typenum",
+ "visibility",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-llcrypto"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "aes",
+ "base64ct",
+ "ctr",
+ "curve25519-dalek",
+ "der-parser 10.0.0",
+ "derive-deftly",
+ "derive_more",
+ "digest",
+ "ed25519-dalek",
+ "educe",
+ "getrandom 0.3.4",
+ "hex",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "rand_core 0.6.4",
+ "rand_core 0.9.5",
+ "rand_jitter",
+ "rdrand",
+ "rsa",
+ "safelog 0.7.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "serde",
+ "sha1",
+ "sha2",
+ "sha3",
+ "signature",
+ "subtle",
+ "thiserror 2.0.17",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-memquota 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "visibility",
  "x25519-dalek",
  "zeroize",
@@ -7257,8 +7915,22 @@ dependencies = [
  "futures",
  "humantime",
  "thiserror 2.0.17",
- "tor-error",
- "tor-rtcompat",
+ "tor-error 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tracing",
+ "weak-table",
+]
+
+[[package]]
+name = "tor-log-ratelim"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "futures",
+ "humantime",
+ "thiserror 2.0.17",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "tracing",
  "weak-table",
 ]
@@ -7277,23 +7949,52 @@ dependencies = [
  "paste",
  "pin-project",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_json",
- "slotmap-careful",
+ "slotmap-careful 0.5.1",
  "static_assertions",
  "sysinfo",
  "thiserror 2.0.17",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-config",
- "tor-error",
- "tor-log-ratelim",
- "tor-rtcompat",
- "tor-rtmock",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-config 0.38.0",
+ "tor-error 0.38.0",
+ "tor-log-ratelim 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
  "tracing",
  "tracing-test",
  "visibility",
+ "void",
+]
+
+[[package]]
+name = "tor-memquota"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "cfg-if",
+ "derive-deftly",
+ "derive_more",
+ "dyn-clone",
+ "educe",
+ "futures",
+ "itertools 0.14.0",
+ "paste",
+ "pin-project",
+ "serde",
+ "slotmap-careful 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "static_assertions",
+ "sysinfo",
+ "thiserror 2.0.17",
+ "tor-async-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-config 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-log-ratelim 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tracing",
  "void",
 ]
 
@@ -7318,15 +8019,15 @@ dependencies = [
  "strum",
  "thiserror 2.0.17",
  "time",
- "tor-basic-utils",
- "tor-error",
+ "tor-basic-utils 0.38.0",
+ "tor-error 0.38.0",
  "tor-geoip",
- "tor-hscrypto",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-netdoc",
- "tor-protover",
- "tor-units",
+ "tor-hscrypto 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-netdoc 0.38.0",
+ "tor-protover 0.38.0",
+ "tor-units 0.38.0",
  "tracing",
  "typed-index-collections",
  "visibility",
@@ -7366,19 +8067,61 @@ dependencies = [
  "thiserror 2.0.17",
  "time",
  "tinystr",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cell",
- "tor-cert",
- "tor-checkable",
- "tor-error",
- "tor-hscrypto",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-protover",
- "tor-units",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cell 0.38.0",
+ "tor-cert 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-error 0.38.0",
+ "tor-hscrypto 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-protover 0.38.0",
+ "tor-units 0.38.0",
  "visibility",
  "visible",
+ "void",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-netdoc"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "amplify",
+ "base64ct",
+ "cipher",
+ "derive-deftly",
+ "derive_builder_fork_arti",
+ "derive_more",
+ "digest",
+ "educe",
+ "enumset",
+ "hex",
+ "humantime",
+ "itertools 0.14.0",
+ "memchr",
+ "paste",
+ "phf",
+ "saturating-time",
+ "serde",
+ "serde_with",
+ "signature",
+ "smallvec",
+ "strum",
+ "subtle",
+ "thiserror 2.0.17",
+ "time",
+ "tinystr",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cell 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cert 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-checkable 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-protover 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "void",
  "zeroize",
 ]
@@ -7392,13 +8135,13 @@ dependencies = [
  "derive-deftly",
  "derive_more",
  "filetime",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "fslock",
  "fslock-guard",
  "futures",
  "humantime",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "paste",
  "sanitize-filename",
  "serde",
@@ -7407,11 +8150,37 @@ dependencies = [
  "test-temp-dir",
  "thiserror 2.0.17",
  "time",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-error",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-error 0.38.0",
  "tracing",
  "tracing-test",
+ "void",
+]
+
+[[package]]
+name = "tor-persist"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive-deftly",
+ "derive_more",
+ "filetime",
+ "fs-mistrust 0.13.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "fslock",
+ "futures",
+ "itertools 0.14.0",
+ "oneshot-fused-workaround 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "paste",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "time",
+ "tor-async-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tracing",
  "void",
 ]
 
@@ -7426,7 +8195,7 @@ dependencies = [
  "asynchronous-codec",
  "bitvec",
  "bytes",
- "caret",
+ "caret 0.8.1",
  "cfg-if",
  "cipher",
  "coarsetime",
@@ -7450,15 +8219,15 @@ dependencies = [
  "js-sys",
  "maybenot",
  "nonany",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "pin-project",
  "polyval",
  "postage",
  "rand 0.9.2",
  "rand_core 0.9.5",
  "regex",
- "safelog",
- "slotmap-careful",
+ "safelog 0.7.1",
+ "slotmap-careful 0.5.1",
  "smallvec",
  "static_assertions",
  "statrs",
@@ -7467,26 +8236,90 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cell",
- "tor-cert",
- "tor-checkable",
- "tor-config",
- "tor-error",
- "tor-hscrypto",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-log-ratelim",
- "tor-memquota",
- "tor-protover",
- "tor-relay-crypto",
- "tor-rtcompat",
- "tor-rtmock",
- "tor-units",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+ "tor-cell 0.38.0",
+ "tor-cert 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-config 0.38.0",
+ "tor-error 0.38.0",
+ "tor-hscrypto 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-log-ratelim 0.38.0",
+ "tor-memquota 0.38.0",
+ "tor-protover 0.38.0",
+ "tor-relay-crypto 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tor-rtmock 0.38.0",
+ "tor-units 0.38.0",
  "tracing",
  "tracing-test",
+ "typenum",
+ "visibility",
+ "void",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-proto"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "amplify",
+ "async-trait",
+ "asynchronous-codec",
+ "bitvec",
+ "bytes",
+ "caret 0.8.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "cfg-if",
+ "cipher",
+ "coarsetime",
+ "criterion-cycles-per-byte",
+ "derive-deftly",
+ "derive_builder_fork_arti",
+ "derive_more",
+ "digest",
+ "educe",
+ "enum_dispatch",
+ "futures",
+ "futures-util",
+ "hkdf",
+ "hmac",
+ "itertools 0.14.0",
+ "js-sys",
+ "nonany",
+ "oneshot-fused-workaround 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "pin-project",
+ "postage",
+ "rand 0.9.2",
+ "rand_core 0.9.5",
+ "safelog 0.7.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "slotmap-careful 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "smallvec",
+ "static_assertions",
+ "subtle",
+ "sync_wrapper",
+ "thiserror 2.0.17",
+ "tor-async-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cell 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cert 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-checkable 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-config 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-linkspec 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-log-ratelim 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-memquota 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-protover 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-relay-crypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtmock 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-units 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tracing",
  "typenum",
  "visibility",
  "void",
@@ -7497,12 +8330,25 @@ dependencies = [
 name = "tor-protover"
 version = "0.38.0"
 dependencies = [
- "caret",
+ "caret 0.8.1",
  "paste",
  "serde_with",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-bytes",
+ "tor-basic-utils 0.38.0",
+ "tor-bytes 0.38.0",
+]
+
+[[package]]
+name = "tor-protover"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "caret 0.8.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "paste",
+ "serde_with",
+ "thiserror 2.0.17",
+ "tor-basic-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-bytes 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -7513,22 +8359,22 @@ dependencies = [
  "async-trait",
  "cfg-if",
  "derive_builder_fork_arti",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "futures",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "serde",
  "thiserror 2.0.17",
  "tokio",
- "tor-async-utils",
- "tor-basic-utils",
+ "tor-async-utils 0.38.0",
+ "tor-basic-utils 0.38.0",
  "tor-chanmgr",
- "tor-config",
- "tor-config-path",
- "tor-error",
- "tor-linkspec",
- "tor-proto",
- "tor-rtcompat",
+ "tor-config 0.38.0",
+ "tor-config-path 0.38.0",
+ "tor-error 0.38.0",
+ "tor-linkspec 0.38.0",
+ "tor-proto 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tor-socksproto",
  "tracing",
  "tracing-subscriber",
@@ -7542,13 +8388,30 @@ dependencies = [
  "derive-deftly",
  "derive_more",
  "humantime",
- "tor-cert",
- "tor-checkable",
- "tor-error",
- "tor-key-forge",
- "tor-keymgr",
- "tor-llcrypto",
- "tor-persist",
+ "tor-cert 0.38.0",
+ "tor-checkable 0.38.0",
+ "tor-error 0.38.0",
+ "tor-key-forge 0.38.0",
+ "tor-keymgr 0.38.0",
+ "tor-llcrypto 0.38.0",
+ "tor-persist 0.38.0",
+]
+
+[[package]]
+name = "tor-relay-crypto"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive-deftly",
+ "derive_more",
+ "humantime",
+ "tor-cert 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-checkable 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-key-forge 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-keymgr 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-persist 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -7557,11 +8420,11 @@ version = "0.38.0"
 dependencies = [
  "rand 0.9.2",
  "serde",
- "tor-basic-utils",
+ "tor-basic-utils 0.38.0",
  "tor-geoip",
- "tor-linkspec",
+ "tor-linkspec 0.38.0",
  "tor-netdir",
- "tor-netdoc",
+ "tor-netdoc 0.38.0",
 ]
 
 [[package]]
@@ -7573,11 +8436,11 @@ dependencies = [
  "cfg-if",
  "derive_builder_fork_arti",
  "derive_more",
- "fs-mistrust",
+ "fs-mistrust 0.13.1",
  "fslock-guard",
  "hex-literal",
  "rand 0.9.2",
- "safelog",
+ "safelog 0.7.1",
  "serde",
  "serde_with",
  "subtle",
@@ -7585,10 +8448,10 @@ dependencies = [
  "thiserror 2.0.17",
  "tiny-keccak",
  "toml 0.9.11+spec-1.1.0",
- "tor-basic-utils",
- "tor-config-path",
- "tor-general-addr",
- "tor-rtcompat",
+ "tor-basic-utils 0.38.0",
+ "tor-config-path 0.38.0",
+ "tor-general-addr 0.38.0",
+ "tor-rtcompat 0.38.0",
  "tracing",
  "zeroize",
 ]
@@ -7610,8 +8473,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.17",
- "tor-async-utils",
- "tor-error",
+ "tor-async-utils 0.38.0",
+ "tor-error 0.38.0",
  "typetag",
  "void",
 ]
@@ -7647,8 +8510,34 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
- "tor-error",
- "tor-general-addr",
+ "tor-error 0.38.0",
+ "tor-general-addr 0.38.0",
+ "tracing",
+ "void",
+ "web-time",
+]
+
+[[package]]
+name = "tor-rtcompat"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "async-trait",
+ "async_executors",
+ "asynchronous-codec",
+ "coarsetime",
+ "derive_more",
+ "dyn-clone",
+ "educe",
+ "futures",
+ "hex",
+ "libc",
+ "paste",
+ "pin-project",
+ "socket2",
+ "thiserror 2.0.17",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-general-addr 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "tracing",
  "void",
  "web-time",
@@ -7668,17 +8557,45 @@ dependencies = [
  "futures-await-test",
  "humantime",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.5.1",
  "pin-project",
  "priority-queue",
  "rand 0.9.2",
- "slotmap-careful",
+ "slotmap-careful 0.5.1",
  "strum",
  "thiserror 2.0.17",
- "tor-basic-utils",
- "tor-error",
- "tor-general-addr",
- "tor-rtcompat",
+ "tor-basic-utils 0.38.0",
+ "tor-error 0.38.0",
+ "tor-general-addr 0.38.0",
+ "tor-rtcompat 0.38.0",
+ "tracing",
+ "tracing-test",
+ "void",
+]
+
+[[package]]
+name = "tor-rtmock"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "amplify",
+ "assert_matches",
+ "async-trait",
+ "derive-deftly",
+ "derive_more",
+ "educe",
+ "futures",
+ "humantime",
+ "itertools 0.14.0",
+ "oneshot-fused-workaround 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "pin-project",
+ "priority-queue",
+ "slotmap-careful 0.5.1 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "strum",
+ "thiserror 2.0.17",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-general-addr 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
  "tracing",
  "tracing-test",
  "void",
@@ -7691,15 +8608,15 @@ dependencies = [
  "amplify",
  "anyhow",
  "arbitrary",
- "caret",
+ "caret 0.8.1",
  "derive-deftly",
  "educe",
  "hex-literal",
- "safelog",
+ "safelog 0.7.1",
  "subtle",
  "thiserror 2.0.17",
- "tor-bytes",
- "tor-error",
+ "tor-bytes 0.38.0",
+ "tor-error 0.38.0",
 ]
 
 [[package]]
@@ -7711,7 +8628,19 @@ dependencies = [
  "float-cmp",
  "serde",
  "thiserror 2.0.17",
- "tor-memquota",
+ "tor-memquota 0.38.0",
+]
+
+[[package]]
+name = "tor-units"
+version = "0.38.0"
+source = "git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd#c0761bdb30ebb667b86920e7192d9fee9f15ffdd"
+dependencies = [
+ "derive-deftly",
+ "derive_more",
+ "serde",
+ "thiserror 2.0.17",
+ "tor-memquota 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
 ]
 
 [[package]]
@@ -7886,6 +8815,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-wasm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4575c663a174420fa2d78f4108ff68f65bf2fbb7dd89f33749b6e826b3626e07"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7907,6 +8847,26 @@ dependencies = [
  "shlex",
  "snapbox",
  "toml_edit 0.23.10+spec-1.0.0",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.8.5",
+ "rustls",
+ "rustls-pki-types",
+ "sha1",
+ "thiserror 1.0.69",
+ "utf-8",
 ]
 
 [[package]]
@@ -8027,7 +8987,7 @@ dependencies = [
  "ureq-proto",
  "utf-8",
  "webpki-root-certs",
- "webpki-roots",
+ "webpki-roots 1.0.5",
 ]
 
 [[package]]
@@ -8254,6 +9214,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-bindgen-test"
+version = "0.3.56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25e90e66d265d3a1efc0e72a54809ab90b9c0c515915c67cdf658689d2c22c6c"
+dependencies = [
+ "async-trait",
+ "cast",
+ "js-sys",
+ "libm",
+ "minicov",
+ "nu-ansi-term",
+ "num-traits",
+ "oorandom",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test-macro",
+]
+
+[[package]]
+name = "wasm-bindgen-test-macro"
+version = "0.3.56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7150335716dce6028bead2b848e72f47b45e7b9422f64cccdc23bedca89affc1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "weak-table"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8290,11 +9282,105 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.5",
+]
+
+[[package]]
+name = "webpki-roots"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12bed680863276c63889429bfd6cab3b99943659923822de1c8a39c49e4d722c"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "webtor"
+version = "0.5.7"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "brotli",
+ "chacha20poly1305",
+ "ed25519-dalek",
+ "flate2",
+ "futures",
+ "futures-rustls",
+ "gloo-timers",
+ "hex",
+ "http",
+ "httparse",
+ "js-sys",
+ "kcp",
+ "public-suffix",
+ "rand 0.8.5",
+ "rsa",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sha3",
+ "subtle-tls",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-rustls",
+ "tokio-test",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tor-async-utils 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-cell 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-checkable 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-error 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-linkspec 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-llcrypto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-memquota 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-netdoc 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-proto 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-protover 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-rtcompat 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tor-units 0.38.0 (git+https://github.com/voltrevo/arti?rev=c0761bdb30ebb667b86920e7192d9fee9f15ffdd)",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "webpki-roots 0.26.11",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "webtor-wasm"
+version = "0.5.7"
+dependencies = [
+ "anyhow",
+ "console_error_panic_hook",
+ "futures",
+ "getrandom 0.2.17",
+ "gloo-console",
+ "http",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-wasm",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "webtor",
 ]
 
 [[package]]
@@ -8833,6 +9919,23 @@ dependencies = [
  "signature",
  "spki",
  "tls_codec",
+]
+
+[[package]]
+name = "x509-parser"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcbc162f30700d6f3f82a24bf7cc62ffe7caea42c0b2cba8bf7f3ae50cf51f69"
+dependencies = [
+ "asn1-rs 0.6.2",
+ "data-encoding",
+ "der-parser 9.0.0",
+ "lazy_static",
+ "nom",
+ "oid-registry",
+ "rusticata-macros",
+ "thiserror 1.0.69",
+ "time",
 ]
 
 [[package]]

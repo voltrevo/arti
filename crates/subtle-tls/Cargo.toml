@@ -59,7 +59,7 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rand = "0.8"
 
 # Tor runtime compatibility traits
-tor-rtcompat = { workspace = true }
+tor-rtcompat = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
