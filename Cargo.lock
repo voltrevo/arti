@@ -9299,6 +9299,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "webtor"
+version = "0.5.7"
+dependencies = [
+ "anyhow",
+ "console_error_panic_hook",
+ "futures",
+ "getrandom 0.2.17",
+ "gloo-console",
+ "http",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-wasm",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "webtor-rs",
+]
+
+[[package]]
 name = "webtor-rs"
 version = "0.5.7"
 dependencies = [
@@ -9356,31 +9381,6 @@ dependencies = [
  "web-sys",
  "webpki-roots 0.26.11",
  "x25519-dalek",
-]
-
-[[package]]
-name = "webtor-wasm"
-version = "0.5.7"
-dependencies = [
- "anyhow",
- "console_error_panic_hook",
- "futures",
- "getrandom 0.2.17",
- "gloo-console",
- "http",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "thiserror 1.0.69",
- "tracing",
- "tracing-subscriber",
- "tracing-wasm",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "webtor-rs",
 ]
 
 [[package]]

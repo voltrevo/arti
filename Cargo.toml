@@ -78,7 +78,7 @@ members = [
 
     "crates/subtle-tls",
     "crates/webtor-rs",
-    "crates/webtor-wasm",
+    "crates/webtor",
 
     "maint/fixup-features",
     "maint/keygen-openssh-test",
