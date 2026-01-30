@@ -8,10 +8,8 @@
 import { readFile } from 'fs/promises';
 import { createRequire } from 'module';
 
-import wasmInit, { init, TorClient } from '../crates/webtor/pkg/webtor.js';
-
 async function main() {
-  await setup();
+  const TorClient = await setup();
 
   const url = process.argv[2] ?? 'https://check.torproject.org/api/ip';
 
@@ -38,6 +36,14 @@ async function main() {
 async function setup() {
   console.log('Loading WASM module...');
 
+  let wasmInit, init, TorClient;
+  try {
+    ({ default: wasmInit, init, TorClient } = await import('../crates/webtor/pkg/webtor.js'));
+  } catch (err) {
+    console.error('Failed to import webtor. You might need to run scripts/webtor/build.sh [--release].');
+    throw err;
+  }
+
   // Load the WASM file manually (fetch doesn't work with file:// URLs in Node.js)
   const require = createRequire(import.meta.url);
   const wasmPath = require.resolve('../crates/webtor/pkg/webtor_bg.wasm');
@@ -46,6 +52,8 @@ async function setup() {
 
   // Initialize Rust tracing
   init();
+
+  return TorClient;
 }
 
 main().catch(err => {
