@@ -16,17 +16,17 @@ thiserror = "1.0"
 tracing = "0.1"
 
 # Tor protocol implementation
-tor-rtcompat = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
-tor-proto = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
-tor-protover = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-units = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-netdoc = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd", default-features = false }
-tor-linkspec = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-llcrypto = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-cell = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-error = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-async-utils = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
-tor-memquota = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-rtcompat = { path = "../tor-rtcompat", default-features = false }
+tor-proto = { path = "../tor-proto", default-features = false }
+tor-protover = { path = "../tor-protover" }
+tor-units = { path = "../tor-units" }
+tor-netdoc = { path = "../tor-netdoc", default-features = false }
+tor-linkspec = { path = "../tor-linkspec" }
+tor-llcrypto = { path = "../tor-llcrypto" }
+tor-cell = { path = "../tor-cell" }
+tor-error = { path = "../tor-error" }
+tor-async-utils = { path = "../tor-async-utils" }
+tor-memquota = { path = "../tor-memquota" }
 wasm-bindgen-futures = "0.4"
 
 # Cryptography
@@ -112,7 +112,7 @@ web-sys = { version = "0.3.69", features = [
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 httparse = "1.10.1"
-tor-checkable = { git = "https://github.com/voltrevo/arti", rev = "c0761bdb30ebb667b86920e7192d9fee9f15ffdd" }
+tor-checkable = { path = "../tor-checkable" }
 
 # KCP reliable transport
 kcp = "0.6"
