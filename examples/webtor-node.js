@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Make a single anonymous HTTP request through Tor from Node.js
+// Make an HTTP request through Tor from Node.js using a TorClient instance
 //
 // Usage:   examples/webtor-node.js [url]
 // Example: examples/webtor-node.js https://check.torproject.org/api/ip
@@ -9,29 +9,39 @@ import { readFile } from 'fs/promises';
 import { createRequire } from 'module';
 
 async function main() {
-  const TorClient = await setup();
+  const { TorClient, TorClientOptions } = await setup();
 
   const url = process.argv[2] ?? 'https://check.torproject.org/api/ip';
 
-  console.log(`\nFetching ${url} via Tor...\n`);
+  console.log(`\nCreating TorClient...\n`);
 
   const startTime = performance.now();
 
-  const response = await TorClient.fetchOneTime(
-    'wss://snowflake.pse.dev/',
-    url,
-    '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194',
-    60000,  // connection timeout (ms)
-    60000,  // circuit timeout (ms)
-  );
+  // FIXME: Avoid class for options. Should use plain object.
+  const options = new TorClientOptions('wss://snowflake.pse.dev/');
+  // FIXME: also specify:
+  // '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194', // fingerprint
+  // 60000,  // connection timeout (ms)
+  // 60000,  // circuit timeout (ms)
 
-  const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+  // FIXME: new TorClient really does return a promise (which is wrong)
+  const client = await new TorClient(options);
+
+  const connectTime = ((performance.now() - startTime) / 1000).toFixed(1);
+  console.log(`\nConnected in ${connectTime}s, fetching ${url}...\n`);
+
+  const fetchStart = performance.now();
+  const response = await client.fetch(url);
+  const fetchTime = ((performance.now() - fetchStart) / 1000).toFixed(1);
+
+  await client.close();
 
   // Wait just a little bit so that the last log is our output.
   await new Promise(resolve => setTimeout(resolve, 50));
 
   console.log(`\nStatus: ${response.status}`);
-  console.log(`Time: ${elapsed}s`);
+  console.log(`Connect time: ${connectTime}s`);
+  console.log(`Fetch time: ${fetchTime}s`);
   console.log('Response:');
   console.log(response.text());
 }
@@ -39,9 +49,9 @@ async function main() {
 async function setup() {
   console.log('Loading WASM module...');
 
-  let wasmInit, init, TorClient;
+  let wasmInit, init, TorClient, TorClientOptions;
   try {
-    ({ default: wasmInit, init, TorClient } = await import('../crates/webtor/pkg/webtor.js'));
+    ({ default: wasmInit, init, TorClient, TorClientOptions } = await import('../crates/webtor/pkg/webtor.js'));
   } catch (err) {
     throw new Error(
       'Failed to import webtor. You might need to run scripts/webtor/build.sh [--release].',
@@ -55,10 +65,9 @@ async function setup() {
   const wasmBuffer = await readFile(wasmPath);
   await wasmInit(wasmBuffer);
 
-  // Initialize Rust tracing
   init();
 
-  return TorClient;
+  return { TorClient, TorClientOptions };
 }
 
 main().catch(err => {
