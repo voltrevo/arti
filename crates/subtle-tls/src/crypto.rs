@@ -44,7 +44,7 @@ pub fn get_subtle_crypto() -> Result<SubtleCrypto> {
         return Err(TlsError::subtle_crypto("crypto.subtle is undefined"));
     }
 
-    Ok(subtle.unchecked_into())
+    Ok(subtle.into())
 }
 
 /// Generate random bytes

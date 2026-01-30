@@ -7,10 +7,13 @@ mod platform {
     use super::*;
 
     fn get_performance_now_ms() -> f64 {
-        web_sys::window()
-            .and_then(|w| w.performance())
+        use wasm_bindgen::JsCast;
+
+        js_sys::Reflect::get(&js_sys::global(), &"performance".into())
+            .ok()
+            .and_then(|perf| perf.dyn_into::<web_sys::Performance>().ok())
             .map(|p| p.now())
-            .unwrap_or(0.0)
+            .unwrap()
     }
 
     #[derive(Clone, Copy, Debug)]

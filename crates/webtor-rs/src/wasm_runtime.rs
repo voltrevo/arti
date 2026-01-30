@@ -55,6 +55,7 @@ impl WasmSleep {
                 let _ = tx.send(());
             });
 
+            // FIXME: window (nodejs/etc compatibility)
             let window = web_sys::window().expect("should have a window in this context");
             let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                 closure.as_ref().unchecked_ref(),

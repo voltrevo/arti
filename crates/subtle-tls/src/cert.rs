@@ -3,24 +3,15 @@
 //! This module handles X.509 certificate chain validation for TLS 1.3.
 //! It uses x509-parser for parsing and SubtleCrypto for signature verification.
 
+use crate::crypto::get_subtle_crypto;
 use crate::error::{Result, TlsError};
 use crate::trust_store::TrustStore;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use tracing::{debug, info, trace, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Crypto, CryptoKey, SubtleCrypto};
+use web_sys::CryptoKey;
 use x509_parser::prelude::*;
-
-/// Get the SubtleCrypto instance
-fn get_subtle_crypto() -> Result<SubtleCrypto> {
-    let window =
-        web_sys::window().ok_or_else(|| TlsError::subtle_crypto("No window object available"))?;
-    let crypto: Crypto = window
-        .crypto()
-        .map_err(|_| TlsError::subtle_crypto("No crypto object available"))?;
-    Ok(crypto.subtle())
-}
 
 /// Certificate chain validator
 pub struct CertificateVerifier {

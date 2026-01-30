@@ -8,7 +8,7 @@
 //! 5. CertificateVerify
 //! 6. Finished
 
-use crate::crypto::{self, EcdhKeyPair, Hkdf, X25519KeyPair};
+use crate::crypto::{self, EcdhKeyPair, Hkdf, X25519KeyPair, get_subtle_crypto};
 use crate::error::{Result, TlsError};
 use tracing::{debug, trace};
 
@@ -639,11 +639,7 @@ async fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     use wasm_bindgen_futures::JsFuture;
     use web_sys::CryptoKey;
 
-    let window = web_sys::window().ok_or_else(|| TlsError::subtle_crypto("No window"))?;
-    let subtle = window
-        .crypto()
-        .map_err(|_| TlsError::subtle_crypto("No crypto"))?
-        .subtle();
+    let subtle = get_subtle_crypto()?;
 
     let key_data = Uint8Array::from(key);
     let algorithm = Object::new();
