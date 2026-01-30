@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tor_linkspec::OwnedChanTargetBuilder;
+use tor_linkspec::{HasRelayIds, OwnedChanTargetBuilder};
 use tor_llcrypto::pk::rsa::RsaIdentity;
 use tor_memquota::MemoryQuotaTracker;
 use tor_proto::channel::ChannelBuilder;
@@ -657,6 +657,19 @@ impl TorClient {
             .finish()
             .await
             .map_err(|e| TorError::Network(format!("Handshake finish failed: {}", e)))?;
+
+        // If fingerprint verification was skipped, log the peer's actual fingerprint
+        if rsa_id.is_none() {
+            if let Some(peer_rsa_id) = chan.target().rsa_identity() {
+                let fingerprint_hex = hex::encode(peer_rsa_id.as_bytes()).to_uppercase();
+                warn!(
+                    "Bridge fingerprint verification was skipped. \
+                     The bridge's fingerprint is: {}. \
+                     For security, consider specifying this fingerprint explicitly.",
+                    fingerprint_hex
+                );
+            }
+        }
 
         // Spawn reactor
         #[cfg(target_arch = "wasm32")]

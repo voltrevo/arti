@@ -53,7 +53,7 @@ async function main() {
     const response = await TorClient.fetchOneTime(
       'wss://snowflake.pse.dev/',
       url,
-      '',     // fingerprint: empty string = skip verification (unknown bridge)
+      '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194',
       60000,  // connection timeout (ms)
       60000   // circuit timeout (ms)
     );
