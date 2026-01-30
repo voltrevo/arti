@@ -81,6 +81,57 @@ fn headers_to_js(headers: &std::collections::HashMap<String, String>) -> JsValue
     serde_wasm_bindgen::to_value(headers).unwrap_or_else(|_| js_sys::Object::new().into())
 }
 
+/// Request initialization options matching the Web Fetch API
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchInit {
+    /// HTTP method (GET, POST, PUT, DELETE, etc.). Defaults to "GET"
+    #[serde(default)]
+    pub method: Option<String>,
+    /// Request headers as a key-value object
+    #[serde(default)]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+    /// Timeout in milliseconds (extension to standard Fetch API)
+    #[serde(default)]
+    pub timeout: Option<u32>,
+    // Note: body is handled separately to support both string and Uint8Array
+}
+
+/// Extract body from JsValue, handling both string and Uint8Array/ArrayBuffer
+fn extract_body_from_js(init: &JsValue) -> Result<Option<Vec<u8>>, JsValue> {
+    if init.is_undefined() || init.is_null() {
+        return Ok(None);
+    }
+
+    // Try to get the "body" property
+    let body = js_sys::Reflect::get(init, &JsValue::from_str("body"))
+        .map_err(|e| JsValue::from_str(&format!("Failed to get body property: {:?}", e)))?;
+
+    if body.is_undefined() || body.is_null() {
+        return Ok(None);
+    }
+
+    // Check if it's a string
+    if let Some(s) = body.as_string() {
+        return Ok(Some(s.into_bytes()));
+    }
+
+    // Check if it's a Uint8Array
+    if let Ok(uint8_array) = body.clone().dyn_into::<js_sys::Uint8Array>() {
+        return Ok(Some(uint8_array.to_vec()));
+    }
+
+    // Check if it's an ArrayBuffer
+    if let Ok(array_buffer) = body.dyn_into::<js_sys::ArrayBuffer>() {
+        let uint8_array = js_sys::Uint8Array::new(&array_buffer);
+        return Ok(Some(uint8_array.to_vec()));
+    }
+
+    Err(JsValue::from_str(
+        "body must be a string, Uint8Array, or ArrayBuffer",
+    ))
+}
+
 // Thread-local log callback for forwarding logs to JavaScript (WASM is single-threaded)
 thread_local! {
     static LOG_CALLBACK: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
@@ -207,11 +258,17 @@ impl TorClient {
         })
     }
 
-    /// Make a fetch (GET) request through Tor
+    /// Make an HTTP request through Tor (Web Fetch API compatible)
+    ///
+    /// # Arguments
+    /// - `url`: The URL to fetch
+    /// - `init`: Optional request options object with:
+    ///   - `method`: HTTP method (default: "GET")
+    ///   - `headers`: Object with header key-value pairs
+    ///   - `body`: Request body (string, Uint8Array, or ArrayBuffer)
+    ///   - `timeout`: Request timeout in milliseconds (extension)
     #[wasm_bindgen(js_name = fetch)]
-    pub fn fetch(&self, url: String) -> js_sys::Promise {
-        console_log!(format!("Starting fetch request to: {}", url));
-
+    pub fn fetch(&self, url: String, init: JsValue) -> js_sys::Promise {
         let client = match &self.inner {
             Some(client) => client.clone(),
             None => {
@@ -221,8 +278,40 @@ impl TorClient {
             }
         };
 
+        // Parse init options synchronously before entering async block
+        let init_result: Result<(FetchInit, Option<Vec<u8>>), JsValue> = (|| {
+            if init.is_undefined() || init.is_null() {
+                return Ok((FetchInit::default(), None));
+            }
+
+            // Parse FetchInit (without body)
+            let fetch_init: FetchInit = serde_wasm_bindgen::from_value(init.clone())
+                .map_err(|e| JsValue::from_str(&format!("Invalid init options: {}", e)))?;
+
+            // Extract body separately
+            let body = extract_body_from_js(&init)?;
+
+            Ok((fetch_init, body))
+        })();
+
+        let (fetch_init, body) = match init_result {
+            Ok(v) => v,
+            Err(e) => return future_to_promise(async move { Err(e) }),
+        };
+
+        let method_str = fetch_init.method.as_deref().unwrap_or("GET").to_string();
+        console_log!(format!("Starting {} request to: {}", method_str, url));
+
         future_to_promise(async move {
-            match client.fetch(&url).await {
+            let method: http::Method = method_str
+                .parse()
+                .map_err(|e| JsValue::from_str(&format!("Invalid HTTP method: {}", e)))?;
+
+            let headers = fetch_init.headers.unwrap_or_default();
+            let timeout =
+                fetch_init.timeout.map(|ms| std::time::Duration::from_millis(ms as u64));
+
+            match client.request(method, &url, headers, body, timeout).await {
                 Ok(response) => {
                     console_log!("Fetch request completed successfully");
 
@@ -237,150 +326,6 @@ impl TorClient {
                 }
                 Err(e) => {
                     console_error!(format!("Fetch request failed: {}", e));
-                    Err(tor_error_to_js(e))
-                }
-            }
-        })
-    }
-
-    /// Make a POST request through Tor
-    #[wasm_bindgen(js_name = post)]
-    pub fn post(&self, url: String, body: Vec<u8>) -> js_sys::Promise {
-        console_log!(format!("Starting POST request to: {}", url));
-
-        let client = match &self.inner {
-            Some(client) => client.clone(),
-            None => {
-                return future_to_promise(async move {
-                    Err(JsTorError::not_initialized().into_js_value())
-                });
-            }
-        };
-
-        future_to_promise(async move {
-            match client.post(&url, body).await {
-                Ok(response) => {
-                    console_log!("POST request completed successfully");
-
-                    let js_response = JsHttpResponse {
-                        status: response.status,
-                        headers: headers_to_js(&response.headers),
-                        body: response.body,
-                        url: response.url.to_string(),
-                    };
-
-                    Ok(JsValue::from(js_response))
-                }
-                Err(e) => {
-                    console_error!(format!("POST request failed: {}", e));
-                    Err(tor_error_to_js(e))
-                }
-            }
-        })
-    }
-
-    /// Make a POST request with JSON body and Content-Type header (convenience for JSON-RPC)
-    #[wasm_bindgen(js_name = postJson)]
-    pub fn post_json(&self, url: String, json_body: String) -> js_sys::Promise {
-        console_log!(format!("Starting POST JSON request to: {}", url));
-
-        let client = match &self.inner {
-            Some(client) => client.clone(),
-            None => {
-                return future_to_promise(async move {
-                    Err(JsTorError::not_initialized().into_js_value())
-                });
-            }
-        };
-
-        future_to_promise(async move {
-            let mut headers = std::collections::HashMap::new();
-            headers.insert("Content-Type".to_string(), "application/json".to_string());
-
-            match client
-                .request(
-                    http::Method::POST,
-                    &url,
-                    headers,
-                    Some(json_body.into_bytes()),
-                    None,
-                )
-                .await
-            {
-                Ok(response) => {
-                    console_log!("POST JSON request completed successfully");
-
-                    let js_response = JsHttpResponse {
-                        status: response.status,
-                        headers: headers_to_js(&response.headers),
-                        body: response.body,
-                        url: response.url.to_string(),
-                    };
-
-                    Ok(JsValue::from(js_response))
-                }
-                Err(e) => {
-                    console_error!(format!("POST JSON request failed: {}", e));
-                    Err(tor_error_to_js(e))
-                }
-            }
-        })
-    }
-
-    /// Make a generic HTTP request with full control over method, headers, body, and timeout
-    #[wasm_bindgen(js_name = request)]
-    pub fn request(
-        &self,
-        method: String,
-        url: String,
-        headers: JsValue,
-        body: Option<Vec<u8>>,
-        timeout_ms: Option<u32>,
-    ) -> js_sys::Promise {
-        console_log!(format!("Starting {} request to: {}", method, url));
-
-        let client = match &self.inner {
-            Some(client) => client.clone(),
-            None => {
-                return future_to_promise(async move {
-                    Err(JsTorError::not_initialized().into_js_value())
-                });
-            }
-        };
-
-        future_to_promise(async move {
-            let method_parsed: http::Method = method
-                .parse()
-                .map_err(|e| JsValue::from_str(&format!("Invalid HTTP method: {}", e)))?;
-
-            let headers_map: std::collections::HashMap<String, String> =
-                if headers.is_undefined() || headers.is_null() {
-                    std::collections::HashMap::new()
-                } else {
-                    serde_wasm_bindgen::from_value(headers)
-                        .map_err(|e| JsValue::from_str(&format!("Invalid headers object: {}", e)))?
-                };
-
-            let timeout = timeout_ms.map(|ms| std::time::Duration::from_millis(ms as u64));
-
-            match client
-                .request(method_parsed, &url, headers_map, body, timeout)
-                .await
-            {
-                Ok(response) => {
-                    console_log!("Request completed successfully");
-
-                    let js_response = JsHttpResponse {
-                        status: response.status,
-                        headers: headers_to_js(&response.headers),
-                        body: response.body,
-                        url: response.url.to_string(),
-                    };
-
-                    Ok(JsValue::from(js_response))
-                }
-                Err(e) => {
-                    console_error!(format!("Request failed: {}", e));
                     Err(tor_error_to_js(e))
                 }
             }
