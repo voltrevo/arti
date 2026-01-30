@@ -97,6 +97,25 @@ pub struct FetchInit {
     // Note: body is handled separately to support both string and Uint8Array
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_FETCH_INIT: &'static str = r#"
+export interface FetchInit {
+    /** HTTP method (GET, POST, PUT, DELETE, etc.). Defaults to "GET" */
+    method?: string;
+    /** Request headers as key-value pairs */
+    headers?: Record<string, string>;
+    /** Request body (string, Uint8Array, or ArrayBuffer) */
+    body?: string | Uint8Array | ArrayBuffer;
+    /** Timeout in milliseconds (extension to standard Fetch API) */
+    timeout?: number;
+}
+
+export interface TorClient {
+    /** Make an HTTP request through Tor (Web Fetch API compatible) */
+    fetch(url: string, init?: FetchInit): Promise<JsHttpResponse>;
+}
+"#;
+
 /// Extract body from JsValue, handling both string and Uint8Array/ArrayBuffer
 fn extract_body_from_js(init: &JsValue) -> Result<Option<Vec<u8>>, JsValue> {
     if init.is_undefined() || init.is_null() {
@@ -267,7 +286,7 @@ impl TorClient {
     ///   - `headers`: Object with header key-value pairs
     ///   - `body`: Request body (string, Uint8Array, or ArrayBuffer)
     ///   - `timeout`: Request timeout in milliseconds (extension)
-    #[wasm_bindgen(js_name = fetch)]
+    #[wasm_bindgen(js_name = fetch, skip_typescript)]
     pub fn fetch(&self, url: String, init: JsValue) -> js_sys::Promise {
         let client = match &self.inner {
             Some(client) => client.clone(),
