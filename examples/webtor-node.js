@@ -27,7 +27,10 @@ async function main() {
 
   const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
 
-  console.log(`Status: ${response.status}`);
+  // Wait just a little bit so that the last log is our output.
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  console.log(`\nStatus: ${response.status}`);
   console.log(`Time: ${elapsed}s`);
   console.log('Response:');
   console.log(response.text());
@@ -40,8 +43,10 @@ async function setup() {
   try {
     ({ default: wasmInit, init, TorClient } = await import('../crates/webtor/pkg/webtor.js'));
   } catch (err) {
-    console.error('Failed to import webtor. You might need to run scripts/webtor/build.sh [--release].');
-    throw err;
+    throw new Error(
+      'Failed to import webtor. You might need to run scripts/webtor/build.sh [--release].',
+      { cause: err },
+    );
   }
 
   // Load the WASM file manually (fetch doesn't work with file:// URLs in Node.js)
@@ -57,6 +62,6 @@ async function setup() {
 }
 
 main().catch(err => {
-  console.error('\nError:', err.message || err);
+  console.error(err);
   process.exit(1);
 });
