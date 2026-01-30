@@ -388,10 +388,21 @@ impl TorClient {
     }
 
     /// Make a one-time fetch request (static method)
+    ///
+    /// # Arguments
+    /// - `snowflake_url`: The Snowflake WebSocket URL
+    /// - `url`: The URL to fetch
+    /// - `fingerprint`: Optional bridge fingerprint:
+    ///   - `undefined`/`null` → auto-detect for known bridges, error for unknown
+    ///   - `""` (empty string) → skip fingerprint verification
+    ///   - `"ABC123..."` → use the provided fingerprint
+    /// - `connection_timeout`: Optional connection timeout in ms (default: 15000)
+    /// - `circuit_timeout`: Optional circuit timeout in ms (default: 90000)
     #[wasm_bindgen(js_name = fetchOneTime)]
     pub fn fetch_one_time(
         snowflake_url: String,
         url: String,
+        fingerprint: Option<String>,
         connection_timeout: Option<u32>,
         circuit_timeout: Option<u32>,
     ) -> js_sys::Promise {
@@ -404,6 +415,7 @@ impl TorClient {
             match NativeTorClient::fetch_one_time(
                 &snowflake_url,
                 &url,
+                fingerprint.as_deref(),
                 connection_timeout.map(|t| t as u64),
                 circuit_timeout.map(|t| t as u64),
             )

@@ -1,5 +1,6 @@
 //! Configuration options for the Tor client
 
+use crate::error::{Result, TorError};
 use crate::isolation::StreamIsolationPolicy;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -161,6 +162,36 @@ pub const MAX_CIRCUITS_PER_ISOLATION_KEY: usize = 1;
 /// Age threshold for preemptive circuit building (circuit_timeout - 10 seconds)
 pub const CIRCUIT_PREBUILD_AGE_THRESHOLD_MS: u64 = 80_000; // 90_000 - 10_000
 
+/// Resolve the bridge fingerprint based on URL and optional explicit fingerprint.
+///
+/// Rules:
+/// - If `fingerprint` is `Some("")` → returns `None` (skip verification)
+/// - If `fingerprint` is `Some(fp)` → returns `Some(fp)` (use provided)
+/// - If `fingerprint` is `None` and URL is known → returns hardcoded fingerprint
+/// - If `fingerprint` is `None` and URL is unknown → returns error
+pub fn resolve_snowflake_fingerprint(url: &str, fingerprint: Option<&str>) -> Result<Option<String>> {
+    match fingerprint {
+        // Empty string means skip verification
+        Some("") => Ok(None),
+        // Explicit fingerprint provided
+        Some(fp) => Ok(Some(fp.to_string())),
+        // No fingerprint provided - try to determine from URL
+        None => {
+            if url.contains("torproject.net") || url.contains("torproject.org") {
+                Ok(Some(SNOWFLAKE_FINGERPRINT_PRIMARY.to_string()))
+            } else if url.contains("bamsoftware.com") {
+                Ok(Some(SNOWFLAKE_FINGERPRINT_SECONDARY.to_string()))
+            } else {
+                Err(TorError::configuration(format!(
+                    "Unknown Snowflake bridge '{}'. You must provide a fingerprint for custom bridges, \
+                     or use an empty string to skip fingerprint verification.",
+                    url
+                )))
+            }
+        }
+    }
+}
+
 impl TorClientOptions {
     /// Create options for Snowflake bridge using default Tor Project broker
     pub fn snowflake() -> Self {
@@ -173,19 +204,45 @@ impl TorClientOptions {
         }
     }
 
-    /// Create options for Snowflake bridge with custom URL
+    /// Create options for Snowflake bridge with custom URL and optional fingerprint.
+    ///
+    /// # Arguments
+    /// - `url`: The Snowflake WebSocket URL
+    /// - `fingerprint`: Optional fingerprint:
+    ///   - `None` → auto-detect for known bridges, error for unknown
+    ///   - `Some("")` → skip fingerprint verification
+    ///   - `Some(fp)` → use the provided fingerprint
+    pub fn snowflake_with_url_and_fingerprint(url: String, fingerprint: Option<&str>) -> Result<Self> {
+        let resolved_fingerprint = resolve_snowflake_fingerprint(&url, fingerprint)?;
+
+        Ok(Self {
+            bridge: BridgeType::Snowflake { url: url.clone() },
+            snowflake_url: url,
+            bridge_fingerprint: resolved_fingerprint,
+            ..Default::default()
+        })
+    }
+
+    /// Create options for Snowflake bridge with custom URL (known bridges only).
+    ///
+    /// This only works for known bridges (torproject.net, bamsoftware.com).
+    /// For custom bridges, use `snowflake_with_url_and_fingerprint`.
     pub fn snowflake_with_url(url: String) -> Self {
-        // Determine fingerprint based on URL
+        // For backwards compatibility, use the old behavior for known bridges
         let fingerprint = if url.contains("bamsoftware.com") {
-            SNOWFLAKE_FINGERPRINT_SECONDARY
+            Some(SNOWFLAKE_FINGERPRINT_SECONDARY.to_string())
+        } else if url.contains("torproject.net") || url.contains("torproject.org") {
+            Some(SNOWFLAKE_FINGERPRINT_PRIMARY.to_string())
         } else {
-            SNOWFLAKE_FINGERPRINT_PRIMARY
+            // Unknown bridge - this will fail later during connection
+            // Use snowflake_with_url_and_fingerprint for proper error handling
+            None
         };
 
         Self {
             bridge: BridgeType::Snowflake { url: url.clone() },
             snowflake_url: url,
-            bridge_fingerprint: Some(fingerprint.to_string()),
+            bridge_fingerprint: fingerprint,
             ..Default::default()
         }
     }

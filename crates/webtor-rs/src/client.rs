@@ -1,7 +1,7 @@
 //! Main Tor client implementation
 
 use crate::circuit::{CircuitManager, CircuitStatusInfo};
-use crate::config::{BridgeType, LogType, TorClientOptions, SNOWFLAKE_FINGERPRINT_PRIMARY};
+use crate::config::{BridgeType, LogType, TorClientOptions};
 use crate::directory::DirectoryManager;
 use crate::error::{Result, TorError};
 use crate::http::{HttpRequest, HttpResponse, TorHttpClient};
@@ -133,9 +133,20 @@ impl TorClient {
     }
 
     /// Make a one-time fetch request through Tor with a temporary circuit
+    ///
+    /// # Arguments
+    /// - `snowflake_url`: The Snowflake WebSocket URL
+    /// - `url`: The URL to fetch
+    /// - `fingerprint`: Optional bridge fingerprint:
+    ///   - `None` → auto-detect for known bridges, error for unknown
+    ///   - `Some("")` → skip fingerprint verification
+    ///   - `Some(fp)` → use the provided fingerprint
+    /// - `connection_timeout`: Optional connection timeout in ms (default: 15000)
+    /// - `circuit_timeout`: Optional circuit timeout in ms (default: 90000)
     pub async fn fetch_one_time(
         snowflake_url: &str,
         url: &str,
+        fingerprint: Option<&str>,
         connection_timeout: Option<u64>,
         circuit_timeout: Option<u64>,
     ) -> Result<HttpResponse> {
@@ -144,12 +155,17 @@ impl TorClient {
             url, snowflake_url
         );
 
+        let base_options = TorClientOptions::snowflake_with_url_and_fingerprint(
+            snowflake_url.to_string(),
+            fingerprint,
+        )?;
+
         let options = TorClientOptions {
             create_circuit_early: true,
             circuit_update_interval: None,
             connection_timeout: connection_timeout.unwrap_or(15_000),
             circuit_timeout: circuit_timeout.unwrap_or(90_000),
-            ..TorClientOptions::new(snowflake_url.to_string())
+            ..base_options
         };
 
         let client = Self::new(options).await?;
@@ -408,37 +424,50 @@ impl TorClient {
     async fn establish_channel_impl(&self) -> Result<()> {
         self.log("Establishing channel", LogType::Info);
 
-        // Get fingerprint - use default for Snowflake if not provided
-        let fingerprint = match &self.options.bridge {
-            BridgeType::Snowflake { .. } | BridgeType::SnowflakeWebRtc { .. } => self
-                .options
-                .bridge_fingerprint
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| SNOWFLAKE_FINGERPRINT_PRIMARY.to_string()),
-            BridgeType::WebTunnel { .. } => self
-                .options
-                .bridge_fingerprint
-                .as_ref()
-                .ok_or_else(|| {
-                    TorError::Configuration(
-                        "Bridge fingerprint is required for WebTunnel".to_string(),
-                    )
-                })?
-                .clone(),
+        // Get fingerprint - None means skip verification, Some(fp) means verify
+        let fingerprint: Option<String> = match &self.options.bridge {
+            BridgeType::Snowflake { .. } | BridgeType::SnowflakeWebRtc { .. } => {
+                // For Snowflake, use provided fingerprint or None (skip verification)
+                self.options.bridge_fingerprint.clone()
+            }
+            BridgeType::WebTunnel { .. } => {
+                // For WebTunnel, fingerprint is required
+                Some(
+                    self.options
+                        .bridge_fingerprint
+                        .as_ref()
+                        .ok_or_else(|| {
+                            TorError::Configuration(
+                                "Bridge fingerprint is required for WebTunnel".to_string(),
+                            )
+                        })?
+                        .clone(),
+                )
+            }
         };
 
-        // Parse fingerprint to RSA identity
-        let rsa_id = {
-            let bytes = hex::decode(&fingerprint)
-                .map_err(|e| TorError::Configuration(format!("Invalid fingerprint hex: {}", e)))?;
-            if bytes.len() != 20 {
-                return Err(TorError::Configuration(
-                    "Fingerprint must be 40 hex characters (20 bytes)".to_string(),
-                ));
+        // Parse fingerprint to RSA identity (if provided)
+        let rsa_id: Option<RsaIdentity> = match &fingerprint {
+            Some(fp) => {
+                let bytes = hex::decode(fp).map_err(|e| {
+                    TorError::Configuration(format!("Invalid fingerprint hex: {}", e))
+                })?;
+                if bytes.len() != 20 {
+                    return Err(TorError::Configuration(
+                        "Fingerprint must be 40 hex characters (20 bytes)".to_string(),
+                    ));
+                }
+                Some(RsaIdentity::from_bytes(&bytes).ok_or_else(|| {
+                    TorError::Configuration("Invalid RSA identity bytes".to_string())
+                })?)
             }
-            RsaIdentity::from_bytes(&bytes)
-                .ok_or_else(|| TorError::Configuration("Invalid RSA identity bytes".to_string()))?
+            None => {
+                self.log(
+                    "No fingerprint provided - skipping bridge identity verification",
+                    LogType::Info,
+                );
+                None
+            }
         };
 
         // 1. Connect to bridge based on type
@@ -452,9 +481,10 @@ impl TorClient {
                 #[cfg(target_arch = "wasm32")]
                 {
                     // Use WebSocket-based Snowflake (simpler, less censorship resistant)
-                    let config = SnowflakeWsConfig::default()
-                        .with_url(url)
-                        .with_fingerprint(&fingerprint);
+                    let mut config = SnowflakeWsConfig::default().with_url(url);
+                    if let Some(ref fp) = fingerprint {
+                        config = config.with_fingerprint(fp);
+                    }
                     let stream = SnowflakeWsStream::connect(config).await?;
                     self.log(
                         "Connected to Snowflake bridge via WebSocket",
@@ -485,8 +515,10 @@ impl TorClient {
                 #[cfg(target_arch = "wasm32")]
                 {
                     // Use WebRTC-based Snowflake (proper architecture)
-                    let config = SnowflakeConfig::with_broker(broker_url.clone())
-                        .with_fingerprint(fingerprint.clone());
+                    let mut config = SnowflakeConfig::with_broker(broker_url.clone());
+                    if let Some(ref fp) = fingerprint {
+                        config = config.with_fingerprint(fp.clone());
+                    }
                     let bridge = SnowflakeBridge::with_config(config);
                     let stream = bridge.connect().await?;
                     self.log("Connected to Snowflake bridge via WebRTC", LogType::Success);
@@ -508,7 +540,9 @@ impl TorClient {
                     &format!("Connecting via WebTunnel to {}", url),
                     LogType::Info,
                 );
-                let mut config = WebTunnelConfig::new(url.clone(), fingerprint.clone())
+                // WebTunnel requires fingerprint (already validated above)
+                let fp = fingerprint.clone().expect("WebTunnel requires fingerprint");
+                let mut config = WebTunnelConfig::new(url.clone(), fp)
                     .with_timeout(self.options.connection_timeout_duration());
                 if let Some(sni) = server_name {
                     config = config.with_server_name(sni.clone());
@@ -559,10 +593,12 @@ impl TorClient {
     }
 
     /// Create Tor channel from a connected stream and spawn the reactor
+    ///
+    /// If `rsa_id` is `None`, identity verification is skipped (accepts any bridge identity).
     async fn create_channel_from_stream<S>(
         &self,
         stream: S,
-        rsa_id: RsaIdentity,
+        rsa_id: Option<RsaIdentity>,
     ) -> Result<Arc<tor_proto::channel::Channel>>
     where
         S: futures::AsyncRead
@@ -601,9 +637,12 @@ impl TorClient {
         })?;
         debug!("Handshake connect completed, verifying...");
 
-        // Construct peer target
+        // Construct peer target - only set RSA identity if provided
+        // If no identity is set, the check will pass for any peer (skip verification)
         let mut peer_builder = OwnedChanTargetBuilder::default();
-        peer_builder.rsa_identity(rsa_id);
+        if let Some(id) = rsa_id {
+            peer_builder.rsa_identity(id);
+        }
 
         let peer = peer_builder
             .build()
@@ -713,6 +752,7 @@ mod tests {
         let result = TorClient::fetch_one_time(
             "wss://snowflake.torproject.net/",
             "https://httpbin.org/ip",
+            None, // fingerprint: auto-detect for known bridge
             None,
             None,
         )
