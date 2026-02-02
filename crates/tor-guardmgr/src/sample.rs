@@ -18,7 +18,8 @@ use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::time::{Instant, SystemTime};
+use std::time::SystemTime;
+use tor_rtcompat::Instant;
 use tracing::{debug, info};
 
 #[allow(unused_imports)]

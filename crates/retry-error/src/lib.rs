@@ -47,7 +47,8 @@
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Error as FmtError, Formatter};
 use std::iter;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
+use web_time::Instant;
 
 /// An error type for use when we're going to do something a few times,
 /// and they might all fail.

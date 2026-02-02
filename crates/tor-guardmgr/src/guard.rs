@@ -6,7 +6,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
+use tor_rtcompat::Instant;
 use tracing::{info, trace, warn};
 
 use crate::dirstatus::DirStatus;

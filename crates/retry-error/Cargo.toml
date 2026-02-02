@@ -19,6 +19,8 @@ thiserror = "2"
 
 [dependencies]
 humantime = "2"
+# WASM-compatible Instant - re-exports std::time on non-WASM, provides working impl on WASM
+web-time = "1.1"
 
 [features]
 full = []

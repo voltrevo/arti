@@ -373,7 +373,7 @@ impl<R: Runtime> HsCircPool<R> {
     ///
     /// This provides mockable time for use in error tracking and other
     /// time-sensitive operations.
-    pub fn now(&self) -> std::time::Instant {
+    pub fn now(&self) -> tor_rtcompat::Instant {
         self.0.circmgr.mgr.peek_runtime().now()
     }
 

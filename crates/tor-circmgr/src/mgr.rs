@@ -47,8 +47,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::panic::AssertUnwindSafe;
 use std::sync::{self, Arc, Weak};
-use std::time::{Duration, Instant};
-use tor_rtcompat::SpawnExt;
+use std::time::Duration;
+use tor_rtcompat::{Instant, SpawnExt};
 use tracing::{debug, instrument, trace, warn};
 use weak_table::PtrWeakHashSet;
 

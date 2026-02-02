@@ -59,7 +59,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
+use tor_rtcompat::Instant;
 #[cfg(feature = "bridge-client")]
 use tor_error::internal;
 use tor_linkspec::{OwnedChanTarget, OwnedCircTarget, RelayId, RelayIdSet};

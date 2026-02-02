@@ -65,7 +65,7 @@ impl mgr::AbstractTunnel for tor_proto::ClientTunnel {
         circ.extend(target, params).await
     }
 
-    async fn last_known_to_be_used_at(&self) -> tor_proto::Result<Option<std::time::Instant>> {
+    async fn last_known_to_be_used_at(&self) -> tor_proto::Result<Option<tor_rtcompat::Instant>> {
         self.disused_since().await
     }
 }
