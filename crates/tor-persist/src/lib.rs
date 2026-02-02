@@ -54,6 +54,7 @@ mod fs_mistrust_error_ext;
 mod handle;
 pub mod hsnickname;
 mod load_store;
+mod memory;
 pub mod slug;
 #[cfg(feature = "testing")]
 mod testing;
@@ -72,6 +73,7 @@ pub use err::{Error, ErrorSource};
 pub use fs::FsStateMgr;
 pub use fs_mistrust_error_ext::FsMistrustErrorExt;
 pub use handle::{DynStorageHandle, StorageHandle};
+pub use memory::MemoryStateMgr;
 pub use serde_json::Value as JsonValue;
 #[cfg(feature = "testing")]
 pub use testing::TestingStateMgr;

@@ -37,6 +37,12 @@ pub(crate) enum Resource {
         /// The key for the scratch item
         key: String,
     },
+    /// An item in an in-memory state manager.
+    #[display("{} in memory state manager", key)]
+    Memory {
+        /// The key for the item
+        key: String,
+    },
     /// An instance state directory
     #[display(
         "instance {:?}/{:?} in {}",

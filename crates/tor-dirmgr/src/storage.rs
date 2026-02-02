@@ -26,9 +26,14 @@ use std::str::Utf8Error;
 use std::time::SystemTime;
 use time::Duration;
 
+#[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
+pub(crate) mod inmemory;
 
+#[cfg(feature = "sqlite")]
 pub(crate) use sqlite::SqliteStore;
+#[cfg(not(feature = "sqlite"))]
+pub(crate) use inmemory::InMemoryStore;
 
 /// Convenient Sized & dynamic [`Store`]
 pub(crate) type DynStore = Box<dyn Store>;

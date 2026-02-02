@@ -92,14 +92,25 @@ impl DirMgrConfig {
     ///
     /// Note that each time this is called, a new store object will be
     /// created: you probably only want to call this once.
+    ///
+    /// When the `sqlite` feature is enabled (default), this creates a
+    /// persistent SQLite-backed store. Otherwise, it creates an in-memory
+    /// store that does not persist across restarts.
     pub(crate) fn open_store(&self, readonly: bool) -> Result<DynStore> {
-        Ok(Box::new(
-            crate::storage::SqliteStore::from_path_and_mistrust(
-                &self.cache_dir,
-                &self.cache_trust,
-                readonly,
-            )?,
-        ))
+        #[cfg(feature = "sqlite")]
+        {
+            Ok(Box::new(
+                crate::storage::SqliteStore::from_path_and_mistrust(
+                    &self.cache_dir,
+                    &self.cache_trust,
+                    readonly,
+                )?,
+            ))
+        }
+        #[cfg(not(feature = "sqlite"))]
+        {
+            Ok(Box::new(crate::storage::InMemoryStore::new(readonly)))
+        }
     }
 
     /// Return a slice of the configured authorities
