@@ -55,17 +55,17 @@ impl WasmRuntime {
 /// A sleep future for WASM using gloo-timers.
 pub struct WasmSleepFuture {
     /// The underlying timeout future from gloo-timers
-    #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+    #[cfg(target_arch = "wasm32")]
     inner: gloo_timers::future::TimeoutFuture,
     /// Fallback for non-WASM (for testing)
-    #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+    #[cfg(not(target_arch = "wasm32"))]
     rx: futures::channel::oneshot::Receiver<()>,
 }
 
 impl WasmSleepFuture {
     /// Create a new sleep future.
     fn new(duration: Duration) -> Self {
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+        #[cfg(target_arch = "wasm32")]
         {
             let millis = duration.as_millis().min(u32::MAX as u128) as u32;
             Self {
@@ -73,7 +73,7 @@ impl WasmSleepFuture {
             }
         }
 
-        #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let (tx, rx) = futures::channel::oneshot::channel();
             std::thread::spawn(move || {
@@ -89,14 +89,14 @@ impl Future for WasmSleepFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+        #[cfg(target_arch = "wasm32")]
         {
             // SAFETY: We never move the inner future after pinning
             let inner = unsafe { self.map_unchecked_mut(|s| &mut s.inner) };
             inner.poll(cx)
         }
 
-        #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             use futures::FutureExt;
             let this = self.get_mut();
@@ -153,13 +153,13 @@ impl CoarseTimeProvider for WasmRuntime {
 
 impl Spawn for WasmRuntime {
     fn spawn_obj(&self, future: futures::task::FutureObj<'static, ()>) -> Result<(), SpawnError> {
-        #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+        #[cfg(target_arch = "wasm32")]
         {
             wasm_bindgen_futures::spawn_local(future);
             Ok(())
         }
 
-        #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             // Fallback for testing - just spawn a thread
             std::thread::spawn(move || {

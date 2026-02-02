@@ -65,7 +65,7 @@ mod traits;
 pub mod unimpl;
 pub mod unix;
 
-#[cfg(feature = "wasm")]
+#[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
 #[cfg(any(feature = "async-std", feature = "tokio", feature = "smol"))]
