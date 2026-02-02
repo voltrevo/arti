@@ -5,8 +5,10 @@
 
 use crate::err::{Action, ErrorSource, Resource};
 use crate::{Error, LockStatus, Result, StateMgr};
+use futures::FutureExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 /// An in-memory state manager.
@@ -63,6 +65,27 @@ impl MemoryStateMgr {
                 locked: true,
             })),
         }
+    }
+
+    /// Return the "path" for this state manager.
+    ///
+    /// For an in-memory state manager, this returns an empty path since
+    /// there is no filesystem backing. This method exists for API compatibility
+    /// with `FsStateMgr`.
+    pub fn path(&self) -> &Path {
+        // Return a static empty path - there's no real filesystem location
+        static EMPTY_PATH: &str = "";
+        Path::new(EMPTY_PATH)
+    }
+
+    /// Return a future that resolves when this state manager is unlocked.
+    ///
+    /// For an in-memory state manager, this returns a future that resolves
+    /// immediately since there's no real file locking mechanism that other
+    /// processes could be waiting on.
+    pub fn wait_for_unlock(&self) -> impl futures::Future<Output = ()> + Send + Sync + 'static {
+        // Return a future that resolves immediately
+        futures::future::ready(())
     }
 
     /// Helper to create an error for this state manager.

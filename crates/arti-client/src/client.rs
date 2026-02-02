@@ -30,7 +30,11 @@ use tor_memquota::MemoryQuotaTracker;
 use tor_netdir::{NetDirProvider, params::NetParameters};
 #[cfg(feature = "onion-service-service")]
 use tor_persist::state_dir::StateDirectory;
-use tor_persist::{FsStateMgr, StateMgr};
+#[cfg(not(target_arch = "wasm32"))]
+use tor_persist::FsStateMgr;
+#[cfg(target_arch = "wasm32")]
+use tor_persist::MemoryStateMgr;
+use tor_persist::StateMgr;
 use tor_proto::client::stream::{DataStream, IpVersionPreference, StreamParameters};
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
@@ -166,7 +170,11 @@ pub struct TorClient<R: Runtime> {
     #[cfg(feature = "onion-service-service")]
     state_directory: StateDirectory,
     /// Location on disk where we store persistent data (cooked state manager).
+    #[cfg(not(target_arch = "wasm32"))]
     statemgr: FsStateMgr,
+    /// In-memory state manager for WASM.
+    #[cfg(target_arch = "wasm32")]
+    statemgr: MemoryStateMgr,
     /// Client address configuration
     addrcfg: Arc<MutCfg<ClientAddrConfig>>,
     /// Client DNS configuration
@@ -893,8 +901,11 @@ impl<R: Runtime> TorClient<R> {
             c.extensions = dirmgr_extensions;
             c
         };
+        #[cfg(not(target_arch = "wasm32"))]
         let statemgr = FsStateMgr::from_path_and_mistrust(&state_dir, mistrust)
             .map_err(ErrorDetail::StateMgrSetup)?;
+        #[cfg(target_arch = "wasm32")]
+        let statemgr = MemoryStateMgr::new();
         // Try to take state ownership early, so we'll know if we have it.
         // Note that this `try_lock()` may return `Ok` even if we can't acquire the lock.
         // (At this point we don't yet care if we have it.)
@@ -1282,6 +1293,8 @@ impl<R: Runtime> TorClient<R> {
         let addr_cfg = &new_config.address_filter;
         let timeout_cfg = &new_config.stream_timeouts;
 
+        // Check that state_dir hasn't changed (only meaningful for filesystem-based state manager)
+        #[cfg(not(target_arch = "wasm32"))]
         if state_cfg != self.statemgr.path() {
             how.cannot_change("storage.state_dir").map_err(wrap_err)?;
         }
