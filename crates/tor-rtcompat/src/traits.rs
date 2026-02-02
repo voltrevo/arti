@@ -632,10 +632,19 @@ pub trait CertifiedConn {
 /// "innocuous-looking TLS handshakes" less important than they once were.  Once
 /// TLS 1.3 is completely ubiquitous, we might be able to specify a simpler link
 /// handshake than Tor uses now.
-#[async_trait]
+///
+/// Note: On WASM targets, we use `#[async_trait(?Send)]` because WASM is
+/// single-threaded and JS interop types (JsValue, CryptoKey, etc.) cannot
+/// implement Send. This is safe because there's no multi-threading on WASM.
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait TlsConnector<S> {
     /// The type of connection returned by this connector
+    #[cfg(not(target_arch = "wasm32"))]
     type Conn: AsyncRead + AsyncWrite + CertifiedConn + Unpin + Send + 'static;
+    /// The type of connection returned by this connector (WASM - no Send bound)
+    #[cfg(target_arch = "wasm32")]
+    type Conn: AsyncRead + AsyncWrite + CertifiedConn + Unpin + 'static;
 
     /// Start a TLS session over the provided TCP stream `stream`.
     ///
@@ -657,12 +666,29 @@ pub trait TlsConnector<S> {
 /// See the [`TlsConnector`] documentation for a discussion of the Tor-specific
 /// limitations of this trait: If you are implementing something other than Tor,
 /// this is **not** the functionality you want.
+#[cfg(not(target_arch = "wasm32"))]
 pub trait TlsProvider<S: StreamOps>: Clone + Send + Sync + 'static {
     /// The Connector object that this provider can return.
     type Connector: TlsConnector<S, Conn = Self::TlsStream> + Send + Sync + Unpin;
 
     /// The type of the stream returned by that connector.
     type TlsStream: AsyncRead + AsyncWrite + StreamOps + CertifiedConn + Unpin + Send + 'static;
+
+    /// Return a TLS connector for use with this runtime.
+    fn tls_connector(&self) -> Self::Connector;
+
+    /// Return true iff the keying material exporters (RFC 5705) is supported.
+    fn supports_keying_material_export(&self) -> bool;
+}
+
+/// TlsProvider for WASM - relaxed bounds since WASM is single-threaded.
+#[cfg(target_arch = "wasm32")]
+pub trait TlsProvider<S: StreamOps>: Clone + 'static {
+    /// The Connector object that this provider can return.
+    type Connector: TlsConnector<S, Conn = Self::TlsStream> + Unpin;
+
+    /// The type of the stream returned by that connector.
+    type TlsStream: AsyncRead + AsyncWrite + StreamOps + CertifiedConn + Unpin + 'static;
 
     /// Return a TLS connector for use with this runtime.
     fn tls_connector(&self) -> Self::Connector;

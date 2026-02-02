@@ -107,6 +107,7 @@ web-sys = { version = "0.3", features = [
     "Window",
     "Performance",
 ] }
+subtle-tls = { path = "../subtle-tls" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

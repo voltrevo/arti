@@ -45,6 +45,11 @@ struct KeyingMaterial {
     exporter_master_secret: Vec<u8>,
 }
 
+// SAFETY: TlsStream contains web-sys types (CryptoKey) which include raw pointers
+// for JS interop. However, WASM is single-threaded, so Send is safe.
+// This is required for compatibility with tor-rtcompat's TlsConnector trait.
+unsafe impl<S: Send> Send for TlsStream<S> {}
+
 impl<S> TlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -807,24 +812,12 @@ fn extract_public_key_spki(cert_der: &[u8]) -> Result<Vec<u8>> {
     Ok(cert.public_key().raw.to_vec())
 }
 
-// Implement tor_rtcompat traits for TlsStream
-
-impl<S> tor_rtcompat::StreamOps for TlsStream<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    // Use default implementation
-}
-
-impl<S> tor_rtcompat::CertifiedConn for TlsStream<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    fn peer_certificate(&self) -> io::Result<Option<Vec<u8>>> {
-        Ok(self.peer_certificate.clone())
-    }
-
-    fn export_keying_material(
+impl<S> TlsStream<S> {
+    /// Export keying material per RFC 8446 Section 7.5.
+    ///
+    /// This can be used for channel binding or other purposes that require
+    /// cryptographic material derived from the TLS session.
+    pub fn export_keying_material(
         &self,
         len: usize,
         label: &[u8],

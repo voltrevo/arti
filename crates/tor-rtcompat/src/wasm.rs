@@ -5,7 +5,7 @@
 //!
 //! - **Blocking operations**: Stubbed - will panic if called. WASM has no threads.
 //! - **Networking**: Requires external transport (WebSocket/WebRTC)
-//! - **TLS**: Requires external TLS provider (e.g., subtle-tls)
+//! - **TLS**: Uses subtle-tls for TLS 1.3 via browser SubtleCrypto API
 
 use crate::coarse_time::RealCoarseTimeProvider;
 use crate::traits::{
@@ -341,100 +341,106 @@ impl NetStreamProvider<unix::SocketAddr> for WasmRuntime {
 }
 
 // ============================================================================
-// TlsProvider implementation (STUBBED)
+// TlsProvider implementation using subtle-tls
 // ============================================================================
 
-/// A stub TLS connector that always returns errors.
-pub struct StubTlsConnector;
+/// TLS connector for WASM using subtle-tls.
+///
+/// This wraps subtle-tls's TlsConnector and configures it for Tor's requirements:
+/// - Skips certificate verification (Tor validates via CERTS cells instead)
+/// - Uses TLS 1.3
+pub struct WasmTlsConnector {
+    /// The underlying subtle-tls connector.
+    inner: subtle_tls::TlsConnector,
+}
 
-#[async_trait]
-impl TlsConnector<StubStream> for StubTlsConnector {
-    type Conn = StubTlsStream;
+impl WasmTlsConnector {
+    /// Create a new WASM TLS connector.
+    ///
+    /// This connector skips certificate verification since Tor uses its own
+    /// certificate validation via CERTS cells in the Tor protocol.
+    pub fn new() -> Self {
+        let config = subtle_tls::TlsConfig {
+            // Skip WebPKI validation - Tor validates via CERTS cells
+            skip_verification: true,
+            alpn_protocols: vec![],
+            version: subtle_tls::TlsVersion::Tls13,
+        };
+        Self {
+            inner: subtle_tls::TlsConnector::with_config(config),
+        }
+    }
+}
+
+impl Default for WasmTlsConnector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait(?Send)]
+impl<S> TlsConnector<S> for WasmTlsConnector
+where
+    S: AsyncRead + AsyncWrite + StreamOps + Unpin + 'static,
+{
+    type Conn = subtle_tls::TlsStream<S>;
 
     async fn negotiate_unvalidated(
         &self,
-        _stream: StubStream,
-        _sni_hostname: &str,
+        stream: S,
+        sni_hostname: &str,
     ) -> IoResult<Self::Conn> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "StubTlsConnector does not support TLS - use subtle-tls or similar",
-        ))
+        self.inner
+            .connect(stream, sni_hostname)
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
     }
 }
 
-/// A stub TLS stream.
-#[derive(Debug)]
-pub struct StubTlsStream;
-
-impl AsyncRead for StubTlsStream {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &mut [u8],
-    ) -> Poll<IoResult<usize>> {
-        Poll::Ready(Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "StubTlsStream does not support reading",
-        )))
-    }
-}
-
-impl AsyncWrite for StubTlsStream {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &[u8],
-    ) -> Poll<IoResult<usize>> {
-        Poll::Ready(Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "StubTlsStream does not support writing",
-        )))
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<IoResult<()>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<IoResult<()>> {
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl StreamOps for StubTlsStream {
-    fn new_handle(&self) -> Box<dyn StreamOps + Send + Unpin> {
-        Box::new(NoOpStreamOpsHandle)
-    }
-}
-
-impl CertifiedConn for StubTlsStream {
-    fn export_keying_material(
-        &self,
-        _len: usize,
-        _label: &[u8],
-        _context: Option<&[u8]>,
-    ) -> IoResult<Vec<u8>> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "StubTlsStream does not support keying material export",
-        ))
-    }
-
-    fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
-        Ok(None)
-    }
-}
-
-impl TlsProvider<StubStream> for WasmRuntime {
-    type Connector = StubTlsConnector;
-    type TlsStream = StubTlsStream;
+impl<S> TlsProvider<S> for WasmRuntime
+where
+    S: AsyncRead + AsyncWrite + StreamOps + Unpin + 'static,
+{
+    type Connector = WasmTlsConnector;
+    type TlsStream = subtle_tls::TlsStream<S>;
 
     fn tls_connector(&self) -> Self::Connector {
-        StubTlsConnector
+        WasmTlsConnector::new()
     }
 
     fn supports_keying_material_export(&self) -> bool {
-        false
+        // subtle-tls implements RFC 8446 keying material export
+        true
+    }
+}
+
+// Implement tor-rtcompat traits for subtle_tls::TlsStream
+// (These were previously in subtle-tls but moved here to avoid circular dependency)
+
+impl<S> StreamOps for subtle_tls::TlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    // Use default implementation
+}
+
+impl<S> CertifiedConn for subtle_tls::TlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
+        // subtle_tls::TlsStream::peer_certificate returns Option<&[u8]>
+        Ok(self.peer_certificate().map(|s| s.to_vec()))
+    }
+
+    fn export_keying_material(
+        &self,
+        len: usize,
+        label: &[u8],
+        context: Option<&[u8]>,
+    ) -> IoResult<Vec<u8>> {
+        // Delegate to subtle_tls's implementation
+        subtle_tls::TlsStream::export_keying_material(self, len, label, context)
     }
 }
 
