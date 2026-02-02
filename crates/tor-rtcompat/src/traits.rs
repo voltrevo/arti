@@ -1,5 +1,5 @@
 //! Declarations for traits that we need our runtimes to implement.
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use asynchronous_codec::Framed;
 use futures::future::{FutureExt, RemoteHandle};
 use futures::stream;
@@ -409,14 +409,22 @@ pub trait SpawnExt: Spawn {
     #[track_caller]
     fn spawn<Fut>(&self, future: Fut) -> Result<(), SpawnError>
     where
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = ()> + crate::wasm_compat::Send + 'static,
     {
         use tracing::Instrument as _;
-        self.spawn_obj(Box::new(future.in_current_span()).into())
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.spawn_obj(Box::new(future.in_current_span()).into())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            wasm_bindgen_futures::spawn_local(future.in_current_span());
+            Ok(())
+        }
     }
 
     /// Spawns a task that polls the given future to completion and returns a future that resolves
-    /// to the spawned future’s output.
+    /// to the spawned future's output.
     ///
     /// See [`futures::task::SpawnExt::spawn_with_handle`].
     #[track_caller]
@@ -425,8 +433,8 @@ pub trait SpawnExt: Spawn {
         future: Fut,
     ) -> Result<RemoteHandle<<Fut as Future>::Output>, SpawnError>
     where
-        Fut: Future + Send + 'static,
-        <Fut as Future>::Output: Send,
+        Fut: Future + crate::wasm_compat::Send + 'static,
+        <Fut as Future>::Output: crate::wasm_compat::Send,
     {
         let (future, handle) = future.remote_handle();
         self.spawn(future)?;
@@ -633,18 +641,12 @@ pub trait CertifiedConn {
 /// TLS 1.3 is completely ubiquitous, we might be able to specify a simpler link
 /// handshake than Tor uses now.
 ///
-/// Note: On WASM targets, we use `#[async_trait(?Send)]` because WASM is
-/// single-threaded and JS interop types (JsValue, CryptoKey, etc.) cannot
-/// implement Send. This is safe because there's no multi-threading on WASM.
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+/// Note: We use `unsafe impl Send` on WASM types (like subtle_tls::TlsStream)
+/// to allow using standard async_trait everywhere.
+#[async_trait]
 pub trait TlsConnector<S> {
     /// The type of connection returned by this connector
-    #[cfg(not(target_arch = "wasm32"))]
     type Conn: AsyncRead + AsyncWrite + CertifiedConn + Unpin + Send + 'static;
-    /// The type of connection returned by this connector (WASM - no Send bound)
-    #[cfg(target_arch = "wasm32")]
-    type Conn: AsyncRead + AsyncWrite + CertifiedConn + Unpin + 'static;
 
     /// Start a TLS session over the provided TCP stream `stream`.
     ///
@@ -666,29 +668,12 @@ pub trait TlsConnector<S> {
 /// See the [`TlsConnector`] documentation for a discussion of the Tor-specific
 /// limitations of this trait: If you are implementing something other than Tor,
 /// this is **not** the functionality you want.
-#[cfg(not(target_arch = "wasm32"))]
 pub trait TlsProvider<S: StreamOps>: Clone + Send + Sync + 'static {
     /// The Connector object that this provider can return.
     type Connector: TlsConnector<S, Conn = Self::TlsStream> + Send + Sync + Unpin;
 
     /// The type of the stream returned by that connector.
     type TlsStream: AsyncRead + AsyncWrite + StreamOps + CertifiedConn + Unpin + Send + 'static;
-
-    /// Return a TLS connector for use with this runtime.
-    fn tls_connector(&self) -> Self::Connector;
-
-    /// Return true iff the keying material exporters (RFC 5705) is supported.
-    fn supports_keying_material_export(&self) -> bool;
-}
-
-/// TlsProvider for WASM - relaxed bounds since WASM is single-threaded.
-#[cfg(target_arch = "wasm32")]
-pub trait TlsProvider<S: StreamOps>: Clone + 'static {
-    /// The Connector object that this provider can return.
-    type Connector: TlsConnector<S, Conn = Self::TlsStream> + Unpin;
-
-    /// The type of the stream returned by that connector.
-    type TlsStream: AsyncRead + AsyncWrite + StreamOps + CertifiedConn + Unpin + 'static;
 
     /// Return a TLS connector for use with this runtime.
     fn tls_connector(&self) -> Self::Connector;

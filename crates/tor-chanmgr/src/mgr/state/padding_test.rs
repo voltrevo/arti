@@ -18,7 +18,7 @@ use super::*;
 
 use std::iter;
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::channel::mpsc;
 use futures_await_test::async_test;
 use itertools::{Itertools, zip_eq};

@@ -14,7 +14,7 @@ use crate::traits::{
     UdpSocket,
 };
 use crate::CoarseInstant;
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::task::{Spawn, SpawnError};
 use futures::{stream, AsyncRead, AsyncWrite, Future};
 use std::fmt::Debug;
@@ -378,10 +378,10 @@ impl Default for WasmTlsConnector {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<S> TlsConnector<S> for WasmTlsConnector
 where
-    S: AsyncRead + AsyncWrite + StreamOps + Unpin + 'static,
+    S: AsyncRead + AsyncWrite + StreamOps + Unpin + Send + 'static,
 {
     type Conn = subtle_tls::TlsStream<S>;
 
@@ -399,7 +399,7 @@ where
 
 impl<S> TlsProvider<S> for WasmRuntime
 where
-    S: AsyncRead + AsyncWrite + StreamOps + Unpin + 'static,
+    S: AsyncRead + AsyncWrite + StreamOps + Unpin + Send + 'static,
 {
     type Connector = WasmTlsConnector;
     type TlsStream = subtle_tls::TlsStream<S>;

@@ -64,6 +64,7 @@ mod timer;
 mod traits;
 pub mod unimpl;
 pub mod unix;
+pub mod wasm_compat;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;

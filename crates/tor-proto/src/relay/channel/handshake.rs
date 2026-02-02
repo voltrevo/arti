@@ -1,6 +1,6 @@
 //! Implementations for the relay channel handshake
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::SinkExt;
 use futures::io::{AsyncRead, AsyncWrite};
 use rand::Rng;

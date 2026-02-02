@@ -31,7 +31,7 @@ use tracing::trace;
 #[cfg(feature = "pt-client")]
 use super::TransportImplHelper;
 #[cfg(feature = "pt-client")]
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 #[cfg(feature = "pt-client")]
 use tor_error::bad_api_usage;
 #[cfg(feature = "pt-client")]
@@ -267,7 +267,7 @@ impl<R: NetStreamProvider + Send + Sync> ExternalProxyPlugin<R> {
 
 #[cfg(feature = "pt-client")]
 #[async_trait]
-impl<R: NetStreamProvider + Send + Sync> TransportImplHelper for ExternalProxyPlugin<R> {
+impl<R: NetStreamProvider> TransportImplHelper for ExternalProxyPlugin<R> {
     type Stream = R::Stream;
 
     async fn connect(

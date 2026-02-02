@@ -6,7 +6,7 @@
 pub(crate) mod net {
     use super::SmolRuntime;
     use crate::{impls, traits};
-    use async_trait::async_trait;
+    use tor_wasm_compat::async_trait;
     use futures::future::Future;
     use futures::stream::Stream;
     use paste::paste;

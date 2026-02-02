@@ -5,7 +5,7 @@ use std::{net, sync::Arc, time::Duration};
 
 use crate::traits::*;
 use crate::{CoarseInstant, CoarseTimeProvider};
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use educe::Educe;
 use futures::{future::FutureObj, task::Spawn};
 use std::future::Future;

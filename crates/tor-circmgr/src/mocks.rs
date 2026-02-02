@@ -10,7 +10,7 @@ use tor_proto::circuit::UniqId;
 use tor_proto::client::circuit::{CircParameters, Path};
 use tor_rtcompat::Runtime;
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use std::sync::{self, Arc};
 use std::time::Duration;
 

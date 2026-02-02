@@ -1,0 +1,15 @@
+[package]
+name = "tor-wasm-compat"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+description = "async_trait wrapper that uses ?Send on WASM"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

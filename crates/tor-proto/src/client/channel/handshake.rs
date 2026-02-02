@@ -1,6 +1,6 @@
 //! Implementations for the client channel handshake
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::SinkExt;
 use futures::io::{AsyncRead, AsyncWrite};
 use std::net::SocketAddr;

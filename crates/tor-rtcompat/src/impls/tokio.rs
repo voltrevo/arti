@@ -6,7 +6,7 @@
 /// Types used for networking (tokio implementation)
 pub(crate) mod net {
     use crate::{impls, traits};
-    use async_trait::async_trait;
+    use tor_wasm_compat::async_trait;
     #[cfg(unix)]
     use tor_general_addr::unix;
 
@@ -200,7 +200,7 @@ pub(crate) mod net {
 // ==============================
 
 use crate::traits::*;
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::Future;
 use std::io::Result as IoResult;
 use std::time::Duration;

@@ -517,6 +517,7 @@ dependencies = [
  "tor-dirmgr",
  "tor-netdoc",
  "tor-rtcompat",
+ "tor-wasm-compat",
  "tracing",
  "tracing-subscriber",
 ]
@@ -6817,6 +6818,7 @@ dependencies = [
  "tor-rtmock",
  "tor-socksproto",
  "tor-units",
+ "tor-wasm-compat",
  "tracing",
  "void",
 ]
@@ -6878,6 +6880,7 @@ dependencies = [
  "tor-rtcompat",
  "tor-rtmock",
  "tor-units",
+ "tor-wasm-compat",
  "tracing",
  "visibility",
  "void",
@@ -7056,6 +7059,7 @@ dependencies = [
  "tor-protover",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-wasm-compat",
  "tracing",
  "tracing-test",
 ]
@@ -7243,6 +7247,7 @@ dependencies = [
  "tor-protover",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-wasm-compat",
  "tracing",
  "tracing-test",
 ]
@@ -7377,6 +7382,7 @@ dependencies = [
  "tor-relay-selection",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-wasm-compat",
  "tracing",
  "tracing-test",
  "void",
@@ -7596,6 +7602,7 @@ dependencies = [
  "tor-netdoc",
  "tor-protover",
  "tor-units",
+ "tor-wasm-compat",
  "tracing",
  "typed-index-collections",
  "visibility",
@@ -7754,6 +7761,7 @@ dependencies = [
  "tor-rtcompat",
  "tor-rtmock",
  "tor-units",
+ "tor-wasm-compat",
  "tracing",
  "tracing-test",
  "typenum",
@@ -7921,6 +7929,7 @@ dependencies = [
  "tokio-util",
  "tor-error",
  "tor-general-addr",
+ "tor-wasm-compat",
  "tracing",
  "void",
  "wasm-bindgen",
@@ -7954,6 +7963,7 @@ dependencies = [
  "tor-error",
  "tor-general-addr",
  "tor-rtcompat",
+ "tor-wasm-compat",
  "tracing",
  "tracing-test",
  "void",
@@ -7987,6 +7997,15 @@ dependencies = [
  "serde",
  "thiserror 2.0.17",
  "tor-memquota",
+]
+
+[[package]]
+name = "tor-wasm-compat"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 
 use crate::traits::{CertifiedConn, StreamOps, TlsConnector, TlsProvider};
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::{AsyncRead, AsyncWrite};
 use native_tls_crate as native_tls;
 use std::io::{Error as IoError, Result as IoResult};

@@ -84,6 +84,7 @@ __is_experimental = []
 amplify = { version = "4", default-features = false, features = ["derive"] }
 arrayvec = { version = "0.7.4", features = ["serde"], optional = true }
 async-trait = "0.1.54"
+tor-wasm-compat = { path = "../tor-wasm-compat" }
 base64ct = "1.5.1"
 cfg-if = "1.0.0"
 derive-deftly = { version = "~1.6.0", features = ["full", "beta"] }

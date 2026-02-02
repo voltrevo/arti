@@ -3,7 +3,7 @@
 use futures::Stream;
 use tor_rtcompat::{NetStreamListener, NetStreamProvider, StreamOps};
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::io::{AsyncRead, AsyncWrite};
 use pin_project::pin_project;
 use std::io::Result as IoResult;

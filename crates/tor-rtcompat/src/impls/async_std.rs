@@ -12,7 +12,7 @@ mod net {
     use async_std_crate::net::{TcpListener, TcpStream, UdpSocket as StdUdpSocket};
     #[cfg(unix)]
     use async_std_crate::os::unix::net::{UnixListener, UnixStream};
-    use async_trait::async_trait;
+    use tor_wasm_compat::async_trait;
     use futures::future::Future;
     use futures::stream::Stream;
     use paste::paste;

@@ -73,7 +73,7 @@ use crate::util::oneshot_broadcast;
 use crate::util::ts::AtomicOptTimestamp;
 use crate::{ClockSkew, client};
 use crate::{Error, Result};
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use cfg_if::cfg_if;
 use reactor::BoxedChannelStreamOps;
 use safelog::sensitive as sv;

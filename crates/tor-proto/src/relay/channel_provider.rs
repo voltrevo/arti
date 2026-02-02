@@ -6,7 +6,7 @@ use crate::Result;
 use crate::channel::Channel;
 use crate::circuit::UniqId;
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::channel::mpsc;
 
 use std::sync::Arc;

@@ -5,7 +5,7 @@
 use crate::StreamOps;
 use crate::traits::{CertifiedConn, TlsConnector, TlsProvider};
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::{AsyncRead, AsyncWrite};
 use futures_rustls::rustls::{self, crypto::CryptoProvider};
 use rustls::client::danger;

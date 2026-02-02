@@ -37,7 +37,7 @@ use tor_proto::circuit::UniqId;
 use tor_proto::client::circuit::{CircParameters, Path};
 use tor_rtcompat::{Runtime, SleepProviderExt};
 
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 use futures::channel::mpsc;
 use futures::future::{FutureExt, Shared};
 use futures::stream::{FuturesUnordered, StreamExt};

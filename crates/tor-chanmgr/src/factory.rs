@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::event::ChanMgrEventSender;
-use async_trait::async_trait;
+use tor_wasm_compat::async_trait;
 #[cfg(feature = "relay")]
 use safelog::Sensitive;
 use tor_error::{HasKind, HasRetryTime, internal};
@@ -86,7 +86,7 @@ pub trait IncomingChannelFactory: Send + Sync {
 #[async_trait]
 impl<CF> crate::mgr::AbstractChannelFactory for CF
 where
-    CF: ChannelFactory + IncomingChannelFactory + Sync,
+    CF: ChannelFactory + IncomingChannelFactory,
 {
     type Channel = tor_proto::channel::Channel;
     type BuildSpec = OwnedChanTarget;
