@@ -65,6 +65,9 @@ mod traits;
 pub mod unimpl;
 pub mod unix;
 
+#[cfg(feature = "wasm")]
+pub mod wasm;
+
 #[cfg(any(feature = "async-std", feature = "tokio", feature = "smol"))]
 use std::io;
 pub use traits::{

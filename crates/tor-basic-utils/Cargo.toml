@@ -40,3 +40,6 @@ all-features = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

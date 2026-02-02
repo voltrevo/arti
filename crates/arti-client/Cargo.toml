@@ -162,6 +162,9 @@ restricted-discovery = [
 ]
 __is_experimental = []
 
+# WASM support
+wasm = ["tor-rtcompat/wasm"]
+
 [dependencies]
 anyhow = { version = "1.0.23", optional = true }
 async-trait = "0.1.54"

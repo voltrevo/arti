@@ -26,6 +26,15 @@ full = [
 experimental = ["smol"]
 __is_experimental = []
 
+# WASM support
+wasm = [
+    "wasm-bindgen",
+    "wasm-bindgen-futures",
+    "js-sys",
+    "web-sys",
+    "gloo-timers",
+]
+
 async-std = ["async-std-crate", "async-io", "async_executors/async_std"]
 tokio = [
     "tokio-crate",
@@ -93,6 +102,18 @@ tracing = "0.1.36"
 void = "1"
 # WASM-compatible Instant - re-exports std::time on non-WASM, provides working impl on WASM
 web-time = "1.1"
+
+# WASM dependencies (optional)
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+gloo-timers = { version = "0.3", optional = true, features = ["futures"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", optional = true, features = [
+    "Window",
+    "Performance",
+] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 socket2 = "0.6.1"

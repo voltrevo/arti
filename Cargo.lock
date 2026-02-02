@@ -6693,6 +6693,7 @@ version = "0.38.0"
 dependencies = [
  "derive_more",
  "educe",
+ "getrandom 0.3.4",
  "hex",
  "itertools 0.14.0",
  "libc",
@@ -7904,7 +7905,9 @@ dependencies = [
  "educe",
  "futures",
  "futures-rustls",
+ "gloo-timers",
  "hex",
+ "js-sys",
  "libc",
  "native-tls",
  "paste",
@@ -7920,6 +7923,9 @@ dependencies = [
  "tor-general-addr",
  "tracing",
  "void",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 
