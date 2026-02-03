@@ -73,7 +73,7 @@ use futures::io::{
 use memchr::memchr;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 pub use err::{Error, RequestError, RequestFailedError};
 pub use response::{DirResponse, SourceInfo};
@@ -263,6 +263,7 @@ where
         ));
     }
 
+    debug!("HTTP response Content-Encoding: {:?}", header.encoding);
     let mut decoder =
         get_decoder(buffered, header.encoding.as_deref(), anonymized).map_err(wrap_err)?;
 
@@ -386,20 +387,24 @@ where
 {
     let buffer_window_size = 1024;
     let mut written_total: usize = 0;
-    // TODO(nickm): This should be an option, and is maybe too long.
-    // Though for some users it may be too short?
-    let read_timeout = Duration::from_secs(10);
-    let timer = runtime.sleep(read_timeout).fuse();
-    futures::pin_mut!(timer);
+    // Idle timeout: if no data arrives for this duration, we give up.
+    // For slow transports like Snowflake, we need a very generous timeout.
+    // The consensus is 2-3 MB compressed and Snowflake can be very slow/bursty.
+    let idle_timeout = Duration::from_secs(120);
 
     loop {
         // allocate buffer for next read
         result.resize(written_total + buffer_window_size, 0);
         let buf: &mut [u8] = &mut result[written_total..written_total + buffer_window_size];
 
+        // Create a fresh timer for each read attempt (idle timeout, not total timeout)
+        let timer = runtime.sleep(idle_timeout).fuse();
+        futures::pin_mut!(timer);
+
         let status = futures::select! {
             status = stream.read(buf).fuse() => status,
             _ = timer => {
+                warn!("Directory read idle timeout after {} bytes", written_total);
                 result.resize(written_total, 0); // truncate as needed
                 return Err(RequestError::DirTimeout);
             }
@@ -407,6 +412,7 @@ where
         let written_in_this_loop = match status {
             Ok(n) => n,
             Err(other) => {
+                warn!("Directory read IO error after {} bytes: {:?}", written_total, other);
                 result.resize(written_total, 0); // truncate as needed
                 return Err(other.into());
             }
