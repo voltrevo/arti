@@ -378,7 +378,7 @@ impl<R: Runtime> HsCircPool<R> {
     }
 
     /// Return the current wall-clock time from the runtime.
-    pub fn wallclock(&self) -> std::time::SystemTime {
+    pub fn wallclock(&self) -> tor_rtcompat::SystemTime {
         self.0.circmgr.mgr.peek_runtime().wallclock()
     }
 }

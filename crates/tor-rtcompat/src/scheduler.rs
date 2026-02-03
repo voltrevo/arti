@@ -7,7 +7,8 @@ use futures::{Stream, StreamExt};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use crate::SystemTime;
 
 use crate::Instant;
 

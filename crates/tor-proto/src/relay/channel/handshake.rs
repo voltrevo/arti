@@ -6,7 +6,7 @@ use futures::io::{AsyncRead, AsyncWrite};
 use rand::Rng;
 use std::net::SocketAddr;
 use std::time::UNIX_EPOCH;
-use std::{sync::Arc, time::SystemTime};
+use std::{sync::Arc, SystemTime};
 use tor_error::internal;
 use tracing::{instrument, trace};
 
@@ -265,7 +265,7 @@ impl<
         self: Box<Self>,
         peer: &OwnedChanTarget,
         peer_cert: &[u8],
-        now: Option<std::time::SystemTime>,
+        now: Option<tor_rtcompat::SystemTime>,
     ) -> Result<Box<dyn FinalizableChannel<T, S>>> {
         // Verify our inner channel and then proceed to handle the authentication challenge if any.
         let mut verified = self.inner.check(peer, peer_cert, now)?;

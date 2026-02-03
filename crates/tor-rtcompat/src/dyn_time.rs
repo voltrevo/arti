@@ -3,7 +3,8 @@
 use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::pin::Pin;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use crate::SystemTime;
 
 use crate::Instant;
 

@@ -523,7 +523,7 @@ mod test {
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
-    use std::time::SystemTime;
+    use tor_rtcompat::SystemTime;
 
     use crate::database;
 

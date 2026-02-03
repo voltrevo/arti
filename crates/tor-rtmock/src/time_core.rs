@@ -1,8 +1,8 @@
 //! [`MockTimeCore`] and [`MockCoarseTimeProvider`]
 
 use derive_deftly::{Deftly, define_derive_deftly};
-use std::time::{Duration, SystemTime};
-use tor_rtcompat::Instant;
+use std::time::Duration;
+use tor_rtcompat::{Instant, SystemTime};
 use tor_rtcompat::{CoarseDuration, CoarseInstant};
 use tor_rtcompat::{CoarseTimeProvider, RealCoarseTimeProvider};
 

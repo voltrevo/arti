@@ -37,6 +37,7 @@ pub struct TorClient {
     is_initialized: Arc<RwLock<bool>>,
     // Store the channel to prevent it from being dropped
     channel: Arc<RwLock<Option<Arc<tor_proto::channel::Channel>>>>,
+    #[cfg(not(target_arch = "wasm32"))]
     update_task: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
     /// Shutdown token for cooperative cancellation of long-running operations
     shutdown_token: CancellationToken,
@@ -79,6 +80,7 @@ impl TorClient {
             http_client: Arc::new(http_client),
             is_initialized: Arc::new(RwLock::new(false)),
             channel,
+            #[cfg(not(target_arch = "wasm32"))]
             update_task: Arc::new(RwLock::new(None)),
             shutdown_token: CancellationToken::new(),
             close_initiated: Arc::new(AtomicBool::new(false)),
@@ -374,7 +376,8 @@ impl TorClient {
         // Signal cancellation to all in-flight operations
         self.shutdown_token.cancel();
 
-        // Stop update task if running
+        // Stop update task if running (native only - WASM spawn_local doesn't return JoinHandle)
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(task) = self.update_task.write().await.take() {
             task.abort();
         }
@@ -736,6 +739,7 @@ impl Clone for TorClient {
             http_client: self.http_client.clone(),
             is_initialized: self.is_initialized.clone(),
             channel: self.channel.clone(),
+            #[cfg(not(target_arch = "wasm32"))]
             update_task: self.update_task.clone(),
             shutdown_token: self.shutdown_token.clone(),
             close_initiated: self.close_initiated.clone(),

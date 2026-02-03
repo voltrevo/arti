@@ -147,7 +147,9 @@
 
 use std::cell::Cell;
 use std::cmp::Ordering;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
+use std::time::Instant;
+use tor_rtcompat::SystemTime;
 
 use derive_deftly::{Deftly, define_derive_deftly};
 use futures::{FutureExt as _, future, select_biased};

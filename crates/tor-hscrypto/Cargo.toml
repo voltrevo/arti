@@ -41,6 +41,7 @@ experimental = ["hs-pow-full"]
 __is_experimental = []
 
 [dependencies]
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
 arrayvec = { version = "0.7.4", optional = true }
 blake2 = { version = "0.10.6", optional = true }
 cipher = { version = "0.4.1", features = ["zeroize"], optional = true }

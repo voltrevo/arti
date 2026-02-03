@@ -25,8 +25,8 @@ use futures::{Stream, StreamExt as _};
 use std::{
     future::Future,
     sync::{Arc, Weak},
-    time::SystemTime,
 };
+use tor_rtcompat::SystemTime;
 use tor_config::MutCfg;
 use tor_dirmgr::DirProvider;
 use tor_error::{into_internal, warn_report};
@@ -37,6 +37,19 @@ use tor_rtcompat::{Runtime, SpawnExt as _};
 use tracing::{debug, error, info, warn};
 
 use crate::{config::SoftwareStatusOverrideConfig, err::ErrorDetail};
+
+/// Format a SystemTime as RFC3339 for display (cross-platform compatible).
+fn format_rfc3339(t: SystemTime) -> String {
+    use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+    let secs = t
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(std::time::Duration::ZERO)
+        .as_secs();
+    OffsetDateTime::from_unix_timestamp(secs as i64)
+        .unwrap_or(OffsetDateTime::UNIX_EPOCH)
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "<time format error>".into())
+}
 
 /// Check whether we have any cached protocol recommendations,
 /// and report about them or enforce them immediately.
@@ -184,7 +197,7 @@ pub(crate) fn evaluate_protocol_status(
 ) -> Result<(), ErrorDetail> {
     let result = recommendation.client().check_protocols(software_protocols);
 
-    let rectime = || humantime::format_rfc3339(recommendation_timestamp);
+    let rectime = || format_rfc3339(recommendation_timestamp);
 
     match &result {
         Ok(()) => Ok(()),

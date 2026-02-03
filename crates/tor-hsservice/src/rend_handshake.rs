@@ -179,7 +179,7 @@ pub(crate) trait RendCircConnector: Send + Sync {
     fn now(&self) -> std::time::Instant;
 
     /// Return the current wall-clock time from the runtime.
-    fn wallclock(&self) -> std::time::SystemTime;
+    fn wallclock(&self) -> tor_rtcompat::SystemTime;
 }
 
 #[async_trait]
@@ -196,7 +196,7 @@ impl<R: Runtime> RendCircConnector for HsCircPool<R> {
         HsCircPool::now(self)
     }
 
-    fn wallclock(&self) -> std::time::SystemTime {
+    fn wallclock(&self) -> tor_rtcompat::SystemTime {
         HsCircPool::wallclock(self)
     }
 }

@@ -146,7 +146,8 @@ pub struct TorClient<R: Runtime> {
     #[cfg(feature = "bridge-client")]
     bridge_desc_mgr: Arc<Mutex<Option<Arc<BridgeDescMgr<R>>>>>,
     /// Pluggable transport manager.
-    #[cfg(feature = "pt-client")]
+    /// Note: Not used on WASM - users inject their own PT manager via chanmgr.set_pt_mgr()
+    #[cfg(all(feature = "pt-client", not(target_arch = "wasm32")))]
     pt_mgr: Arc<tor_ptmgr::PtMgr<R>>,
     /// HS client connector
     #[cfg(feature = "onion-service-client")]
@@ -251,6 +252,14 @@ impl InertTorClient {
     ///
     /// Returns `Ok(None)` if keystore use is disabled.
     fn create_keymgr(config: &TorClientConfig) -> StdResult<Option<Arc<KeyMgr>>, ErrorDetail> {
+        // On WASM, skip keystore creation entirely (no filesystem access)
+        #[cfg(target_arch = "wasm32")]
+        {
+            info!("Running without a keystore (WASM)");
+            return Ok(None);
+        }
+
+        #[allow(unreachable_code)]
         let keystore = config.storage.keystore();
         let permissions = config.storage.permissions();
         let primary_store: Box<dyn Keystore> = match keystore.primary_kind() {
@@ -927,7 +936,8 @@ impl<R: Runtime> TorClient<R> {
         let guardmgr = tor_guardmgr::GuardMgr::new(runtime.clone(), statemgr.clone(), config)
             .map_err(ErrorDetail::GuardMgrSetup)?;
 
-        #[cfg(feature = "pt-client")]
+        // On WASM, users inject their own PT manager via chanmgr.set_pt_mgr()
+        #[cfg(all(feature = "pt-client", not(target_arch = "wasm32")))]
         let pt_mgr = {
             let pt_state_dir = state_dir.as_path().join("pt_state");
             config.storage.permissions().make_directory(&pt_state_dir)?;
@@ -1073,7 +1083,7 @@ impl<R: Runtime> TorClient<R> {
             dirmgr,
             #[cfg(feature = "bridge-client")]
             bridge_desc_mgr,
-            #[cfg(feature = "pt-client")]
+            #[cfg(all(feature = "pt-client", not(target_arch = "wasm32")))]
             pt_mgr,
             #[cfg(feature = "onion-service-client")]
             hsclient,
@@ -1321,7 +1331,7 @@ impl<R: Runtime> TorClient<R> {
             .reconfigure(&new_config.channel, how, netparams)
             .map_err(wrap_err)?;
 
-        #[cfg(feature = "pt-client")]
+        #[cfg(all(feature = "pt-client", not(target_arch = "wasm32")))]
         self.pt_mgr
             .reconfigure(how, new_config.bridges.transports.clone())
             .map_err(wrap_err)?;

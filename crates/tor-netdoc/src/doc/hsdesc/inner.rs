@@ -1,6 +1,6 @@
 //! Code to handle the inner document of an onion service descriptor.
 
-use std::time::SystemTime;
+use tor_rtcompat::SystemTime;
 
 use super::{IntroAuthType, IntroPointDesc};
 use crate::batching_split_before::IteratorExt as _;

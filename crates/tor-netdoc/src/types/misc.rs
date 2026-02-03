@@ -567,11 +567,28 @@ impl<T: PartialOrd> PartialOrd for Unknown<T> {
 /// Types for decoding times and dates
 mod timeimpl {
     use crate::{Error, NetdocErrorKind as EK, Pos, Result};
-    use std::time::SystemTime;
+    use tor_rtcompat::SystemTime;
     use time::{
         OffsetDateTime, PrimitiveDateTime, format_description::FormatItem,
         macros::format_description,
     };
+
+    /// Convert OffsetDateTime to SystemTime via unix timestamp
+    fn odt_to_systemtime(odt: OffsetDateTime) -> SystemTime {
+        let secs = odt.unix_timestamp();
+        let nanos = odt.nanosecond();
+        let duration = std::time::Duration::new(secs as u64, nanos);
+        SystemTime::UNIX_EPOCH + duration
+    }
+
+    /// Convert SystemTime to OffsetDateTime via unix timestamp
+    fn systemtime_to_odt(t: SystemTime) -> OffsetDateTime {
+        let duration = t
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or(std::time::Duration::ZERO);
+        OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
+            .unwrap_or(OffsetDateTime::UNIX_EPOCH)
+    }
 
     /// A wall-clock time, encoded in Iso8601 format with an intervening
     /// space between the date and time.
@@ -594,7 +611,7 @@ mod timeimpl {
                     .at_pos(Pos::at(s))
                     .with_msg(format!("invalid time: {}", e))
             })?;
-            Ok(Iso8601TimeSp(d.assume_utc().into()))
+            Ok(Iso8601TimeSp(odt_to_systemtime(d.assume_utc())))
         }
     }
 
@@ -606,7 +623,7 @@ mod timeimpl {
         t: SystemTime,
         format_desc: &[FormatItem],
     ) -> core::result::Result<String, std::fmt::Error> {
-        OffsetDateTime::from(t)
+        systemtime_to_odt(t)
             .format(format_desc)
             .map_err(|_| std::fmt::Error)
     }
@@ -643,7 +660,7 @@ mod timeimpl {
                     .at_pos(Pos::at(s))
                     .with_msg(format!("invalid time: {}", e))
             })?;
-            Ok(Iso8601TimeNoSp(d.assume_utc().into()))
+            Ok(Iso8601TimeNoSp(odt_to_systemtime(d.assume_utc())))
         }
     }
 
@@ -1284,7 +1301,7 @@ mod test {
     #[test]
     fn time() -> Result<()> {
         use humantime::parse_rfc3339;
-        use std::time::SystemTime;
+        use tor_rtcompat::SystemTime;
 
         let t = "2020-09-29 13:36:33".parse::<Iso8601TimeSp>()?;
         let t: SystemTime = t.into();

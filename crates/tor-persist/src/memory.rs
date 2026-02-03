@@ -83,7 +83,7 @@ impl MemoryStateMgr {
     /// For an in-memory state manager, this returns a future that resolves
     /// immediately since there's no real file locking mechanism that other
     /// processes could be waiting on.
-    pub fn wait_for_unlock(&self) -> impl futures::Future<Output = ()> + Send + Sync + 'static {
+    pub fn wait_for_unlock(&self) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<> {
         // Return a future that resolves immediately
         futures::future::ready(())
     }

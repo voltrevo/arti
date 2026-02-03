@@ -1,7 +1,8 @@
 //! This module defines and implements traits used to create a guard sample from
 //! either bridges or relays.
 
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
+use tor_rtcompat::SystemTime;
 
 use tor_linkspec::{ByRelayIds, ChanTarget, HasRelayIds, OwnedChanTarget};
 use tor_netdir::{NetDir, Relay, RelayWeight};

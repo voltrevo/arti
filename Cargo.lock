@@ -332,6 +332,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cfg-if",
+ "console_error_panic_hook",
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more",
@@ -385,8 +386,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "tracing-wasm",
  "visibility",
  "void",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "webtor-rs",
 ]
 
 [[package]]
@@ -5140,6 +5145,7 @@ dependencies = [
  "derive_more",
  "humantime",
  "thiserror 2.0.17",
+ "time",
  "web-time",
 ]
 
@@ -6706,6 +6712,7 @@ dependencies = [
  "slab",
  "smallvec",
  "thiserror 2.0.17",
+ "tor-rtcompat",
  "weak-table",
 ]
 
@@ -6753,6 +6760,7 @@ dependencies = [
  "tor-llcrypto",
  "tor-memquota",
  "tor-protover",
+ "tor-rtcompat",
  "tor-units",
  "void",
 ]
@@ -6779,6 +6787,7 @@ dependencies = [
  "tor-checkable",
  "tor-error",
  "tor-llcrypto",
+ "tor-rtcompat",
  "x509-cert",
 ]
 
@@ -6831,6 +6840,7 @@ dependencies = [
  "signature",
  "thiserror 2.0.17",
  "tor-llcrypto",
+ "tor-rtcompat",
 ]
 
 [[package]]
@@ -7281,6 +7291,7 @@ dependencies = [
  "tor-key-forge",
  "tor-llcrypto",
  "tor-memquota",
+ "tor-rtcompat",
  "tor-units",
  "void",
  "zeroize",
@@ -7408,6 +7419,7 @@ dependencies = [
  "tor-checkable",
  "tor-error",
  "tor-llcrypto",
+ "tor-rtcompat",
 ]
 
 [[package]]
@@ -7448,6 +7460,7 @@ dependencies = [
  "tor-key-forge",
  "tor-llcrypto",
  "tor-persist",
+ "tor-rtcompat",
  "tracing",
  "visibility",
  "walkdir",
@@ -7601,6 +7614,7 @@ dependencies = [
  "tor-llcrypto",
  "tor-netdoc",
  "tor-protover",
+ "tor-rtcompat",
  "tor-units",
  "tor-wasm-compat",
  "tracing",
@@ -7652,6 +7666,7 @@ dependencies = [
  "tor-linkspec",
  "tor-llcrypto",
  "tor-protover",
+ "tor-rtcompat",
  "tor-units",
  "visibility",
  "visible",
@@ -7686,6 +7701,7 @@ dependencies = [
  "tor-async-utils",
  "tor-basic-utils",
  "tor-error",
+ "tor-rtcompat",
  "tracing",
  "tracing-test",
  "void",
@@ -7807,6 +7823,7 @@ dependencies = [
  "tor-proto",
  "tor-rtcompat",
  "tor-socksproto",
+ "tor-wasm-compat",
  "tracing",
  "tracing-subscriber",
  "visibility",
@@ -7826,6 +7843,7 @@ dependencies = [
  "tor-keymgr",
  "tor-llcrypto",
  "tor-persist",
+ "tor-rtcompat",
 ]
 
 [[package]]
@@ -7914,6 +7932,8 @@ dependencies = [
  "futures-rustls",
  "gloo-timers",
  "hex",
+ "humantime",
+ "humantime-serde",
  "js-sys",
  "libc",
  "native-tls",
@@ -7921,6 +7941,7 @@ dependencies = [
  "pin-project",
  "rustls-pki-types",
  "rustls-webpki",
+ "serde",
  "smol",
  "socket2",
  "subtle-tls",
@@ -8633,6 +8654,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 
@@ -8726,6 +8748,7 @@ dependencies = [
  "tokio-util",
  "tor-async-utils",
  "tor-cell",
+ "tor-chanmgr",
  "tor-checkable",
  "tor-error",
  "tor-linkspec",
@@ -8736,6 +8759,7 @@ dependencies = [
  "tor-protover",
  "tor-rtcompat",
  "tor-units",
+ "tor-wasm-compat",
  "tracing",
  "tracing-subscriber",
  "url",

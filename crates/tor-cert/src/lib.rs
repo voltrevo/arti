@@ -54,7 +54,8 @@ use tor_bytes::{Error as BytesError, Result as BytesResult};
 use tor_bytes::{Readable, Reader};
 use tor_llcrypto::pk::*;
 
-use std::time;
+use std::time::Duration;
+use tor_rtcompat::SystemTime;
 
 pub use err::CertError;
 
@@ -397,13 +398,13 @@ impl Ed25519Cert {
     }
 
     /// Return the time at which this certificate becomes expired
-    pub fn expiry(&self) -> std::time::SystemTime {
-        let d = std::time::Duration::new(u64::from(self.exp_hours) * 3600, 0);
-        std::time::SystemTime::UNIX_EPOCH + d
+    pub fn expiry(&self) -> SystemTime {
+        let d = Duration::new(u64::from(self.exp_hours) * 3600, 0);
+        SystemTime::UNIX_EPOCH + d
     }
 
     /// Return true iff this certificate will be expired at the time `when`.
-    pub fn is_expired_at(&self, when: std::time::SystemTime) -> bool {
+    pub fn is_expired_at(&self, when: SystemTime) -> bool {
         when >= self.expiry()
     }
 
@@ -588,7 +589,7 @@ impl tor_checkable::SelfSigned<SigCheckedCert> for UncheckedCert {
 impl tor_checkable::Timebound<Ed25519Cert> for Ed25519Cert {
     type Error = tor_checkable::TimeValidityError;
 
-    fn is_valid_at(&self, t: &time::SystemTime) -> Result<(), Self::Error> {
+    fn is_valid_at(&self, t: &SystemTime) -> Result<(), Self::Error> {
         if self.is_expired_at(*t) {
             let expiry = self.expiry();
             Err(Self::Error::Expired(
@@ -607,7 +608,7 @@ impl tor_checkable::Timebound<Ed25519Cert> for Ed25519Cert {
 
 impl tor_checkable::Timebound<Ed25519Cert> for SigCheckedCert {
     type Error = tor_checkable::TimeValidityError;
-    fn is_valid_at(&self, t: &time::SystemTime) -> std::result::Result<(), Self::Error> {
+    fn is_valid_at(&self, t: &SystemTime) -> std::result::Result<(), Self::Error> {
         self.cert.is_valid_at(t)
     }
 

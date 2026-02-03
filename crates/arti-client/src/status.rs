@@ -1,7 +1,8 @@
 //! Code to collect and publish information about a client's bootstrapping
 //! status.
 
-use std::{borrow::Cow, fmt, fmt::Display, time::SystemTime};
+use std::{borrow::Cow, fmt, fmt::Display};
+use tor_rtcompat::SystemTime;
 
 use educe::Educe;
 use futures::{Stream, StreamExt};

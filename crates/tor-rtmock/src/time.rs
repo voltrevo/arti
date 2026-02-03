@@ -20,9 +20,9 @@ use std::{
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
-use tor_rtcompat::Instant;
+use tor_rtcompat::{Instant, SystemTime};
 
 use futures::Future;
 use tracing::trace;
@@ -204,7 +204,13 @@ pub struct Sleeping {
 
 impl Default for MockSleepProvider {
     fn default() -> Self {
-        let wallclock = humantime::parse_rfc3339("2023-07-05T11:25:56Z").expect("parse");
+        // Parse the time and convert to Duration from UNIX_EPOCH for cross-platform compatibility
+        let std_wallclock = humantime::parse_rfc3339("2023-07-05T11:25:56Z").expect("parse");
+        // humantime returns std::time::SystemTime, so use std UNIX_EPOCH
+        let duration_since_epoch = std_wallclock
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .expect("time after epoch");
+        let wallclock = SystemTime::UNIX_EPOCH + duration_since_epoch;
         MockSleepProvider::new(wallclock)
     }
 }

@@ -21,9 +21,21 @@ use tor_guardmgr::bridge::BridgeConfig;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
+use tor_rtcompat::SystemTime;
 use tor_error::internal;
 use tracing::warn;
+
+/// Convert time::Duration to std::time::Duration for SystemTime arithmetic.
+fn time_duration_to_std(d: time::Duration) -> std::time::Duration {
+    // time::Duration can be negative, but std::time::Duration cannot.
+    // If negative, return zero.
+    if d.is_negative() {
+        return std::time::Duration::ZERO;
+    }
+    let secs = d.whole_seconds() as u64;
+    let nanos = d.subsec_nanoseconds() as u32;
+    std::time::Duration::new(secs, nanos)
+}
 
 /// Stored consensus with its metadata and content.
 #[derive(Clone, Debug)]
@@ -100,26 +112,26 @@ impl Store for InMemoryStore {
         // Expire consensuses based on valid_until + tolerance
         inner.consensuses.retain(|_, stored| {
             let valid_until = stored.meta.lifetime().valid_until();
-            let expiry = valid_until + expiration.consensuses;
+            let expiry = valid_until + time_duration_to_std(expiration.consensuses);
             now < expiry
         });
 
         // Expire authcerts based on expires time
         inner.authcerts.retain(|_, (meta, _)| {
-            let expiry = meta.expires() + expiration.authcerts;
+            let expiry = meta.expires() + time_duration_to_std(expiration.authcerts);
             now < expiry
         });
 
         // Expire microdescs based on last-listed time
         inner.microdescs.retain(|_, (_, listed)| {
-            let expiry = *listed + expiration.microdescs;
+            let expiry = *listed + time_duration_to_std(expiration.microdescs);
             now < expiry
         });
 
         // Expire router descriptors based on publication time
         #[cfg(feature = "routerdesc")]
         inner.routerdescs.retain(|_, (_, published)| {
-            let expiry = *published + expiration.router_descs;
+            let expiry = *published + time_duration_to_std(expiration.router_descs);
             now < expiry
         });
 

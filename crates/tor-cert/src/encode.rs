@@ -6,7 +6,8 @@ use crate::{
     CertEncodeError, CertExt, Ed25519Cert, Ed25519CertConstructor, ExtType, SignedWithEd25519Ext,
     UnrecognizedExt,
 };
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use tor_rtcompat::SystemTime;
 use tor_bytes::{EncodeResult, Writeable, Writer};
 use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey, Ed25519SigningKey};
 

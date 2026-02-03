@@ -60,6 +60,7 @@ mod dyn_time;
 pub mod general;
 mod opaque;
 pub mod scheduler;
+pub mod serde_time;
 mod timer;
 mod traits;
 pub mod unimpl;
@@ -80,8 +81,9 @@ pub use traits::{
 pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};
 pub use dyn_time::DynTimeProvider;
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
-// Re-export web_time::Instant for WASM compatibility (it's std::time::Instant on non-WASM)
+// Re-export web_time types for WASM compatibility (they're std::time types on non-WASM)
 pub use traits::Instant;
+pub use traits::SystemTime;
 
 /// Traits used to describe TLS connections and objects that can
 /// create them.
