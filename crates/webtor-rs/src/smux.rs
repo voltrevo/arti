@@ -15,12 +15,18 @@ use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use crate::time::Instant;
 use tracing::{debug, trace, warn};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::future::Future;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::{sleep, Duration, Sleep};
+
+#[cfg(target_arch = "wasm32")]
+use std::future::Future;
+#[cfg(target_arch = "wasm32")]
+use gloo_timers::future::TimeoutFuture;
 
 /// SMUX protocol version
 const SMUX_VERSION: u8 = 2;
@@ -244,10 +250,13 @@ pub struct SmuxStream<S> {
     /// Pending NOP to send (keepalive)
     pending_nop: Option<Vec<u8>>,
     /// Time of last NOP sent (for proactive keepalives)
-    last_nop_time: std::time::Instant,
-    /// Timer that wakes us periodically to send keepalives (native only)
+    last_nop_time: Instant,
+    /// Timer that wakes us periodically to send keepalives (native)
     #[cfg(not(target_arch = "wasm32"))]
     keepalive_timer: Pin<Box<Sleep>>,
+    /// Timer that wakes us periodically to send keepalives (WASM)
+    #[cfg(target_arch = "wasm32")]
+    keepalive_timer: Pin<Box<TimeoutFuture>>,
 }
 
 impl<S> SmuxStream<S> {
@@ -263,9 +272,11 @@ impl<S> SmuxStream<S> {
             data_buffer: Vec::new(),
             pending_upd: None,
             pending_nop: None,
-            last_nop_time: std::time::Instant::now(),
+            last_nop_time: Instant::now(),
             #[cfg(not(target_arch = "wasm32"))]
             keepalive_timer: Box::pin(sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS))),
+            #[cfg(target_arch = "wasm32")]
+            keepalive_timer: Box::pin(TimeoutFuture::new(KEEPALIVE_INTERVAL_MS as u32)),
         }
     }
 }
@@ -521,7 +532,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                 if self.pending_nop.is_none() {
                     let nop = SmuxSegment::nop(self.state.stream_id);
                     self.pending_nop = Some(nop.encode());
-                    self.last_nop_time = std::time::Instant::now();
+                    self.last_nop_time = Instant::now();
                 }
                 // Reset timer for next interval
                 self.keepalive_timer = Box::pin(sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS)));
@@ -530,15 +541,21 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
             }
         }
 
-        // Fallback for WASM: check elapsed time (won't wake us, but will send when polled)
+        // Poll the keepalive timer (WASM) - same logic as native but with gloo-timers
         #[cfg(target_arch = "wasm32")]
-        if self.pending_nop.is_none() {
-            let elapsed = self.last_nop_time.elapsed().as_millis() as u64;
-            if elapsed >= KEEPALIVE_INTERVAL_MS {
-                debug!("SMUX poll_read: queueing proactive keepalive NOP ({}ms since last)", elapsed);
-                let nop = SmuxSegment::nop(self.state.stream_id);
-                self.pending_nop = Some(nop.encode());
-                self.last_nop_time = std::time::Instant::now();
+        {
+            if self.keepalive_timer.as_mut().poll(cx).is_ready() {
+                debug!("SMUX poll_read: keepalive timer fired, queueing NOP");
+                // Timer fired - queue a keepalive NOP
+                if self.pending_nop.is_none() {
+                    let nop = SmuxSegment::nop(self.state.stream_id);
+                    self.pending_nop = Some(nop.encode());
+                    self.last_nop_time = Instant::now();
+                }
+                // Reset timer for next interval
+                self.keepalive_timer = Box::pin(TimeoutFuture::new(KEEPALIVE_INTERVAL_MS as u32));
+                // Re-poll timer to register waker for next interval
+                let _ = self.keepalive_timer.as_mut().poll(cx);
             }
         }
 
@@ -548,7 +565,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
             match Pin::new(&mut self.inner).poll_write(cx, &nop_data) {
                 Poll::Ready(Ok(n)) if n == nop_data.len() => {
                     debug!("SMUX poll_read: sent NOP ({} bytes)", n);
-                    self.last_nop_time = std::time::Instant::now();
+                    self.last_nop_time = Instant::now();
                 }
                 Poll::Ready(Ok(_)) => {
                     warn!("SMUX poll_read: partial write of NOP, re-queueing");
