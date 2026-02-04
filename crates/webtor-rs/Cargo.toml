@@ -9,7 +9,6 @@ description = "Core Tor client implementation for web browsers"
 
 [dependencies]
 # Core async runtime
-tokio = { version = "1", features = ["sync", "macros", "io-util", "rt", "time"] }
 futures = "0.3"
 anyhow = "1.0"
 thiserror = "1.0"
@@ -114,6 +113,10 @@ js-sys = "0.3"
 httparse = "1.10.1"
 tor-checkable = { path = "../tor-checkable" }
 
+# Optional: arti-client integration
+tor-chanmgr = { path = "../tor-chanmgr", optional = true }
+tor-wasm-compat = { path = "../tor-wasm-compat", optional = true }
+
 # KCP reliable transport
 kcp = "0.6"
 
@@ -121,11 +124,15 @@ kcp = "0.6"
 gloo-timers = { version = "0.3", features = ["futures"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# On WASM, only use tokio features that don't require mio
+tokio = { version = "1", features = ["sync", "macros"] }
 # WASM TLS (SubtleCrypto-based)
 subtle-tls = { path = "../subtle-tls" }
 async-trait = "0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# On native, use full tokio features
+tokio = { version = "1", features = ["sync", "macros", "io-util", "rt", "time"] }
 # Native TLS (non-WASM only) - ring doesn't compile to WASM
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
 futures-rustls = { version = "0.26", default-features = false, features = ["ring"] }
@@ -142,6 +149,8 @@ tokio-util = { version = "0.7", features = ["compat"] }
 [features]
 default = []
 integration-tests = []
+# Enable arti-client integration (provides SnowflakePtMgr for use with arti)
+arti-integration = ["tor-chanmgr", "tor-wasm-compat"]
 
 [dev-dependencies]
 tokio-test = "0.4"

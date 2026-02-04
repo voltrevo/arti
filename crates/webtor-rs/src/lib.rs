@@ -33,6 +33,10 @@ pub mod webtunnel;
 #[cfg(target_arch = "wasm32")]
 pub mod webrtc_stream;
 
+// Arti-client integration (WASM only)
+#[cfg(all(target_arch = "wasm32", feature = "arti-integration"))]
+pub mod arti_transport;
+
 pub use client::TorClient;
 pub use config::TorClientOptions;
 pub use error::{Result, TorError, TorErrorKind};
@@ -48,3 +52,7 @@ pub use url::Url;
 
 // Re-export Tor stream types for advanced usage
 pub use tor_proto::client::stream::DataStream;
+
+// Re-export arti-client integration types
+#[cfg(all(target_arch = "wasm32", feature = "arti-integration"))]
+pub use arti_transport::{SnowflakeChannelFactory, SnowflakeMode, SnowflakePtMgr};

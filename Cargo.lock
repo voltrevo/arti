@@ -332,6 +332,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cfg-if",
+ "console_error_panic_hook",
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more",
@@ -385,8 +386,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "tracing-wasm",
  "visibility",
  "void",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "webtor-rs",
 ]
 
 [[package]]
@@ -8743,6 +8748,7 @@ dependencies = [
  "tokio-util",
  "tor-async-utils",
  "tor-cell",
+ "tor-chanmgr",
  "tor-checkable",
  "tor-error",
  "tor-linkspec",
@@ -8753,6 +8759,7 @@ dependencies = [
  "tor-protover",
  "tor-rtcompat",
  "tor-units",
+ "tor-wasm-compat",
  "tracing",
  "tracing-subscriber",
  "url",
