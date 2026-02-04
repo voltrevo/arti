@@ -75,6 +75,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, instrument, warn};
 
+#[cfg(feature = "debug-dir-dump")]
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Debug counter for unique filenames
+#[cfg(feature = "debug-dir-dump")]
+static DEBUG_DUMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub use err::{Error, RequestError, RequestFailedError};
 pub use response::{DirResponse, SourceInfo};
 
@@ -263,12 +270,14 @@ where
         ));
     }
 
-    debug!("HTTP response Content-Encoding: {:?}", header.encoding);
+    let req_path = req.uri().path();
+    info!("HTTP 200 received for {} (encoding: {:?})", req_path, header.encoding);
     let mut decoder =
         get_decoder(buffered, header.encoding.as_deref(), anonymized).map_err(wrap_err)?;
 
     let mut result = Vec::new();
     let ok = read_and_decompress(runtime, &mut decoder, maxlen, &mut result).await;
+    info!("Read complete for {}: {} bytes, success={}", req_path, result.len(), ok.is_ok());
 
     let ok = match (partial_ok, ok, result.len()) {
         (true, Err(e), n) if n > 0 => {
@@ -280,6 +289,12 @@ where
         }
         (_, Ok(()), _) => Ok(()),
     };
+
+    // Debug: dump directory data to /tmp/tor-dir-dbg/
+    #[cfg(feature = "debug-dir-dump")]
+    {
+        debug_dump_dir_data(req.uri().path(), &result, ok.is_ok());
+    }
 
     Ok(DirResponse::new(200, None, ok.err(), result, source))
 }
@@ -456,6 +471,50 @@ where
         &id, &error
     );
     circ_mgr.retire_circ(id);
+}
+
+/// Debug: dump downloaded directory data to /tmp/tor-dir-dbg/
+#[cfg(feature = "debug-dir-dump")]
+fn debug_dump_dir_data(path: &str, data: &[u8], complete: bool) {
+    use std::fs;
+    use std::io::Write;
+
+    let dir = "/tmp/tor-dir-dbg";
+    if let Err(e) = fs::create_dir_all(dir) {
+        warn!("Failed to create debug dir {}: {}", dir, e);
+        return;
+    }
+
+    // Create a filename from the path
+    let counter = DEBUG_DUMP_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let safe_path = path
+        .trim_start_matches('/')
+        .replace('/', "_")
+        .replace('?', "_")
+        .chars()
+        .take(100)
+        .collect::<String>();
+
+    let status = if complete { "complete" } else { "partial" };
+    let filename = format!("{}/{}_{:04}_{}.bin", dir, status, counter, safe_path);
+
+    match fs::File::create(&filename) {
+        Ok(mut file) => {
+            if let Err(e) = file.write_all(data) {
+                warn!("Failed to write debug dump {}: {}", filename, e);
+            } else {
+                info!(
+                    "DEBUG: Dumped {} bytes to {} ({})",
+                    data.len(),
+                    filename,
+                    status
+                );
+            }
+        }
+        Err(e) => {
+            warn!("Failed to create debug dump {}: {}", filename, e);
+        }
+    }
 }
 
 /// As AsyncBufReadExt::read_until, but stops after reading `max` bytes.

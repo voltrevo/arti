@@ -85,8 +85,10 @@ impl Default for KcpConfig {
             interval: 100, // Default KCP interval
             resend: 0,     // No fast resend
             nc: true,      // Disable congestion control (nc=1 in Go)
-            snd_wnd: 128,
-            rcv_wnd: 128,
+            // Match Snowflake's WindowSize = 65535 for both send/receive
+            // This removes KCP bottlenecks for high-latency connections
+            snd_wnd: 65535,
+            rcv_wnd: 65535,
         }
     }
 }

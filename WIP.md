@@ -69,9 +69,24 @@ grep "recv sn=" /tmp/snowflake_native.log | tail -20
 grep "received NOP" /tmp/snowflake_native.log
 ```
 
-## Hypothesis
+## Root Cause Found
 
-The bridge stops sending data despite receiving our window updates. Possible causes:
-1. Bridge-side flow control issue
-2. Tor relay stopped sending data to bridge
-3. Protocol mismatch in SMUX window update semantics
+**Window sizes were WAY too small compared to Snowflake's settings!**
+
+| Setting | Our Value | Snowflake Value |
+|---------|-----------|-----------------|
+| KCP snd_wnd | 128 | 65535 |
+| KCP rcv_wnd | 128 | 65535 |
+| SMUX window | 64KB | 1MB |
+
+The small windows caused flow control backpressure that stalled data transfer.
+
+## Fix Applied
+
+1. `kcp_stream.rs`: Changed `snd_wnd` and `rcv_wnd` from 128 to 65535
+2. `smux.rs`: Changed `DEFAULT_WINDOW` from 65535 (64KB) to 1048576 (1MB)
+
+## Sources
+
+- [Snowflake KCP/SMUX config](https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/snowflake/-/blob/main/client/lib/snowflake.go)
+- [Snowflake buffer size tuning discussion](https://archive.torproject.org/websites/lists.torproject.org/pipermail/anti-censorship-team/2021-July/000178.html)

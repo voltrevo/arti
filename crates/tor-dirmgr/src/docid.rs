@@ -181,6 +181,8 @@ impl DocQuery {
         use DocQuery::*;
         /// How many objects can be put in a single HTTP GET line?
         const N: usize = 500;
+        /// DEBUG: Use smaller batch size for microdescs to isolate stall issue
+        const MICRODESC_N: usize = 10;
         match self {
             LatestConsensus { .. } => vec![self],
             AuthCert(mut v) => {
@@ -189,7 +191,7 @@ impl DocQuery {
             }
             Microdesc(mut v) => {
                 v.sort_unstable();
-                v[..].chunks(N).map(|s| Microdesc(s.to_vec())).collect()
+                v[..].chunks(MICRODESC_N).map(|s| Microdesc(s.to_vec())).collect()
             }
             #[cfg(feature = "routerdesc")]
             RouterDesc(mut v) => {

@@ -151,6 +151,8 @@ dirfilter = ["tor-dirmgr/dirfilter", "__is_experimental"]
 ephemeral-keystore = ["tor-keymgr/ephemeral-keystore", "__is_experimental"]
 ctor-keystore = ["tor-keymgr/ctor-keystore", "__is_experimental"]
 error_detail = ["__is_experimental"]
+# Debug: dump downloaded directory data to /tmp/tor-dir-dbg/
+debug-dir-dump = ["tor-dirmgr/debug-dir-dump"]
 geoip = ["tor-circmgr/geoip", "tor-dirmgr/geoip", "tor-geoip", "__is_experimental"]
 flowctl-cc = ["tor-circmgr/flowctl-cc", "__is_experimental"]
 counter-galois-onion = ["tor-proto/counter-galois-onion", "flowctl-cc", "__is_experimental"]
