@@ -44,7 +44,8 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
-use std::time;
+use std::time::Duration;
+use tor_rtcompat::SystemTime;
 use thiserror::Error;
 
 pub mod signed;
@@ -57,10 +58,10 @@ pub mod timed;
 pub enum TimeValidityError {
     /// The object is not yet valid
     #[error("Object will not be valid for {}", humantime::format_duration(*.0))]
-    NotYetValid(time::Duration),
+    NotYetValid(Duration),
     /// The object is expired
     #[error("Object has been expired for {}", humantime::format_duration(*.0))]
-    Expired(time::Duration),
+    Expired(Duration),
     /// The object isn't timely, and we don't know why, or won't say.
     #[error("Object is not currently valid")]
     Unspecified,
@@ -78,25 +79,25 @@ pub trait Timebound<T>: Sized {
     /// Check whether this object is valid at a given time.
     ///
     /// Return Ok if the object is valid, and an error if the object is not.
-    fn is_valid_at(&self, t: &time::SystemTime) -> Result<(), Self::Error>;
+    fn is_valid_at(&self, t: &SystemTime) -> Result<(), Self::Error>;
 
     /// Return the underlying object without checking whether it's valid.
     fn dangerously_assume_timely(self) -> T;
 
     /// Unwrap this Timebound object if it is valid at a given time.
-    fn check_valid_at(self, t: &time::SystemTime) -> Result<T, Self::Error> {
+    fn check_valid_at(self, t: &SystemTime) -> Result<T, Self::Error> {
         self.is_valid_at(t)?;
         Ok(self.dangerously_assume_timely())
     }
 
     /// Unwrap this Timebound object if it is valid now.
     fn check_valid_now(self) -> Result<T, Self::Error> {
-        self.check_valid_at(&time::SystemTime::now())
+        self.check_valid_at(&SystemTime::now())
     }
 
     /// Unwrap this object if it is valid at the provided time t.
     /// If no time is provided, check the object at the current time.
-    fn check_valid_at_opt(self, t: Option<time::SystemTime>) -> Result<T, Self::Error> {
+    fn check_valid_at_opt(self, t: Option<SystemTime>) -> Result<T, Self::Error> {
         match t {
             Some(when) => self.check_valid_at(&when),
             None => self.check_valid_now(),

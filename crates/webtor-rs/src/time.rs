@@ -48,9 +48,9 @@ mod platform {
         }
     }
 
-    pub fn system_time_now() -> std::time::SystemTime {
+    pub fn system_time_now() -> tor_rtcompat::SystemTime {
         let ms = js_sys::Date::now();
-        std::time::UNIX_EPOCH + Duration::from_millis(ms as u64)
+        tor_rtcompat::SystemTime::UNIX_EPOCH + Duration::from_millis(ms as u64)
     }
 }
 
@@ -89,8 +89,8 @@ mod platform {
         }
     }
 
-    pub fn system_time_now() -> std::time::SystemTime {
-        std::time::SystemTime::now()
+    pub fn system_time_now() -> tor_rtcompat::SystemTime {
+        tor_rtcompat::SystemTime::now()
     }
 }
 

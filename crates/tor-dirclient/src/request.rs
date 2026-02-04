@@ -20,12 +20,21 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::iter::FromIterator;
 use std::pin::Pin;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use tor_rtcompat::SystemTime;
 
 use itertools::Itertools;
 
 use crate::AnonymizedRequest;
 use crate::err::RequestError;
+
+/// Convert tor_rtcompat::SystemTime to std::time::SystemTime for httpdate compatibility.
+fn to_std_systemtime(t: SystemTime) -> std::time::SystemTime {
+    let duration = t
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO);
+    std::time::UNIX_EPOCH + duration
+}
 
 /// Declare an inaccessible public type.
 pub(crate) mod sealed {
@@ -266,7 +275,7 @@ impl sealed::RequestableInner for ConsensusRequest {
         if let Some(when) = self.last_consensus_date() {
             req = req.header(
                 http::header::IF_MODIFIED_SINCE,
-                httpdate::fmt_http_date(when),
+                httpdate::fmt_http_date(to_std_systemtime(when)),
             );
         }
 
@@ -814,7 +823,7 @@ mod test {
         let d3 = SystemTime::now();
         let mut req = ConsensusRequest::default();
 
-        let when = httpdate::fmt_http_date(d3);
+        let when = httpdate::fmt_http_date(to_std_systemtime(d3));
 
         req.push_authority_id(d1);
         req.push_old_consensus_digest(*d2);

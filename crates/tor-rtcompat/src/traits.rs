@@ -8,9 +8,10 @@ use futures::{AsyncRead, AsyncWrite, Future};
 use std::fmt::Debug;
 use std::io::{self, Result as IoResult};
 use std::net;
-use std::time::{Duration, SystemTime};
-// Use web_time::Instant which works on WASM (re-exports std::time::Instant on non-WASM)
+use std::time::Duration;
+// Use web_time types which work on WASM (re-exports std::time types on non-WASM)
 pub use web_time::Instant;
+pub use web_time::SystemTime;
 use tor_general_addr::unix;
 
 /// A runtime for use by Tor client library code.

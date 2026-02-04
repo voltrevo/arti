@@ -14,7 +14,7 @@ use tor_cell::chancell::{AnyChanCell, ChanMsg, msg};
 use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, SleepProvider, StreamOps};
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use tor_rtcompat::SystemTime;
 
 use tor_linkspec::{ChanTarget, ChannelMethod, OwnedChanTargetBuilder, RelayIds};
 use tor_llcrypto as ll;
@@ -293,7 +293,7 @@ impl<
         self,
         peer: &U,
         peer_cert: &[u8],
-        now: Option<std::time::SystemTime>,
+        now: Option<SystemTime>,
     ) -> Result<VerifiedChannel<T, S>> {
         let peer_cert_sha256 = ll::d::Sha256::digest(peer_cert).into();
         self.check_internal(peer, peer_cert_sha256, now)
@@ -619,7 +619,8 @@ pub(super) mod test {
     #![allow(clippy::unwrap_used)]
     use hex_literal::hex;
     use regex::Regex;
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
+use tor_rtcompat::SystemTime;
 
     use super::*;
     use crate::channel::handler::test::MsgBuf;

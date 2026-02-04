@@ -55,6 +55,7 @@ full = [
 __is_experimental = []
 
 [dependencies]
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
 async-trait = "0.1.54"
 tor-wasm-compat = { path = "../tor-wasm-compat" }
 bitflags = "2"

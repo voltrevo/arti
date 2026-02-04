@@ -23,7 +23,8 @@
 /// (Here in Arti we use the word "ring" in types and variable names only
 /// to refer to the actual actual reified ring, not to HSDir parameters, or
 /// or other aspects of the HSDir ring structure.)
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use tor_rtcompat::SystemTime;
 
 use crate::{Error, HsDirs, Result, params::NetParameters};
 use time::{OffsetDateTime, UtcOffset};

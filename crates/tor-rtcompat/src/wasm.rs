@@ -22,7 +22,8 @@ use std::io::{self, Result as IoResult};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use crate::SystemTime;
 use tor_general_addr::unix;
 
 /// A runtime for WASM environments.

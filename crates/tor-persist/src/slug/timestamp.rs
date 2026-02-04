@@ -4,7 +4,7 @@ use crate::slug::{BadSlug, Slug};
 
 use std::fmt;
 use std::str::FromStr;
-use std::time::SystemTime;
+use tor_rtcompat::SystemTime;
 
 use derive_more::{From, Into};
 use thiserror::Error;
@@ -45,8 +45,12 @@ impl FromStr for Iso8601TimeSlug {
 
     fn from_str(s: &str) -> Result<Iso8601TimeSlug, Self::Err> {
         let d = PrimitiveDateTime::parse(s, &ISO_8601SP_FMT)?;
-
-        Ok(Iso8601TimeSlug(d.assume_utc().into()))
+        let odt = d.assume_utc();
+        // Convert OffsetDateTime to SystemTime via unix timestamp
+        let secs = odt.unix_timestamp();
+        let nanos = odt.nanosecond();
+        let duration = std::time::Duration::new(secs as u64, nanos);
+        Ok(Iso8601TimeSlug(SystemTime::UNIX_EPOCH + duration))
     }
 }
 
@@ -73,7 +77,13 @@ pub enum BadIso8601TimeSlug {
 
 impl fmt::Display for Iso8601TimeSlug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ts = OffsetDateTime::from(self.0)
+        // Convert SystemTime to OffsetDateTime via unix timestamp
+        let duration = self.0
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or(std::time::Duration::ZERO);
+        let odt = OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
+            .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+        let ts = odt
             .format(ISO_8601SP_FMT)
             .map_err(|_| fmt::Error)?;
 

@@ -13,8 +13,8 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     task::Poll,
-    time::SystemTime,
 };
+use tor_rtcompat::SystemTime;
 
 use educe::Educe;
 use futures::{Future, StreamExt, stream::Stream};
@@ -457,8 +457,13 @@ impl fmt::Display for DirProgress {
                     )
                     .expect("Invalid time format")
                 });
-            OffsetDateTime::from(t)
-                .format(&FORMAT)
+            // Convert via unix timestamp for cross-platform compatibility
+            let duration = t
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or(std::time::Duration::ZERO);
+            let odt = OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
+                .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+            odt.format(&FORMAT)
                 .unwrap_or_else(|_| "(could not format)".into())
         }
 

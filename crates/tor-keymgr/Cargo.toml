@@ -51,6 +51,7 @@ testing = ["__is_experimental"]
 __is_experimental = []
 
 [dependencies]
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
 amplify = { version = "4", default-features = false, features = ["derive"] }
 arrayvec = "0.7.3"
 cfg-if = "1.0.0"

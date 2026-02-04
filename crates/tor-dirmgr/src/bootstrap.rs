@@ -6,8 +6,9 @@ use std::ops::Deref;
 use std::{
     collections::HashMap,
     sync::{Arc, Weak},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+use tor_rtcompat::SystemTime;
 
 use crate::DirMgrConfig;
 use crate::DocSource;

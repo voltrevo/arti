@@ -2,7 +2,7 @@
 //! KeyMgr so some of them can be stored on disk.
 
 use std::fmt;
-use std::time::SystemTime;
+use tor_rtcompat::SystemTime;
 
 use derive_deftly::Deftly;
 use derive_more::Constructor;

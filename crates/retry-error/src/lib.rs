@@ -47,8 +47,36 @@
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Error as FmtError, Formatter};
 use std::iter;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use web_time::SystemTime;
 use web_time::Instant;
+
+/// Format a SystemTime as RFC3339 for display.
+/// On native, uses humantime. On WASM, formats manually.
+#[cfg(not(target_arch = "wasm32"))]
+fn format_time_rfc3339(t: SystemTime) -> impl Display {
+    // web_time::SystemTime is std::time::SystemTime on non-WASM
+    humantime::format_rfc3339(t)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn format_time_rfc3339(t: SystemTime) -> impl Display {
+    use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+    struct WasmTime(SystemTime);
+    impl Display for WasmTime {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            let secs = self.0.duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let dt = OffsetDateTime::from_unix_timestamp(secs).unwrap_or(OffsetDateTime::UNIX_EPOCH);
+            match dt.format(&Rfc3339) {
+                Ok(s) => f.write_str(&s),
+                Err(_) => write!(f, "<time format error>"),
+            }
+        }
+    }
+    WasmTime(t)
+}
 
 /// An error type for use when we're going to do something a few times,
 /// and they might all fail.
@@ -329,7 +357,7 @@ impl<E: AsRef<dyn Error>> Display for RetryError<E> {
                         write!(
                             f,
                             " at {} ({})",
-                            humantime::format_rfc3339(first_at),
+                            format_time_rfc3339(first_at),
                             FormatTimeAgo(timestamp.elapsed())
                         )?;
                     }
@@ -351,10 +379,10 @@ impl<E: AsRef<dyn Error>> Display for RetryError<E> {
                     {
                         let duration = last_ts.saturating_duration_since(*first_ts);
 
-                        write!(f, " (from {} ", humantime::format_rfc3339(first_at))?;
+                        write!(f, " (from {} ", format_time_rfc3339(first_at))?;
 
                         if duration.as_secs() > 0 {
-                            write!(f, "to {}", humantime::format_rfc3339(first_at + duration))?;
+                            write!(f, "to {}", format_time_rfc3339(first_at + duration))?;
                         }
 
                         write!(f, ", {})", FormatTimeAgo(last_ts.elapsed()))?;
