@@ -23,8 +23,9 @@ const SMUX_VERSION: u8 = 2;
 /// Default stream ID
 const DEFAULT_STREAM_ID: u32 = 3;
 
-/// Default window size (64KB)
-const DEFAULT_WINDOW: u32 = 65535;
+/// Default window size (1MB) - matches Snowflake's MaxStreamBuffer
+/// This controls the maximum in-flight data between client and server
+const DEFAULT_WINDOW: u32 = 1048576;
 
 /// SMUX commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -488,34 +489,51 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
             self.read_buffer.len()
         );
 
+        // Track whether we have a pending window update that couldn't be sent
+        let mut update_pending = false;
+
         // Try to send any pending window update first
+        // CRITICAL: We must send window updates before reading more data,
+        // otherwise the server may think we're full and stop sending.
         if let Some(upd_data) = self.pending_upd.take() {
             match Pin::new(&mut self.inner).poll_write(cx, &upd_data) {
                 Poll::Ready(Ok(n)) if n == upd_data.len() => {
                     debug!("SMUX poll_read: sent pending window update ({} bytes)", n);
                 }
                 Poll::Ready(Ok(_)) => {
-                    // Partial write - re-queue and try again later
+                    // Partial write - re-queue for later
+                    warn!("SMUX poll_read: partial write of window update, re-queueing");
                     self.pending_upd = Some(upd_data);
+                    update_pending = true;
                 }
                 Poll::Ready(Err(e)) => {
-                    warn!("SMUX poll_read: failed to send window update: {}", e);
-                    // Don't fail the read, just drop the update
+                    warn!("SMUX poll_read: failed to send window update: {}, re-queueing", e);
+                    // Re-queue and retry - don't silently drop updates!
+                    self.pending_upd = Some(upd_data);
+                    update_pending = true;
                 }
                 Poll::Pending => {
                     // Re-queue for later
                     self.pending_upd = Some(upd_data);
+                    update_pending = true;
                 }
             }
         }
 
-        // Drain data buffer first
+        // Drain data buffer first - always do this even if update is pending
         if !self.data_buffer.is_empty() {
             let len = std::cmp::min(buf.len(), self.data_buffer.len());
             buf[..len].copy_from_slice(&self.data_buffer[..len]);
             self.data_buffer.drain(..len);
             trace!("SMUX poll_read: returning {} bytes from data buffer", len);
             return Poll::Ready(Ok(len));
+        }
+
+        // If we have a pending window update that couldn't be sent, don't read more data
+        // This prevents us from filling up without telling the server we have space
+        if update_pending {
+            trace!("SMUX poll_read: window update pending, waiting before reading more");
+            return Poll::Pending;
         }
 
         // Try to decode from read buffer

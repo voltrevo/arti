@@ -50,6 +50,8 @@ compression = ["tor-dirclient/xz", "tor-dirclient/zstd"]
 routerdesc = ["tor-dirclient/routerdesc"]
 dirfilter = ["__is_experimental"]
 geoip = ["tor-netdir/geoip", "tor-geoip", "__is_experimental"]
+# Debug: dump downloaded directory data to /tmp/tor-dir-dbg/
+debug-dir-dump = ["tor-dirclient/debug-dir-dump"]
 
 # Enable experimental APIs that are not yet officially supported.
 #
