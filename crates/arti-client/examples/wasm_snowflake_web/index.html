@@ -19,6 +19,19 @@
             padding: 15px;
             margin-bottom: 10px;
         }
+        #response {
+            background: #0f0f23;
+            border: 1px solid #333;
+            padding: 15px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        #response.visible {
+            display: block;
+        }
         button {
             background: #7c3aed;
             color: white;
@@ -31,8 +44,12 @@
         button:hover {
             background: #6d28d9;
         }
-        #logCount {
+        .stats {
             color: #22d3ee;
+        }
+        .expected {
+            color: #888;
+            font-size: 0.9em;
         }
     </style>
 </head>
@@ -40,27 +57,52 @@
     <h1>Arti-client WASM + Snowflake</h1>
     <p>This example connects to the Tor network via Snowflake bridge and fetches example.com</p>
     <div id="status">Status: Loading WASM module...</div>
-    <p><span id="logCount">0</span> log entries captured</p>
+    <p>
+        <span class="stats"><span id="logCount">0</span> log entries</span> |
+        <span class="stats"><span id="readCompleteCount">0</span> Read complete</span>
+        <span class="expected">(expected: ~500)</span>
+    </p>
     <button id="downloadBtn">Download Logs</button>
+    <div id="response"></div>
 
     <script type="module">
         import init from './wasm_snowflake.js';
 
         const logs = [];
+        let readCompleteCount = 0;
         const statusDiv = document.getElementById('status');
         const logCountSpan = document.getElementById('logCount');
+        const readCompleteSpan = document.getElementById('readCompleteCount');
         const downloadBtn = document.getElementById('downloadBtn');
+        const responseDiv = document.getElementById('response');
 
         function addLog(level, msg) {
+            // Skip TRACE level logs
+            if (level.toUpperCase() === 'TRACE') {
+                return;
+            }
+
             const timestamp = new Date().toISOString();
             logs.push(`[${timestamp}] ${level.toUpperCase()}: ${msg}`);
             logCountSpan.textContent = logs.length;
+
+            // Track "Read complete" messages
+            if (msg.includes('Read complete')) {
+                readCompleteCount++;
+                readCompleteSpan.textContent = readCompleteCount;
+            }
+        }
+
+        function showResponse(text) {
+            responseDiv.textContent = text;
+            responseDiv.classList.add('visible');
         }
 
         // Override console to capture logs
         const originalLog = console.log;
         const originalWarn = console.warn;
         const originalError = console.error;
+        const originalDebug = console.debug;
 
         console.log = (...args) => {
             addLog('info', args.join(' '));
@@ -74,6 +116,13 @@
             addLog('error', args.join(' '));
             originalError.apply(console, args);
         };
+        console.debug = (...args) => {
+            addLog('debug', args.join(' '));
+            originalDebug.apply(console, args);
+        };
+
+        // Expose showResponse for WASM to call
+        window.showResponse = showResponse;
 
         downloadBtn.addEventListener('click', () => {
             const content = logs.join('\n');

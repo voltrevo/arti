@@ -30,13 +30,25 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use webtor_rs::SnowflakePtMgr;
 
+// JS function bindings
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = window)]
+    fn showResponse(text: &str);
+}
+
 /// Entry point for WASM
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub fn wasm_main() {
-    // Set up console logging for WASM
+    // Set up console logging for WASM with DEBUG level (filter out TRACE)
     console_error_panic_hook::set_once();
-    tracing_wasm::set_as_global_default();
+
+    let config = tracing_wasm::WASMLayerConfigBuilder::new()
+        .set_max_level(tracing::Level::DEBUG)
+        .build();
+    tracing_wasm::set_as_global_default_with_config(config);
 
     // Spawn the async main function
     wasm_bindgen_futures::spawn_local(async_main());
@@ -171,6 +183,9 @@ async fn run_tor_client() -> Result<(), Box<dyn std::error::Error>> {
 
     let response = String::from_utf8_lossy(&buf);
     info!("Response received ({} bytes):\n{}", buf.len(), &response[..response.len().min(500)]);
+
+    // Show response on the page
+    showResponse(&response);
 
     Ok(())
 }
