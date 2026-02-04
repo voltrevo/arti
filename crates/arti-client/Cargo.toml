@@ -242,6 +242,7 @@ tokio-crate = { package = "tokio", version = "1.7", features = [
     "macros",
 ] }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0", features = ["tokio", "native-tls"] }
+webtor-rs = { path = "../webtor-rs", features = ["arti-integration"] }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -230,6 +230,8 @@ pub struct SmuxStream<S> {
     state: SmuxState,
     read_buffer: Vec<u8>,
     data_buffer: Vec<u8>,
+    /// Pending window update to send
+    pending_upd: Option<Vec<u8>>,
 }
 
 impl<S> SmuxStream<S> {
@@ -243,6 +245,7 @@ impl<S> SmuxStream<S> {
             state: SmuxState::new(stream_id),
             read_buffer: Vec::with_capacity(4096),
             data_buffer: Vec::new(),
+            pending_upd: None,
         }
     }
 }
@@ -472,7 +475,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> SmuxStream<S> {
     }
 }
 
-impl<S: AsyncRead + Unpin> AsyncRead for SmuxStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -484,6 +487,27 @@ impl<S: AsyncRead + Unpin> AsyncRead for SmuxStream<S> {
             self.data_buffer.len(),
             self.read_buffer.len()
         );
+
+        // Try to send any pending window update first
+        if let Some(upd_data) = self.pending_upd.take() {
+            match Pin::new(&mut self.inner).poll_write(cx, &upd_data) {
+                Poll::Ready(Ok(n)) if n == upd_data.len() => {
+                    debug!("SMUX poll_read: sent pending window update ({} bytes)", n);
+                }
+                Poll::Ready(Ok(_)) => {
+                    // Partial write - re-queue and try again later
+                    self.pending_upd = Some(upd_data);
+                }
+                Poll::Ready(Err(e)) => {
+                    warn!("SMUX poll_read: failed to send window update: {}", e);
+                    // Don't fail the read, just drop the update
+                }
+                Poll::Pending => {
+                    // Re-queue for later
+                    self.pending_upd = Some(upd_data);
+                }
+            }
+        }
 
         // Drain data buffer first
         if !self.data_buffer.is_empty() {
@@ -525,6 +549,21 @@ impl<S: AsyncRead + Unpin> AsyncRead for SmuxStream<S> {
                                 .state
                                 .self_increment
                                 .wrapping_add(segment.data.len() as u32);
+
+                            // Queue window update if needed
+                            if self.state.should_send_update() {
+                                let upd = SmuxSegment::upd(
+                                    self.state.stream_id,
+                                    self.state.self_read,
+                                    self.state.self_window,
+                                );
+                                debug!(
+                                    "SMUX poll_read: queueing window update (consumed={}, window={})",
+                                    self.state.self_read, self.state.self_window
+                                );
+                                self.pending_upd = Some(upd.encode());
+                                self.state.self_increment = 0;
+                            }
 
                             let len = std::cmp::min(buf.len(), segment.data.len());
                             buf[..len].copy_from_slice(&segment.data[..len]);
