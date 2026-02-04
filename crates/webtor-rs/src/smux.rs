@@ -17,6 +17,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tracing::{debug, trace, warn};
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::future::Future;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::{sleep, Duration, Sleep};
+
 /// SMUX protocol version
 const SMUX_VERSION: u8 = 2;
 
@@ -225,6 +230,9 @@ impl SmuxState {
     }
 }
 
+/// Keepalive interval in milliseconds (send NOP every 5 seconds to keep data flowing)
+const KEEPALIVE_INTERVAL_MS: u64 = 500;
+
 /// SMUX multiplexed stream
 pub struct SmuxStream<S> {
     inner: S,
@@ -233,6 +241,13 @@ pub struct SmuxStream<S> {
     data_buffer: Vec<u8>,
     /// Pending window update to send
     pending_upd: Option<Vec<u8>>,
+    /// Pending NOP to send (keepalive)
+    pending_nop: Option<Vec<u8>>,
+    /// Time of last NOP sent (for proactive keepalives)
+    last_nop_time: std::time::Instant,
+    /// Timer that wakes us periodically to send keepalives (native only)
+    #[cfg(not(target_arch = "wasm32"))]
+    keepalive_timer: Pin<Box<Sleep>>,
 }
 
 impl<S> SmuxStream<S> {
@@ -247,6 +262,10 @@ impl<S> SmuxStream<S> {
             read_buffer: Vec::with_capacity(4096),
             data_buffer: Vec::new(),
             pending_upd: None,
+            pending_nop: None,
+            last_nop_time: std::time::Instant::now(),
+            #[cfg(not(target_arch = "wasm32"))]
+            keepalive_timer: Box::pin(sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS))),
         }
     }
 }
@@ -489,10 +508,66 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
             self.read_buffer.len()
         );
 
-        // Track whether we have a pending window update that couldn't be sent
-        let mut update_pending = false;
+        // Track whether we have pending control messages that couldn't be sent
+        let mut control_pending = false;
 
-        // Try to send any pending window update first
+        // Poll the keepalive timer (native only) - this ensures we wake up periodically
+        // even when no data is arriving from the network
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.keepalive_timer.as_mut().poll(cx).is_ready() {
+                debug!("SMUX poll_read: keepalive timer fired, queueing NOP");
+                // Timer fired - queue a keepalive NOP
+                if self.pending_nop.is_none() {
+                    let nop = SmuxSegment::nop(self.state.stream_id);
+                    self.pending_nop = Some(nop.encode());
+                    self.last_nop_time = std::time::Instant::now();
+                }
+                // Reset timer for next interval
+                self.keepalive_timer = Box::pin(sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS)));
+                // Re-poll timer to register waker for next interval
+                let _ = self.keepalive_timer.as_mut().poll(cx);
+            }
+        }
+
+        // Fallback for WASM: check elapsed time (won't wake us, but will send when polled)
+        #[cfg(target_arch = "wasm32")]
+        if self.pending_nop.is_none() {
+            let elapsed = self.last_nop_time.elapsed().as_millis() as u64;
+            if elapsed >= KEEPALIVE_INTERVAL_MS {
+                debug!("SMUX poll_read: queueing proactive keepalive NOP ({}ms since last)", elapsed);
+                let nop = SmuxSegment::nop(self.state.stream_id);
+                self.pending_nop = Some(nop.encode());
+                self.last_nop_time = std::time::Instant::now();
+            }
+        }
+
+        // Try to send any pending NOP (keepalive)
+        // CRITICAL: We must send keepalives or the server may buffer data
+        if let Some(nop_data) = self.pending_nop.take() {
+            match Pin::new(&mut self.inner).poll_write(cx, &nop_data) {
+                Poll::Ready(Ok(n)) if n == nop_data.len() => {
+                    debug!("SMUX poll_read: sent NOP ({} bytes)", n);
+                    self.last_nop_time = std::time::Instant::now();
+                }
+                Poll::Ready(Ok(_)) => {
+                    warn!("SMUX poll_read: partial write of NOP, re-queueing");
+                    self.pending_nop = Some(nop_data);
+                    control_pending = true;
+                }
+                Poll::Ready(Err(e)) => {
+                    warn!("SMUX poll_read: failed to send NOP: {}, re-queueing", e);
+                    self.pending_nop = Some(nop_data);
+                    control_pending = true;
+                }
+                Poll::Pending => {
+                    self.pending_nop = Some(nop_data);
+                    control_pending = true;
+                }
+            }
+        }
+
+        // Try to send any pending window update
         // CRITICAL: We must send window updates before reading more data,
         // otherwise the server may think we're full and stop sending.
         if let Some(upd_data) = self.pending_upd.take() {
@@ -504,18 +579,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                     // Partial write - re-queue for later
                     warn!("SMUX poll_read: partial write of window update, re-queueing");
                     self.pending_upd = Some(upd_data);
-                    update_pending = true;
+                    control_pending = true;
                 }
                 Poll::Ready(Err(e)) => {
                     warn!("SMUX poll_read: failed to send window update: {}, re-queueing", e);
                     // Re-queue and retry - don't silently drop updates!
                     self.pending_upd = Some(upd_data);
-                    update_pending = true;
+                    control_pending = true;
                 }
                 Poll::Pending => {
                     // Re-queue for later
                     self.pending_upd = Some(upd_data);
-                    update_pending = true;
+                    control_pending = true;
                 }
             }
         }
@@ -529,10 +604,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
             return Poll::Ready(Ok(len));
         }
 
-        // If we have a pending window update that couldn't be sent, don't read more data
-        // This prevents us from filling up without telling the server we have space
-        if update_pending {
-            trace!("SMUX poll_read: window update pending, waiting before reading more");
+        // If we have pending control messages that couldn't be sent, wake ourselves to retry
+        if control_pending {
+            trace!("SMUX poll_read: control message pending, waking to retry");
+            cx.waker().wake_by_ref();
             return Poll::Pending;
         }
 
@@ -611,7 +686,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                             continue;
                         }
                         SmuxCommand::Nop => {
-                            debug!("SMUX poll_read: received NOP");
+                            debug!("SMUX poll_read: received NOP, queueing response");
+                            // Queue NOP response (ping-pong keepalive)
+                            let nop = SmuxSegment::nop(self.state.stream_id);
+                            self.pending_nop = Some(nop.encode());
                             continue;
                         }
                     }

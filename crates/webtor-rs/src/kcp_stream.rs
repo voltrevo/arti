@@ -269,6 +269,34 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
         // Save waker for later
         self.waker = Some(cx.waker().clone());
 
+        // CRITICAL: Try to flush any pending writes first (ACKs that couldn't be sent earlier)
+        // If we don't send ACKs, the server will think our window is full and stop sending!
+        if !self.pending_write.is_empty() {
+            let pending = std::mem::take(&mut self.pending_write);
+            match Pin::new(&mut self.transport).poll_write(cx, &pending) {
+                Poll::Ready(Ok(n)) if n == pending.len() => {
+                    debug!("KCP read: flushed {} bytes of pending ACKs", n);
+                    // Also try to flush
+                    let _ = Pin::new(&mut self.transport).poll_flush(cx);
+                }
+                Poll::Ready(Ok(n)) => {
+                    // Partial write - keep the remainder
+                    debug!("KCP read: partial write of pending ACKs ({}/{})", n, pending.len());
+                    self.pending_write = pending[n..].to_vec();
+                }
+                Poll::Ready(Err(e)) => {
+                    return Poll::Ready(Err(e));
+                }
+                Poll::Pending => {
+                    // Can't send yet, re-queue and wake ourselves to try again
+                    debug!("KCP read: pending ACKs couldn't be sent, re-queueing");
+                    self.pending_write = pending;
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+            }
+        }
+
         // Try to receive from KCP first
         match self.kcp.recv(buf) {
             Ok(n) => {
@@ -317,13 +345,25 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                         output_data.len()
                     );
                     // Try to write ACKs immediately
-                    if let Poll::Ready(Err(e)) =
-                        Pin::new(&mut self.transport).poll_write(cx, &output_data)
-                    {
-                        return Poll::Ready(Err(e));
+                    match Pin::new(&mut self.transport).poll_write(cx, &output_data) {
+                        Poll::Ready(Ok(n)) if n == output_data.len() => {
+                            // Full write - try to flush
+                            let _ = Pin::new(&mut self.transport).poll_flush(cx);
+                        }
+                        Poll::Ready(Ok(n)) => {
+                            // Partial write - queue the remainder
+                            debug!("KCP read: partial ACK write ({}/{}), queueing remainder", n, output_data.len());
+                            self.pending_write.extend_from_slice(&output_data[n..]);
+                        }
+                        Poll::Ready(Err(e)) => {
+                            return Poll::Ready(Err(e));
+                        }
+                        Poll::Pending => {
+                            // Can't write yet - queue for later
+                            debug!("KCP read: ACK write pending, queueing {} bytes", output_data.len());
+                            self.pending_write.extend_from_slice(&output_data);
+                        }
                     }
-                    // Also try to flush
-                    let _ = Pin::new(&mut self.transport).poll_flush(cx);
                 }
 
                 // Try recv again
@@ -346,7 +386,31 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                 debug!("KCP read: transport error: {}", e);
                 Poll::Ready(Err(e))
             }
-            Poll::Pending => Poll::Pending,
+            Poll::Pending => {
+                // Even if transport is pending, KCP might have assembled data ready to read
+                // Call update() to process internal state and try recv() one more time
+                let current = self.current_ms();
+                let _ = self.kcp.update(current);
+
+                // Check if KCP has data ready now
+                match self.kcp.recv(buf) {
+                    Ok(n) => {
+                        debug!("KCP read: received {} bytes from queue (transport pending)", n);
+                        return Poll::Ready(Ok(n));
+                    }
+                    Err(kcp::Error::RecvQueueEmpty) => {}
+                    Err(e) => {
+                        return Poll::Ready(Err(io::Error::other(format!("KCP recv error: {:?}", e))));
+                    }
+                }
+
+                // If we have pending ACKs, wake ourselves to try sending them
+                if !self.pending_write.is_empty() {
+                    debug!("KCP read: transport pending but have {} bytes of pending ACKs", self.pending_write.len());
+                    cx.waker().wake_by_ref();
+                }
+                Poll::Pending
+            }
         }
     }
 }
