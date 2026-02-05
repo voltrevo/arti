@@ -24,7 +24,7 @@ use arti_client::{TorClient, TorClientConfig};
 use arti_client::config::{BridgeConfigBuilder, CfgPath, pt::TransportConfigBuilder};
 use futures::io::{AsyncReadExt, AsyncWriteExt};
 use tor_rtcompat::tokio::TokioNativeTlsRuntime;
-use webtor_rs::arti_transport_native::SnowflakePtMgr;
+use webtor_rs_lite::SnowflakePtMgr;
 
 #[tokio::main]
 async fn main() -> Result<()> {

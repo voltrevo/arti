@@ -391,7 +391,7 @@ dependencies = [
  "void",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "webtor-rs",
+ "webtor-rs-lite",
 ]
 
 [[package]]
@@ -8771,6 +8771,46 @@ dependencies = [
  "web-sys",
  "webpki-roots 0.26.11",
  "x25519-dalek",
+]
+
+[[package]]
+name = "webtor-rs-lite"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "futures-rustls",
+ "gloo-timers",
+ "hex",
+ "js-sys",
+ "kcp",
+ "rand 0.8.5",
+ "rustls",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "serde",
+ "serde_json",
+ "subtle-tls",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tor-chanmgr",
+ "tor-error",
+ "tor-linkspec",
+ "tor-llcrypto",
+ "tor-memquota",
+ "tor-netdoc",
+ "tor-proto",
+ "tor-rtcompat",
+ "tor-wasm-compat",
+ "tracing",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]

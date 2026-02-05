@@ -28,7 +28,7 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
-use webtor_rs::SnowflakePtMgr;
+use webtor_rs_lite::SnowflakePtMgr;
 
 // JS function bindings
 #[cfg(target_arch = "wasm32")]
