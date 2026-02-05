@@ -21,21 +21,9 @@ use tor_guardmgr::bridge::BridgeConfig;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use tor_rtcompat::SystemTime;
+use tor_rtcompat::{time_duration_to_std, SystemTime};
 use tor_error::internal;
 use tracing::warn;
-
-/// Convert time::Duration to std::time::Duration for SystemTime arithmetic.
-fn time_duration_to_std(d: time::Duration) -> std::time::Duration {
-    // time::Duration can be negative, but std::time::Duration cannot.
-    // If negative, return zero.
-    if d.is_negative() {
-        return std::time::Duration::ZERO;
-    }
-    let secs = d.whole_seconds() as u64;
-    let nanos = d.subsec_nanoseconds() as u32;
-    std::time::Duration::new(secs, nanos)
-}
 
 /// Stored consensus with its metadata and content.
 #[derive(Clone, Debug)]

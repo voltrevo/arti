@@ -9,9 +9,8 @@ use std::fmt::Debug;
 use std::io::{self, Result as IoResult};
 use std::net;
 use std::time::Duration;
-// Use web_time types which work on WASM (re-exports std::time types on non-WASM)
-pub use web_time::Instant;
-pub use web_time::SystemTime;
+// Use tor_time types which work on WASM (re-exports std::time types on non-WASM)
+pub use tor_time::{CoarseTimeProvider, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 use tor_general_addr::unix;
 
 /// A runtime for use by Tor client library code.
@@ -154,19 +153,6 @@ pub trait SleepProvider: Clone + Send + Sync + 'static {
     /// This method is only for testing: it should never have any
     /// effect when invoked on non-testing runtimes.
     fn allow_one_advance(&self, _dur: Duration) {}
-}
-
-/// A provider of reduced-precision timestamps
-///
-/// This doesn't provide any facility for sleeping.
-/// If you want to sleep based on reduced-precision timestamps,
-/// convert the desired sleep duration to `std::time::Duration`
-/// and use [`SleepProvider`].
-pub trait CoarseTimeProvider: Clone + Send + Sync + 'static {
-    /// Return the `CoarseTimeProvider`'s view of the current instant.
-    ///
-    /// This is supposed to be cheaper than `std::time::Instant::now`.
-    fn now_coarse(&self) -> crate::coarse_time::CoarseInstant;
 }
 
 /// Trait for a runtime that can be entered to block on a toplevel future.

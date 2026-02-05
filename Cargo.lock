@@ -5143,10 +5143,8 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "derive_more",
- "humantime",
  "thiserror 2.0.17",
- "time",
- "web-time",
+ "tor-time",
 ]
 
 [[package]]
@@ -7127,10 +7125,10 @@ dependencies = [
  "static_assertions",
  "strum",
  "thiserror 2.0.17",
+ "tor-time",
  "tracing",
  "tracing-test",
  "void",
- "web-time",
 ]
 
 [[package]]
@@ -7924,7 +7922,6 @@ dependencies = [
  "async_executors",
  "asynchronous-codec",
  "blocking",
- "coarsetime",
  "derive_more",
  "dyn-clone",
  "educe",
@@ -7950,13 +7947,13 @@ dependencies = [
  "tokio-util",
  "tor-error",
  "tor-general-addr",
+ "tor-time",
  "tor-wasm-compat",
  "tracing",
  "void",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "web-time",
 ]
 
 [[package]]
@@ -8006,6 +8003,18 @@ dependencies = [
  "thiserror 2.0.17",
  "tor-bytes",
  "tor-error",
+]
+
+[[package]]
+name = "tor-time"
+version = "0.38.0"
+dependencies = [
+ "coarsetime",
+ "derive_more",
+ "httpdate",
+ "paste",
+ "time",
+ "web-time",
 ]
 
 [[package]]

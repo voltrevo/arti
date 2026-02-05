@@ -38,8 +38,7 @@ strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2"
 tracing = { version = "0.1.36", optional = true }
 void = "1"
-# WASM-compatible Instant - re-exports std::time on non-WASM, provides working impl on WASM
-web-time = "1.1"
+tor-time = { path = "../tor-time", version = "0.38.0" }
 
 [dev-dependencies]
 anyhow = "1.0.72"

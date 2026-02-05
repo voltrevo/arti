@@ -3,7 +3,7 @@
 use derive_more::{From, Into};
 use std::{cmp::Ordering, time::Duration};
 use strum::EnumDiscriminants;
-use web_time::Instant;
+use tor_time::Instant;
 
 /// A description of when an operation may be retried.
 ///

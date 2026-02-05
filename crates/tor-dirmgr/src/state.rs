@@ -15,8 +15,7 @@ use std::fmt::Debug;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
-use time::OffsetDateTime;
+use tor_rtcompat::{format_rfc3339, SystemTime};
 use tor_basic_utils::RngExt as _;
 use tor_dircommon::retry::DownloadSchedule;
 use tor_error::{internal, warn_report};
@@ -38,15 +37,6 @@ use tor_checkable::{ExternallySigned, SelfSigned, Timebound};
 #[cfg(feature = "geoip")]
 use tor_geoip::GeoipDb;
 use tor_llcrypto::pk::rsa::RsaIdentity;
-
-/// Convert SystemTime to OffsetDateTime via unix timestamp for cross-platform compatibility.
-fn systemtime_to_odt(t: SystemTime) -> OffsetDateTime {
-    let duration = t
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO);
-    OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
-        .unwrap_or(OffsetDateTime::UNIX_EPOCH)
-}
 use tor_netdoc::doc::{
     microdesc::{MdDigest, Microdesc},
     netstatus::MdConsensus,
@@ -905,9 +895,9 @@ impl PendingNetDir {
                                 The current consensus is fresh until {}, and valid until {}. \
                                 I've picked {} as the earliest time to replace it.",
                             missing.len(),
-                            systemtime_to_odt(nd.lifetime().fresh_until()),
-                            systemtime_to_odt(nd.lifetime().valid_until()),
-                            systemtime_to_odt(replace_dir_time)
+                            format_rfc3339(nd.lifetime().fresh_until()),
+                            format_rfc3339(nd.lifetime().valid_until()),
+                            format_rfc3339(replace_dir_time)
                         );
                         *self = PendingNetDir::Yielding {
                             netdir: Some(nd),

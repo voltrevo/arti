@@ -1,0 +1,33 @@
+[package]
+name = "tor-time"
+version = "0.38.0"
+authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
+edition = "2024"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
+description = "Cross-platform time types and utilities for Tor"
+keywords = ["tor", "arti", "time", "wasm"]
+categories = ["date-and-time"]
+repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
+
+[features]
+full = []
+
+[dependencies]
+web-time = "1.1"
+time = { version = "0.3.20", features = ["formatting"] }
+derive_more = { version = "2.0.1", features = ["full"] }
+paste = "1"
+httpdate = "1.0"
+
+# Native-only dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+coarsetime = "0.1.20"
+
+# Enable serde support for web-time's SystemTime on WASM
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = { version = "1.1", features = ["serde"] }
+
+[package.metadata.docs.rs]
+all-features = true

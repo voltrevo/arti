@@ -81,9 +81,10 @@ pub use traits::{
 pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};
 pub use dyn_time::DynTimeProvider;
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
-// Re-export web_time types for WASM compatibility (they're std::time types on non-WASM)
-pub use traits::Instant;
-pub use traits::SystemTime;
+// Re-export tor_time types for WASM compatibility (they're std::time types on non-WASM)
+pub use traits::{Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
+// Re-export time utility functions
+pub use tor_time::{fmt_http_date, format_rfc3339, time_duration_to_std};
 
 /// Traits used to describe TLS connections and objects that can
 /// create them.

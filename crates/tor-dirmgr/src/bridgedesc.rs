@@ -8,8 +8,7 @@ use std::num::NonZeroU8;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
-use tor_rtcompat::Instant;
+use tor_rtcompat::{format_rfc3339, Instant, SystemTime};
 
 use tor_wasm_compat::async_trait;
 use derive_more::{Deref, DerefMut};
@@ -36,14 +35,6 @@ use tor_rtcompat::{Runtime, SpawnExt as _};
 use crate::event::FlagPublisher;
 use crate::storage::CachedBridgeDescriptor;
 use crate::{DirMgrStore, DynStore};
-
-/// Convert tor_rtcompat::SystemTime to std::time::SystemTime for humantime compatibility.
-fn to_std_systemtime(t: SystemTime) -> std::time::SystemTime {
-    let duration = t
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO);
-    std::time::UNIX_EPOCH + duration
-}
 
 #[cfg(test)]
 mod bdtest;
@@ -1082,7 +1073,7 @@ impl<R: Runtime, M: Mockable<R>> Manager<R, M> {
             match if_modified_since {
                 Some(ims) => format!(
                     " if-modified-since {}",
-                    humantime::format_rfc3339_seconds(to_std_systemtime(ims)),
+                    format_rfc3339(ims),
                 ),
                 None => "".into(),
             }
