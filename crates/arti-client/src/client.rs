@@ -961,6 +961,7 @@ impl<R: Runtime> TorClient<R> {
         dirmgr_builder: &dyn crate::builder::DirProviderBuilder<R>,
         dirmgr_extensions: tor_dirmgr::config::DirMgrExtensions,
         #[cfg(target_arch = "wasm32")] custom_statemgr: Option<BoxedStateMgr>,
+        #[cfg(target_arch = "wasm32")] custom_dirstore: Option<tor_dirmgr::BoxedDirStore>,
     ) -> StdResult<Self, ErrorDetail> {
         if crate::util::running_as_setuid() {
             return Err(tor_error::bad_api_usage!(
@@ -1044,6 +1045,13 @@ impl<R: Runtime> TorClient<R> {
 
         let timeout_cfg = config.stream_timeouts.clone();
 
+        #[cfg(target_arch = "wasm32")]
+        let dirmgr_store = match custom_dirstore {
+            Some(store) => DirMgrStore::from_custom_store(store),
+            None => DirMgrStore::new(&dir_cfg, runtime.clone(), false)
+                .map_err(ErrorDetail::DirMgrSetup)?,
+        };
+        #[cfg(not(target_arch = "wasm32"))]
         let dirmgr_store =
             DirMgrStore::new(&dir_cfg, runtime.clone(), false).map_err(ErrorDetail::DirMgrSetup)?;
         let dirmgr = dirmgr_builder

@@ -13,6 +13,8 @@ use std::{
 use tor_dirmgr::{DirMgrConfig, DirMgrStore};
 use tor_error::{ErrorKind, HasKind as _};
 #[cfg(target_arch = "wasm32")]
+use tor_dirmgr::BoxedDirStore;
+#[cfg(target_arch = "wasm32")]
 use tor_persist::BoxedStateMgr;
 use tor_rtcompat::Runtime;
 use tor_time::Instant;
@@ -84,6 +86,12 @@ pub struct TorClientBuilder<R: Runtime> {
     /// This allows JavaScript code to provide persistent storage (e.g., IndexedDB).
     #[cfg(target_arch = "wasm32")]
     custom_statemgr: Option<BoxedStateMgr>,
+    /// Custom directory store for WASM environments.
+    ///
+    /// When set, this will be used instead of the default in-memory storage
+    /// for directory cache (consensus, microdescriptors, authcerts).
+    #[cfg(target_arch = "wasm32")]
+    custom_dirstore: Option<BoxedDirStore>,
 }
 
 /// Longest allowable duration to wait for local resources to be available
@@ -110,6 +118,8 @@ impl<R: Runtime> TorClientBuilder<R> {
             dirfilter: None,
             #[cfg(target_arch = "wasm32")]
             custom_statemgr: None,
+            #[cfg(target_arch = "wasm32")]
+            custom_dirstore: None,
         }
     }
 
@@ -186,6 +196,21 @@ impl<R: Runtime> TorClientBuilder<R> {
     #[cfg(target_arch = "wasm32")]
     pub fn custom_state_mgr(mut self, statemgr: BoxedStateMgr) -> Self {
         self.custom_statemgr = Some(statemgr);
+        self
+    }
+
+    /// Set a custom directory store for persistent directory cache.
+    ///
+    /// Only available on WASM. When set, this will be used instead of the
+    /// default in-memory storage for directory data (consensus, microdescriptors,
+    /// authority certificates), allowing the directory cache to persist across
+    /// sessions.
+    ///
+    /// If not set, the default in-memory storage will be used, which means
+    /// the directory cache must be re-downloaded on each page reload.
+    #[cfg(target_arch = "wasm32")]
+    pub fn custom_dir_store(mut self, dirstore: BoxedDirStore) -> Self {
+        self.custom_dirstore = Some(dirstore);
         self
     }
 
@@ -275,6 +300,8 @@ impl<R: Runtime> TorClientBuilder<R> {
 
         #[cfg(target_arch = "wasm32")]
         let custom_statemgr = self.custom_statemgr.clone();
+        #[cfg(target_arch = "wasm32")]
+        let custom_dirstore = self.custom_dirstore.clone();
 
         let result: Result<TorClient<R>> = TorClient::create_inner(
             self.runtime.clone(),
@@ -284,6 +311,8 @@ impl<R: Runtime> TorClientBuilder<R> {
             dirmgr_extensions,
             #[cfg(target_arch = "wasm32")]
             custom_statemgr,
+            #[cfg(target_arch = "wasm32")]
+            custom_dirstore,
         )
         .map_err(ErrorDetail::into);
 

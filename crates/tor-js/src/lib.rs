@@ -35,7 +35,7 @@ mod error;
 mod fetch;
 mod storage;
 
-pub use storage::{JsStorage, JsStorageInterface, JsStateMgr};
+pub use storage::{JsStorage, JsStorageInterface, JsStateMgr, JsDirStore};
 
 use error::JsTorError;
 use fetch::HttpResponse;
@@ -349,16 +349,28 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
     if let Some(js_storage_interface) = options.storage {
         info!("Initializing custom JS storage...");
         let js_storage = JsStorage::new(js_storage_interface);
-        let js_statemgr = JsStateMgr::new(js_storage)
+
+        // Create state manager for client state (guards, circuits)
+        let js_statemgr = JsStateMgr::new(js_storage.clone())
             .await
             .map_err(|e| {
-                JsTorError::internal(format!("Failed to initialize storage: {:?}", e)).into_js_value()
+                JsTorError::internal(format!("Failed to initialize state storage: {:?}", e)).into_js_value()
             })?;
 
-        // Wrap in BoxedStateMgr and set on builder
+        // Create dir store for directory cache (consensus, microdescriptors, authcerts)
+        let js_dirstore = JsDirStore::new(js_storage, false)
+            .await
+            .map_err(|e| {
+                JsTorError::internal(format!("Failed to initialize directory storage: {:?}", e)).into_js_value()
+            })?;
+
+        // Wrap and set on builder
         let boxed_statemgr = tor_persist::BoxedStateMgr::new(js_statemgr);
-        builder = builder.custom_state_mgr(boxed_statemgr);
-        info!("Custom storage configured");
+        let boxed_dirstore = tor_dirmgr::BoxedDirStore::new(js_dirstore);
+        builder = builder
+            .custom_state_mgr(boxed_statemgr)
+            .custom_dir_store(boxed_dirstore);
+        info!("Custom storage configured (state + directory cache)");
     } else {
         info!("Using default in-memory storage");
     }

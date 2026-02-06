@@ -104,6 +104,8 @@ pub use docid::DocId;
 pub use err::Error;
 pub use event::{DirBlockage, DirBootstrapEvents, DirBootstrapStatus};
 pub use storage::DocumentText;
+#[cfg(target_arch = "wasm32")]
+pub use storage::{BoxedDirStore, CustomDirStore};
 pub use tor_dircommon::fallback::{FallbackDir, FallbackDirBuilder};
 pub use tor_netdir::Timeliness;
 
@@ -135,6 +137,18 @@ impl<R: Runtime> DirMgrStore<R> {
         drop(runtime);
         let runtime = PhantomData;
         Ok(DirMgrStore { store, runtime })
+    }
+
+    /// Create a `DirMgrStore` from a custom storage implementation.
+    ///
+    /// This allows external code to provide custom storage backends for
+    /// environments where SQLite is unavailable (e.g., WASM with IndexedDB).
+    #[cfg(target_arch = "wasm32")]
+    pub fn from_custom_store(store: storage::BoxedDirStore) -> Self {
+        DirMgrStore {
+            store: Arc::new(Mutex::new(Box::new(store))),
+            runtime: PhantomData,
+        }
     }
 }
 

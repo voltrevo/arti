@@ -29,11 +29,16 @@ use time::Duration;
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
 pub(crate) mod inmemory;
+#[cfg(target_arch = "wasm32")]
+pub mod custom;
 
 #[cfg(feature = "sqlite")]
 pub(crate) use sqlite::SqliteStore;
 #[cfg(not(feature = "sqlite"))]
 pub(crate) use inmemory::InMemoryStore;
+
+#[cfg(target_arch = "wasm32")]
+pub use custom::{BoxedDirStore, CustomDirStore};
 
 /// Convenient Sized & dynamic [`Store`]
 pub(crate) type DynStore = Box<dyn Store>;

@@ -274,3 +274,168 @@ impl CustomStateMgr for JsStateMgr {
         Ok(())
     }
 }
+
+// ============================================================================
+// JsDirStore - CustomDirStore implementation backed by JS storage
+// ============================================================================
+
+use tor_dirmgr::CustomDirStore;
+
+/// Directory store backed by JavaScript storage.
+///
+/// This implements the `CustomDirStore` trait using a JS storage backend.
+/// It uses a pre-load + cache pattern to handle the async-to-sync bridge.
+///
+/// Key prefixes:
+/// - `dir:consensus:{flavor}:{sha3_hex}` - Consensus documents
+/// - `dir:authcert:{id_hex}:{sk_hex}` - Authority certificates
+/// - `dir:microdesc:{digest_hex}` - Microdescriptors
+/// - `dir:bridge:{hash}` - Bridge descriptors
+/// - `dir:protocols` - Protocol recommendations
+#[derive(Clone)]
+pub struct JsDirStore {
+    /// The underlying JS storage.
+    js_storage: JsStorage,
+    /// In-memory cache for sync reads.
+    cache: Arc<RwLock<HashMap<String, String>>>,
+    /// Whether the store is read-only.
+    readonly: bool,
+    /// Key prefix for directory data.
+    key_prefix: String,
+}
+
+// SAFETY: WASM is single-threaded, so it's safe to send JsDirStore between "threads"
+// (there's only one thread). The JsStorage inside contains JsValue which is not Send/Sync,
+// but since WASM has no threads, this is safe.
+unsafe impl Send for JsDirStore {}
+unsafe impl Sync for JsDirStore {}
+
+impl JsDirStore {
+    /// Create a new JsDirStore and pre-load all directory data.
+    pub async fn new(js_storage: JsStorage, readonly: bool) -> Result<Self, JsValue> {
+        let store = Self {
+            js_storage,
+            cache: Arc::new(RwLock::new(HashMap::new())),
+            readonly,
+            key_prefix: "dir:".to_string(),
+        };
+
+        // Pre-load all directory keys from JS storage
+        store.preload_all().await?;
+
+        Ok(store)
+    }
+
+    /// Pre-load all directory data from JS storage into the cache.
+    async fn preload_all(&self) -> Result<(), JsValue> {
+        let keys = self.js_storage.keys(&self.key_prefix).await?;
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|_| JsValue::from_str("cache lock poisoned"))?;
+
+        for key in keys {
+            if let Some(value) = self.js_storage.get(&key).await? {
+                cache.insert(key, value);
+            }
+        }
+
+        tracing::debug!("JsDirStore: preloaded {} directory entries", cache.len());
+        Ok(())
+    }
+
+    /// Schedule an async write to JS storage.
+    fn schedule_persist(&self, key: String, value: String) {
+        let js_storage = self.js_storage.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = js_storage.set(&key, &value).await {
+                tracing::warn!("JsDirStore: failed to persist key {}: {:?}", key, e);
+            }
+        });
+    }
+
+    /// Schedule an async delete from JS storage.
+    fn schedule_delete(&self, key: String) {
+        let js_storage = self.js_storage.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = js_storage.delete(&key).await {
+                tracing::warn!("JsDirStore: failed to delete key {}: {:?}", key, e);
+            }
+        });
+    }
+}
+
+impl CustomDirStore for JsDirStore {
+    fn load(&self, key: &str) -> tor_dirmgr::Result<Option<String>> {
+        let cache = self.cache.read().map_err(|_| {
+            tor_dirmgr::Error::CacheCorruption("cache lock poisoned")
+        })?;
+        Ok(cache.get(key).cloned())
+    }
+
+    fn store(&self, key: &str, value: &str) -> tor_dirmgr::Result<()> {
+        if self.readonly {
+            return Err(tor_dirmgr::Error::CacheCorruption("store is read-only"));
+        }
+
+        // Update cache
+        {
+            let mut cache = self.cache.write().map_err(|_| {
+                tor_dirmgr::Error::CacheCorruption("cache lock poisoned")
+            })?;
+            cache.insert(key.to_string(), value.to_string());
+        }
+
+        // Schedule async write to JS storage
+        self.schedule_persist(key.to_string(), value.to_string());
+
+        Ok(())
+    }
+
+    fn delete(&self, key: &str) -> tor_dirmgr::Result<()> {
+        if self.readonly {
+            return Err(tor_dirmgr::Error::CacheCorruption("store is read-only"));
+        }
+
+        // Update cache
+        {
+            let mut cache = self.cache.write().map_err(|_| {
+                tor_dirmgr::Error::CacheCorruption("cache lock poisoned")
+            })?;
+            cache.remove(key);
+        }
+
+        // Schedule async delete from JS storage
+        self.schedule_delete(key.to_string());
+
+        Ok(())
+    }
+
+    fn keys(&self, prefix: &str) -> tor_dirmgr::Result<Vec<String>> {
+        let cache = self.cache.read().map_err(|_| {
+            tor_dirmgr::Error::CacheCorruption("cache lock poisoned")
+        })?;
+
+        let matching: Vec<String> = cache
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect();
+
+        Ok(matching)
+    }
+
+    fn is_readonly(&self) -> bool {
+        self.readonly
+    }
+
+    fn upgrade_to_readwrite(&mut self) -> tor_dirmgr::Result<bool> {
+        // FIXME: This always grants the lock, but multiple browser tabs or Node.js
+        // processes could share the same IndexedDB/filesystem storage. We should add
+        // locking methods to TorStorage (tryLock/unlock) and implement proper advisory
+        // locking - e.g., Web Locks API for browser, lock files for Node.js.
+        // For now, concurrent instances may corrupt each other's data.
+        self.readonly = false;
+        Ok(true)
+    }
+}

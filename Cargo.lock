@@ -7420,6 +7420,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "subtle-tls",
+ "tor-dirmgr",
  "tor-persist",
  "tor-rtcompat",
  "tracing",
