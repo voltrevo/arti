@@ -21,7 +21,7 @@ use std::future::Future;
 use std::iter::FromIterator;
 use std::pin::Pin;
 use std::time::Duration;
-use tor_rtcompat::{fmt_http_date, SystemTime};
+use tor_time::{fmt_http_date, SystemTime};
 
 use itertools::Itertools;
 

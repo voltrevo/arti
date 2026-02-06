@@ -1,6 +1,6 @@
 //! Code for building paths to an exit relay.
 
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use rand::Rng;
 use tracing::instrument;

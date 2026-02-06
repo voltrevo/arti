@@ -69,6 +69,7 @@ tor-memquota = { version = "0.38.0", path = "../tor-memquota", default-features 
 tor-netdir = { path = "../tor-netdir", version = "0.38.0" }
 tor-proto = { path = "../tor-proto", version = "0.38.0" }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 tor-socksproto = { path = "../tor-socksproto", version = "0.38.0", default-features = false, features = [
     "client-handshake",
 ] }
@@ -85,6 +86,7 @@ tor-cell = { path = "../tor-cell", version = "0.38.0", features = ["testing"] }
 tor-netdir = { path = "../tor-netdir", version = "0.38.0", features = ["testing"] }
 tor-proto = { path = "../tor-proto", version = "0.38.0", features = ["testing"] }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0", features = ["tokio", "native-tls"] }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 tor-rtmock = { path = "../tor-rtmock", version = "0.38.0" }
 [package.metadata.docs.rs]
 all-features = true

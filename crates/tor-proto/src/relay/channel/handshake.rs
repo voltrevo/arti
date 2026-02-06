@@ -5,8 +5,8 @@ use futures::SinkExt;
 use futures::io::{AsyncRead, AsyncWrite};
 use rand::Rng;
 use std::net::SocketAddr;
-use std::time::UNIX_EPOCH;
-use std::{sync::Arc, SystemTime};
+use std::sync::Arc;
+use tor_time::{SystemTime, UNIX_EPOCH};
 use tor_error::internal;
 use tracing::{instrument, trace};
 
@@ -14,7 +14,8 @@ use tor_cell::chancell::msg;
 use tor_linkspec::{ChannelMethod, OwnedChanTarget};
 use tor_llcrypto::pk::ed25519::Ed25519SigningKey;
 use tor_relay_crypto::pk::RelayLinkSigningKeypair;
-use tor_rtcompat::{CertifiedConn, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CertifiedConn, SleepProvider, StreamOps};
+use tor_time::CoarseTimeProvider;
 
 use crate::channel::handshake::{
     ChannelBaseHandshake, ChannelInitiatorHandshake, UnverifiedChannel, VerifiedChannel,
@@ -265,7 +266,7 @@ impl<
         self: Box<Self>,
         peer: &OwnedChanTarget,
         peer_cert: &[u8],
-        now: Option<tor_rtcompat::SystemTime>,
+        now: Option<tor_time::SystemTime>,
     ) -> Result<Box<dyn FinalizableChannel<T, S>>> {
         // Verify our inner channel and then proceed to handle the authentication challenge if any.
         let mut verified = self.inner.check(peer, peer_cert, now)?;

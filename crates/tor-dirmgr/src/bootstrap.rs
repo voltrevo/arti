@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Weak},
     time::Duration,
 };
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use crate::DirMgrConfig;
 use crate::DocSource;

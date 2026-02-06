@@ -424,7 +424,7 @@ mod test {
     use netstatus::RelayWeight as RW;
     use std::net::SocketAddr;
     use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
     use tor_basic_utils::test_rng::testing_rng;
     use tor_netdoc::doc::netstatus::{Lifetime, MdRouterStatusBuilder};
     use tor_netdoc::types::relay_flags::{RelayFlag, RelayFlags};

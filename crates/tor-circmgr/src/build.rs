@@ -11,7 +11,7 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 use std::time::Duration;
-use tor_rtcompat::Instant;
+use tor_time::Instant;
 use tor_chanmgr::{ChanMgr, ChanProvenance, ChannelUsage};
 use tor_error::into_internal;
 use tor_guardmgr::GuardStatus;

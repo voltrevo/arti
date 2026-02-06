@@ -21,7 +21,7 @@ use tor_guardmgr::bridge::BridgeConfig;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use tor_rtcompat::{time_duration_to_std, SystemTime};
+use tor_time::{time_duration_to_std, SystemTime};
 use tor_error::internal;
 use tracing::warn;
 

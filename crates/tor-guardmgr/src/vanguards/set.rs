@@ -2,7 +2,7 @@
 
 use std::cmp;
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use derive_deftly::Deftly;
 use rand::{RngCore, seq::IndexedRandom as _};

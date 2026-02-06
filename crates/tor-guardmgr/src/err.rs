@@ -2,7 +2,7 @@
 
 use futures::task::SpawnError;
 use std::sync::Arc;
-use tor_rtcompat::Instant;
+use tor_time::Instant;
 use tor_basic_utils::iter::FilterCount;
 use tor_error::{Bug, ErrorKind, HasKind};
 

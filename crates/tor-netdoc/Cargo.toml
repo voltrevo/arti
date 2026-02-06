@@ -96,7 +96,7 @@ dangerous-expose-struct-fields = ["__is_experimental"]
 __is_experimental = []
 
 [dependencies]
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 amplify = { version = "4", default-features = false, features = ["derive"] }
 base64ct = { version = "1.5.1", features = ["alloc"] }
 cipher = { version = "0.4.1", features = ["zeroize"] }

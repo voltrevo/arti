@@ -55,7 +55,7 @@ use tor_bytes::{Readable, Reader};
 use tor_llcrypto::pk::*;
 
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 pub use err::CertError;
 

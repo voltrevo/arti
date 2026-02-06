@@ -788,7 +788,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::{Arc, RwLock};
     use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
     use tor_basic_utils::test_rng::testing_rng;
     use tor_cert::CertifiedKey;
     use tor_cert::Ed25519Cert;

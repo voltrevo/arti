@@ -373,12 +373,12 @@ impl<R: Runtime> HsCircPool<R> {
     ///
     /// This provides mockable time for use in error tracking and other
     /// time-sensitive operations.
-    pub fn now(&self) -> tor_rtcompat::Instant {
+    pub fn now(&self) -> tor_time::Instant {
         self.0.circmgr.mgr.peek_runtime().now()
     }
 
     /// Return the current wall-clock time from the runtime.
-    pub fn wallclock(&self) -> tor_rtcompat::SystemTime {
+    pub fn wallclock(&self) -> tor_time::SystemTime {
         self.0.circmgr.mgr.peek_runtime().wallclock()
     }
 }

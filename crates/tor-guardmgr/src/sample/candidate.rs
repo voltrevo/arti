@@ -2,7 +2,7 @@
 //! either bridges or relays.
 
 use std::sync::Arc;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use tor_linkspec::{ByRelayIds, ChanTarget, HasRelayIds, OwnedChanTarget};
 use tor_netdir::{NetDir, Relay, RelayWeight};

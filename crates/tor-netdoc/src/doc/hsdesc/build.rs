@@ -21,7 +21,7 @@ use derive_builder::Builder;
 use smallvec::SmallVec;
 
 use std::borrow::{Borrow, Cow};
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use self::inner::HsDescInner;
 use self::middle::HsDescMiddle;

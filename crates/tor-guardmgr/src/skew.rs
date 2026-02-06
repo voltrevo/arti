@@ -8,7 +8,7 @@
 //     low-confidence value.
 
 use std::time::Duration;
-use tor_rtcompat::Instant;
+use tor_time::Instant;
 
 use tor_proto::ClockSkew;
 

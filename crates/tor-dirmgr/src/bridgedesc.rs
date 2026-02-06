@@ -8,7 +8,7 @@ use std::num::NonZeroU8;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
-use tor_rtcompat::{format_rfc3339, Instant, SystemTime};
+use tor_time::{format_rfc3339, Instant, SystemTime};
 
 use tor_wasm_compat::async_trait;
 use derive_more::{Deref, DerefMut};

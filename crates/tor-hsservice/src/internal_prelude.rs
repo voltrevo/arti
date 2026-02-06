@@ -40,7 +40,7 @@ pub(crate) use {
     std::time::{Duration, Instant},
 };
 
-pub(crate) use tor_rtcompat::SystemTime;
+pub(crate) use tor_time::SystemTime;
 
 //---------- upstreams ----------
 

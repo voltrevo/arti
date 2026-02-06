@@ -32,7 +32,7 @@
 //!
 //! Most of this module is only available when this crate is built with the
 //! `routerdesc` feature enabled.
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 use crate::parse::keyword::Keyword;
 use crate::parse::parser::{Section, SectionRules};
 use crate::parse::tokenize::{ItemResult, NetDocReader};

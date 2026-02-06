@@ -7,7 +7,7 @@ use crate::{
     UnrecognizedExt,
 };
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 use tor_bytes::{EncodeResult, Writeable, Writer};
 use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey, Ed25519SigningKey};
 

@@ -2,7 +2,7 @@
 //! status.
 
 use std::{borrow::Cow, fmt, fmt::Display};
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use educe::Educe;
 use futures::{Stream, StreamExt};

@@ -15,7 +15,8 @@ use tor_linkspec::{HasRelayIds, IntoOwnedChanTarget, OwnedChanTarget, OwnedChanT
 use tor_llcrypto::pk::rsa::RsaIdentity;
 use tor_proto::channel::{Channel, ChannelBuilder};
 use tor_proto::memquota::ChannelAccount;
-use tor_rtcompat::{Runtime, SpawnExt, SystemTime};
+use tor_rtcompat::{Runtime, SpawnExt};
+use tor_time::SystemTime;
 use tracing::{debug, info, warn};
 
 use crate::snowflake_ws_native::{SnowflakeWsConfig, SnowflakeWsStream, SNOWFLAKE_WS_URL, SNOWFLAKE_FINGERPRINT};

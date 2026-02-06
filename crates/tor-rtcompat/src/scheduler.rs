@@ -8,9 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use crate::SystemTime;
-
-use crate::Instant;
+use tor_time::{Instant, SystemTime};
 
 use pin_project::pin_project;
 

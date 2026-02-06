@@ -11,10 +11,11 @@ use crate::memquota::ChannelAccount;
 use crate::util::skew::ClockSkew;
 use crate::{Error, Result};
 use tor_cell::chancell::{AnyChanCell, ChanMsg, msg};
-use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{SleepProvider, StreamOps};
+use tor_time::{CoarseInstant, CoarseTimeProvider};
 
 use std::sync::Arc;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use tor_linkspec::{ChanTarget, ChannelMethod, OwnedChanTargetBuilder, RelayIds};
 use tor_llcrypto as ll;
@@ -620,7 +621,7 @@ pub(super) mod test {
     use hex_literal::hex;
     use regex::Regex;
     use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
     use super::*;
     use crate::channel::handler::test::MsgBuf;

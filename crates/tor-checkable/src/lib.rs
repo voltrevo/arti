@@ -45,7 +45,7 @@
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 use thiserror::Error;
 
 pub mod signed;

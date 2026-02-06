@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use crate::{
     bridge::BridgeConfig,

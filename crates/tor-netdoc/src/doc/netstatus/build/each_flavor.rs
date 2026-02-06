@@ -417,7 +417,7 @@ mod test {
 
     use std::net::SocketAddr;
     use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
     #[test]
     fn consensus() {

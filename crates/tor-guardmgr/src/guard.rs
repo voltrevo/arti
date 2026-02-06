@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tor_rtcompat::{Instant, SystemTime};
+use tor_time::{Instant, SystemTime};
 use tracing::{info, trace, warn};
 
 use crate::dirstatus::DirStatus;

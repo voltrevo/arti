@@ -14,7 +14,7 @@ use std::{
     },
     task::Poll,
 };
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use educe::Educe;
 use futures::{Future, StreamExt, stream::Stream};

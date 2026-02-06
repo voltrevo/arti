@@ -87,7 +87,8 @@ use tor_cell::chancell::{AnyChanCell, CircId, msg::PaddingNegotiate};
 use tor_error::internal;
 use tor_linkspec::{HasRelayIds, OwnedChanTarget};
 use tor_memquota::mq_queue::{self, ChannelSpec as _, MpscSpec};
-use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, DynTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{DynTimeProvider, SleepProvider, StreamOps};
+use tor_time::{CoarseInstant, CoarseTimeProvider};
 
 #[cfg(feature = "circ-padding")]
 use tor_async_utils::counting_streams::{self, CountingSink, CountingStream};
@@ -161,7 +162,7 @@ where
         self: Box<Self>,
         peer: &OwnedChanTarget,
         peer_cert: &[u8],
-        now: Option<tor_rtcompat::SystemTime>,
+        now: Option<tor_time::SystemTime>,
     ) -> Result<Box<dyn FinalizableChannel<T, S>>>;
 
     /// Return the reported clock skew from this handshake.

@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Result as IoResult;
 use std::str::Utf8Error;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 use time::Duration;
 
 #[cfg(feature = "sqlite")]

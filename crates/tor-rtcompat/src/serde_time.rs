@@ -7,7 +7,7 @@
 //! On WASM, it uses a duration-since-epoch format that's compatible with
 //! `web_time::SystemTime`.
 
-use crate::SystemTime;
+use tor_time::SystemTime;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::time::Duration;
 

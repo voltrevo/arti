@@ -4,7 +4,7 @@ use crate::slug::{BadSlug, Slug};
 
 use std::fmt;
 use std::str::FromStr;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use derive_more::{From, Into};
 use thiserror::Error;

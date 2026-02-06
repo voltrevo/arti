@@ -50,7 +50,7 @@ tor-bytes = { path = "../tor-bytes", version = "0.38.0" }
 tor-checkable = { path = "../tor-checkable", version = "0.38.0" }
 tor-error = { path = "../tor-error", version = "0.38.0" }
 tor-llcrypto = { path = "../tor-llcrypto", version = "0.38.0" }
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 x509-cert = { version = "0.2.5", features = ["builder", "hazmat"], optional = true }
 
 [dev-dependencies]

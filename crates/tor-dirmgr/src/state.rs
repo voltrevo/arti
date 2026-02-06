@@ -15,7 +15,7 @@ use std::fmt::Debug;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tor_rtcompat::{format_rfc3339, SystemTime};
+use tor_time::{format_rfc3339, SystemTime};
 use tor_basic_utils::RngExt as _;
 use tor_dircommon::retry::DownloadSchedule;
 use tor_error::{internal, warn_report};

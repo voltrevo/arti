@@ -2,7 +2,7 @@
 
 use std::ops::{Bound, Deref, RangeBounds};
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 /// A TimeBound object that is valid for a specified range of time.
 ///
@@ -11,7 +11,7 @@ use tor_rtcompat::SystemTime;
 ///
 /// ```
 /// use std::time::Duration;
-/// use tor_rtcompat::SystemTime;
+/// use tor_time::SystemTime;
 /// use tor_checkable::{Timebound, TimeValidityError, timed::TimerangeBound};
 ///
 /// let now = SystemTime::now();
@@ -225,7 +225,7 @@ mod test {
     use crate::{TimeValidityError, Timebound};
     use humantime::parse_rfc3339;
     use std::time::Duration;
-use tor_rtcompat::SystemTime;
+    use tor_time::SystemTime;
 
     #[test]
     fn test_bounds() {

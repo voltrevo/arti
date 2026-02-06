@@ -15,7 +15,7 @@ pub(crate) mod rt {
     use futures::{future::BoxFuture, task::Spawn};
     use std::sync::OnceLock;
     use std::time::Duration;
-    use tor_rtcompat::Instant;
+    use tor_time::Instant;
 
     /// A dyn-safe view of the parts of an async runtime that we need for rate-limiting.
     pub trait RuntimeSupport: Spawn + 'static + Sync + Send {

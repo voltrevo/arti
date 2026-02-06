@@ -31,9 +31,9 @@ pub struct RsaCrosscert {
 
 impl RsaCrosscert {
     /// Return the time at which this certificate becomes expired
-    pub fn expiry(&self) -> tor_rtcompat::SystemTime {
+    pub fn expiry(&self) -> tor_time::SystemTime {
         let d = std::time::Duration::new(u64::from(self.exp_hours) * 3600, 0);
-        tor_rtcompat::SystemTime::UNIX_EPOCH + d
+        tor_time::SystemTime::UNIX_EPOCH + d
     }
 
     /// Return a reference to the digest.

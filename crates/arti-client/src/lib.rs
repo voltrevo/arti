@@ -134,7 +134,7 @@ pub(crate) fn supported_protocols() -> tor_protover::Protocols {
 /// Return the approximate release date of this version of arti client.
 ///
 /// See[`release_date::ARTI_CLIENT_RELEASE_DATE`] for rationale.
-pub(crate) fn software_release_date() -> tor_rtcompat::SystemTime {
+pub(crate) fn software_release_date() -> tor_time::SystemTime {
     use time::OffsetDateTime;
 
     let format = time::macros::format_description!("[year]-[month]-[day]");
@@ -145,7 +145,7 @@ pub(crate) fn software_release_date() -> tor_rtcompat::SystemTime {
     let secs = odt.unix_timestamp();
     let nanos = odt.nanosecond();
     let duration = std::time::Duration::new(secs as u64, nanos);
-    tor_rtcompat::SystemTime::UNIX_EPOCH + duration
+    tor_time::SystemTime::UNIX_EPOCH + duration
 }
 
 #[cfg(test)]
@@ -217,6 +217,6 @@ mod test {
     #[test]
     fn release_date_format() {
         // Make sure we can parse the release date.
-        let _d: tor_rtcompat::SystemTime = software_release_date();
+        let _d: tor_time::SystemTime = software_release_date();
     }
 }

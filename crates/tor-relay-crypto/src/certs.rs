@@ -1,6 +1,6 @@
 //! Certificate related types and functions for an arti relay.
 
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use tor_cert::{CertEncodeError, CertType, CertifiedKey, Ed25519Cert, EncodedEd25519Cert};
 use tor_checkable::{SelfSigned, Timebound};

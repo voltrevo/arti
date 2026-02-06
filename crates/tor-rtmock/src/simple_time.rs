@@ -8,14 +8,12 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
-use tor_rtcompat::{Instant, SystemTime};
+use tor_time::{CoarseInstant, CoarseTimeProvider, Instant, SystemTime};
 
 use derive_more::AsMut;
 use priority_queue::priority_queue::PriorityQueue;
 use slotmap_careful::DenseSlotMap;
 
-use tor_rtcompat::CoarseInstant;
-use tor_rtcompat::CoarseTimeProvider;
 use tor_rtcompat::SleepProvider;
 
 use crate::time_core::MockTimeCore;

@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 use tor_basic_utils::skip_fmt;
-use tor_rtcompat::Instant;
+use tor_time::Instant;
 
 /// The status of our connection to the internet.
 #[derive(Default, Debug, Clone)]

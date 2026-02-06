@@ -26,7 +26,7 @@ use std::{
     future::Future,
     sync::{Arc, Weak},
 };
-use tor_rtcompat::{format_rfc3339, SystemTime};
+use tor_time::{format_rfc3339, SystemTime};
 use tor_config::MutCfg;
 use tor_dirmgr::DirProvider;
 use tor_error::{into_internal, warn_report};

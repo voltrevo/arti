@@ -2,7 +2,7 @@
 
 use derive_deftly::Deftly;
 use std::num::NonZeroUsize;
-use tor_rtcompat::Instant;
+use tor_time::Instant;
 
 /// An object to track whether a tunnel or circuit should still be considered active.
 ///

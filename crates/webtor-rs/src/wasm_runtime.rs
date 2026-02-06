@@ -3,9 +3,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tor_rtcompat::CoarseInstant;
-use tor_rtcompat::RealCoarseTimeProvider;
-use tor_rtcompat::{CoarseTimeProvider, SleepProvider};
+use tor_time::CoarseInstant;
+use tor_time::RealCoarseTimeProvider;
+use tor_rtcompat::SleepProvider;
+use tor_time::CoarseTimeProvider;
 
 #[derive(Clone, Debug, Default)]
 pub struct WasmRuntime {
@@ -25,12 +26,12 @@ impl SleepProvider for WasmRuntime {
         WasmSleep::new(duration)
     }
 
-    fn now(&self) -> tor_rtcompat::Instant {
+    fn now(&self) -> tor_time::Instant {
         // tor_rtcompat now uses web_time::Instant which works on WASM
-        tor_rtcompat::Instant::now()
+        tor_time::Instant::now()
     }
 
-    fn wallclock(&self) -> tor_rtcompat::SystemTime {
+    fn wallclock(&self) -> tor_time::SystemTime {
         system_time_now()
     }
 }

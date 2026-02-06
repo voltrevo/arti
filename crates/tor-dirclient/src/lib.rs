@@ -646,7 +646,7 @@ mod test {
         // We don't need to do anything fancy here, since we aren't simulating
         // a timeout.
         #[allow(deprecated)] // TODO #1885
-        let mock_time = SimpleMockTimeProvider::from_wallclock(tor_rtcompat::SystemTime::now());
+        let mock_time = SimpleMockTimeProvider::from_wallclock(tor_time::SystemTime::now());
 
         let mut output = Vec::new();
         let mut stream = match get_decoder(data, encoding, AnonymizedRequest::Direct) {

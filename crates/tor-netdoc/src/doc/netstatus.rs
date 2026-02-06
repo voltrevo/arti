@@ -54,7 +54,7 @@ pub mod vote;
 #[cfg(feature = "build_docs")]
 mod build;
 
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 #[cfg(feature = "parse2")]
 use {
@@ -965,7 +965,7 @@ impl SharedRandStatus {
     }
 
     /// Return the timestamp (if any) associated with this `SharedRandValue`.
-    pub fn timestamp(&self) -> Option<tor_rtcompat::SystemTime> {
+    pub fn timestamp(&self) -> Option<tor_time::SystemTime> {
         self.timestamp.map(|t| t.0)
     }
 }

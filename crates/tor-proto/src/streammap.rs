@@ -23,7 +23,7 @@ use std::num::NonZeroU16;
 use std::pin::Pin;
 use std::task::{Poll, Waker};
 use tor_error::{bad_api_usage, internal};
-use tor_rtcompat::Instant;
+use tor_time::Instant;
 
 use rand::Rng;
 

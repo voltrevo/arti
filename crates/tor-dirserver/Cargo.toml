@@ -51,6 +51,7 @@ tor-error = { version = "0.38.0", path = "../tor-error" }
 tor-llcrypto = { version = "0.38.0", path = "../tor-llcrypto" }
 tor-netdoc = { version = "0.38.0", path = "../tor-netdoc", features = ["full", "experimental"] }
 tor-rtcompat = { version = "0.38.0", path = "../tor-rtcompat", features = [ "tokio", "native-tls", "rustls" ] }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 tracing = "0.1.41"
 weak-table = "0.3.2"
 zstd = "0.13.3"

@@ -60,7 +60,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
-use tor_rtcompat::{Instant, SystemTime};
+use tor_time::{Instant, SystemTime};
 #[cfg(feature = "bridge-client")]
 use tor_error::internal;
 use tor_linkspec::{OwnedChanTarget, OwnedCircTarget, RelayId, RelayIdSet};

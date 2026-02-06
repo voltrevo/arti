@@ -16,6 +16,7 @@ tracing = "0.1"
 
 # Tor protocol implementation
 tor-rtcompat = { path = "../tor-rtcompat", default-features = false }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 tor-proto = { path = "../tor-proto", default-features = false }
 tor-protover = { path = "../tor-protover" }
 tor-units = { path = "../tor-units" }

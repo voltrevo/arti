@@ -2,7 +2,7 @@
 
 use rand::Rng;
 use std::time::Duration;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 use tor_basic_utils::RngExt as _;
 
 /// Return a random time within the range `when-max ..= when`.

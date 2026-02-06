@@ -10,7 +10,7 @@ use std::io::{self, Result as IoResult};
 use std::net;
 use std::time::Duration;
 // Use tor_time types which work on WASM (re-exports std::time types on non-WASM)
-pub use tor_time::{CoarseTimeProvider, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
+use tor_time::{CoarseTimeProvider, Instant, SystemTime};
 use tor_general_addr::unix;
 
 /// A runtime for use by Tor client library code.

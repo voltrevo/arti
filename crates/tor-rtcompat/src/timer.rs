@@ -8,7 +8,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use crate::SystemTime;
+use tor_time::SystemTime;
 
 /// An error value given when a function times out.
 ///

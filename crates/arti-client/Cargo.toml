@@ -212,6 +212,7 @@ tor-protover = { path = "../tor-protover", version = "0.38.0" }
 tor-ptmgr = { path = "../tor-ptmgr", version = "0.38.0", optional = true }
 tor-rpcbase = { path = "../tor-rpcbase", version = "0.38.0", optional = true }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0" }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 tracing = "0.1.36"
 visibility = { version = "0.1.0", optional = true }
 void = "1"
@@ -244,6 +245,7 @@ tokio-crate = { package = "tokio", version = "1.7", features = [
     "macros",
 ] }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.38.0", features = ["tokio", "native-tls"] }
+tor-time = { path = "../tor-time", version = "0.38.0" }
 webtor-rs-lite = { path = "../webtor-rs-lite" }
 
 [package.metadata.docs.rs]

@@ -10,7 +10,7 @@
 //!
 //! See [`crate::doc::ns_variety_definition_macros`].
 
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 use super::*;
 
 impl RouterStatus {

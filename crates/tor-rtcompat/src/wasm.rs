@@ -7,13 +7,11 @@
 //! - **Networking**: Requires external transport (WebSocket/WebRTC)
 //! - **TLS**: Uses subtle-tls for TLS 1.3 via browser SubtleCrypto API
 
-use crate::coarse_time::RealCoarseTimeProvider;
 use crate::traits::{
-    Blocking, CertifiedConn, CoarseTimeProvider, NetStreamListener, NetStreamProvider,
-    NoOpStreamOpsHandle, SleepProvider, StreamOps, TlsConnector, TlsProvider, UdpProvider,
-    UdpSocket,
+    Blocking, CertifiedConn, NetStreamListener, NetStreamProvider, NoOpStreamOpsHandle,
+    SleepProvider, StreamOps, TlsConnector, TlsProvider, UdpProvider, UdpSocket,
 };
-use crate::CoarseInstant;
+use tor_time::{CoarseInstant, CoarseTimeProvider, RealCoarseTimeProvider};
 use tor_wasm_compat::async_trait;
 use futures::task::{Spawn, SpawnError};
 use futures::{stream, AsyncRead, AsyncWrite, Future};
@@ -23,7 +21,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use crate::SystemTime;
+use tor_time::{Instant, SystemTime, UNIX_EPOCH};
 use tor_general_addr::unix;
 
 /// A runtime for WASM environments.
@@ -119,8 +117,8 @@ impl SleepProvider for WasmRuntime {
         WasmSleepFuture::new(duration)
     }
 
-    fn now(&self) -> crate::Instant {
-        crate::Instant::now()
+    fn now(&self) -> Instant {
+        Instant::now()
     }
 
     fn wallclock(&self) -> SystemTime {
@@ -128,7 +126,7 @@ impl SleepProvider for WasmRuntime {
         {
             // Use Performance.now() for WASM
             let millis = js_sys::Date::now();
-            SystemTime::UNIX_EPOCH + Duration::from_millis(millis as u64)
+            UNIX_EPOCH + Duration::from_millis(millis as u64)
         }
 
         #[cfg(not(target_arch = "wasm32"))]

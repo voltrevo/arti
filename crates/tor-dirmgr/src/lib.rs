@@ -96,7 +96,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Weak};
 use std::fmt::Debug;
-use tor_rtcompat::SystemTime;
+use tor_time::SystemTime;
 
 use crate::state::{DirState, NetDirChange};
 pub use config::DirMgrConfig;

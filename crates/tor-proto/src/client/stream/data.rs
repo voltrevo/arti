@@ -44,7 +44,8 @@ use crate::util::token_bucket::writer::{RateLimitedWriter, RateLimitedWriterConf
 use tor_basic_utils::skip_fmt;
 use tor_cell::relaycell::msg::Data;
 use tor_error::internal;
-use tor_rtcompat::{CoarseTimeProvider, DynTimeProvider, SleepProvider};
+use tor_rtcompat::{DynTimeProvider, SleepProvider};
+use tor_time::CoarseTimeProvider;
 
 /// A stream of [`RateLimitedWriterConfig`] used to update a [`DynamicRateLimitedWriter`].
 ///

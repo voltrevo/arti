@@ -182,10 +182,10 @@ pub(crate) mod impl_runtime_prelude {
     pub(crate) use std::net::SocketAddr;
     pub(crate) use std::time::Duration;
     pub(crate) use tor_rtcompat::{
-        Blocking, CoarseInstant, CoarseTimeProvider, Instant, NetStreamProvider, Runtime,
-        SleepProvider, SystemTime, TlsProvider, ToplevelBlockOn, UdpProvider, unimpl::FakeListener,
-        unimpl::FakeStream,
+        Blocking, NetStreamProvider, Runtime, SleepProvider, TlsProvider, ToplevelBlockOn,
+        UdpProvider, unimpl::FakeListener, unimpl::FakeStream,
     };
+    pub(crate) use tor_time::{CoarseInstant, CoarseTimeProvider, Instant, SystemTime};
 }
 
 /// Wrapper for `futures::channel::mpsc::channel` that embodies the `#[allow]`
