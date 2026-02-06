@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://snowflake.torproject.net wss://snowflake.pse.dev https:; img-src 'self' data:; font-src 'self'; base-uri 'self'; form-action 'none';">
+    <title>tor-js - arti-client in WASM</title>
+    <link rel="icon" href="tor.svg" type="image/svg+xml">
+    <style>
+        /* Dracula Pro Color Palette */
+        :root {
+            --bg: #22212C;
+            --bg-dark: #1a1922;
+            --bg-light: #2d2c3a;
+            --selection: #454158;
+            --comment: #7970A9;
+            --fg: #F8F8F2;
+            --cyan: #80FFEA;
+            --green: #8AFF80;
+            --orange: #FFCA80;
+            --pink: #FF80BF;
+            --purple: #9580FF;
+            --red: #FF9580;
+            --yellow: #FFFF80;
+        }
+
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 0;
+            background: var(--bg);
+            min-height: 100vh;
+            color: var(--fg);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .site-header {
+            background: var(--bg-dark);
+            border-bottom: 1px solid var(--selection);
+            padding: 16px 5%;
+        }
+
+        .site-header-inner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .site-logo {
+            width: 40px;
+            height: 40px;
+        }
+
+        .site-title {
+            margin: 0;
+            font-size: 22px;
+            background: linear-gradient(135deg, var(--cyan), var(--green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 600;
+        }
+
+        .site-subtitle {
+            color: var(--comment);
+            font-size: 13px;
+            margin-left: 12px;
+            padding-left: 12px;
+            border-left: 1px solid var(--selection);
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px 5%;
+            margin: 0 auto;
+            flex: 1;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .panel {
+            background: var(--bg-light);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--selection);
+        }
+
+        .section {
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--cyan);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-bar {
+            background: var(--bg-dark);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--comment);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.ready { background: var(--green); }
+        .status-dot.loading { background: var(--yellow); }
+        .status-dot.error { background: var(--red); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: linear-gradient(135deg, var(--cyan), var(--green));
+            color: var(--bg);
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(128, 255, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:focus-visible {
+            outline: 2px solid var(--cyan);
+            outline-offset: 2px;
+        }
+
+        button.secondary {
+            background: var(--selection);
+            color: var(--fg);
+        }
+
+        button.secondary:hover:not(:disabled) {
+            background: var(--comment);
+            box-shadow: none;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--comment);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--selection);
+            border-radius: 8px;
+            font-size: 13px;
+            background: var(--bg-dark);
+            color: var(--fg);
+            transition: border-color 0.2s, outline 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: 2px solid var(--cyan);
+            outline-offset: 2px;
+            border-color: var(--cyan);
+        }
+
+        select {
+            cursor: pointer;
+        }
+
+        select option {
+            background: var(--bg);
+            color: var(--fg);
+        }
+
+        .input-group {
+            margin-bottom: 14px;
+        }
+
+        .request-section {
+            background: var(--bg-dark);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .request-info {
+            font-size: 12px;
+            color: var(--comment);
+            margin-bottom: 14px;
+            padding: 8px 12px;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+
+        .output-box {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            min-height: 60px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            color: var(--comment);
+        }
+
+        .output-box.success { color: var(--green); }
+        .output-box.error { color: var(--red); }
+        .output-box.loading { color: var(--cyan); }
+
+        .log-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .log-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .log-output {
+            flex: 1;
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            max-height: calc(100vh - 280px);
+            min-height: 200px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 2px;
+        }
+
+        .log-time { color: var(--comment); }
+        .log-info { color: var(--green); }
+        .log-warn { color: var(--yellow); }
+        .log-error { color: var(--red); }
+        .log-debug { color: var(--comment); }
+
+        .empty-state {
+            color: var(--selection);
+            font-style: italic;
+        }
+
+        .site-footer {
+            background: var(--bg-dark);
+            border-top: 1px solid var(--selection);
+            padding: 12px 5%;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        .site-footer-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--comment);
+        }
+
+        .site-footer a {
+            color: var(--cyan);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .site-footer a:hover {
+            color: var(--green);
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 16px;
+        }
+
+        .bridge-config {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+        }
+
+        .bridge-config .input-group {
+            margin-bottom: 10px;
+        }
+
+        .bridge-config .input-group:last-child {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 900px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+
+            .log-output {
+                min-height: 200px;
+            }
+
+            .site-header-inner {
+                flex-wrap: wrap;
+            }
+
+            .site-subtitle {
+                width: 100%;
+                margin-left: 0;
+                padding-left: 0;
+                border-left: none;
+                margin-top: 4px;
+            }
+
+            .site-footer-inner {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .site-title { font-size: 18px; }
+            button { padding: 8px 14px; font-size: 12px; }
+
+            .log-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Site Header -->
+    <header class="site-header">
+        <div class="site-header-inner">
+            <img src="tor.svg" alt="tor-js logo" class="site-logo">
+            <h1 class="site-title">tor-js</h1>
+            <span class="site-subtitle">arti-client (official Tor) in WASM</span>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Left Panel - Controls -->
+        <div class="panel" role="main">
+            <div class="section">
+                <div class="section-title" id="connectionLabel">Connection</div>
+                <div class="status-bar" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="connectionLabel">
+                    <div class="status-dot" id="statusDot" aria-hidden="true"></div>
+                    <span id="status">Not initialized</span>
+                </div>
+
+                <div class="bridge-config">
+                    <div class="input-group">
+                        <label for="bridgeUrl">Snowflake Bridge URL</label>
+                        <select id="bridgeUrl" name="bridgeUrl">
+                            <option value="wss://snowflake.pse.dev/">pse.dev (WebSocket)</option>
+                            <option value="wss://snowflake.torproject.net/">torproject.net (WebSocket)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="fingerprint">Bridge Fingerprint</label>
+                        <input type="text" id="fingerprint" name="fingerprint" value="664A92FF3EF71E03A2F09B1DAABA2DDF920D5194" placeholder="40-character hex fingerprint">
+                    </div>
+                </div>
+
+                <div class="btn-group" style="margin-top: 12px;">
+                    <button id="openBtn" aria-label="Open and initialize Tor client connection">Connect</button>
+                    <button id="closeBtn" class="secondary" disabled aria-label="Close Tor client connection">Disconnect</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">HTTP Request</div>
+
+                <div class="request-section">
+                    <div class="request-info">
+                        Make HTTP requests through the Tor network via arti-client.
+                    </div>
+
+                    <div class="input-group">
+                        <label for="presetSelect">Preset</label>
+                        <select id="presetSelect" name="preset">
+                            <optgroup label="Test Endpoints">
+                                <option value="https://check.torproject.org/api/ip" selected>Tor IP Check (JSON)</option>
+                                <option value="https://check.torproject.org/">Tor Check (HTML)</option>
+                                <option value="https://api.ipify.org?format=json">IP Check (ipify)</option>
+                                <option value="https://httpbin.org/user-agent">HTTPBin User-Agent</option>
+                            </optgroup>
+                            <optgroup label="Custom">
+                                <option value="custom">Custom URL...</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="urlInput">URL</label>
+                        <input type="url" id="urlInput" name="url" value="https://check.torproject.org/api/ip" placeholder="https://..." autocomplete="url">
+                    </div>
+
+                    <button id="fetchBtn" disabled aria-label="Send HTTP request through Tor">Fetch</button>
+                    <div class="output-box" id="fetchOutput" role="region" aria-live="polite" aria-label="Request result">Ready...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Logs -->
+        <div class="panel log-panel" role="complementary">
+            <div class="log-header">
+                <div class="section-title" id="logsLabel">Connection Logs</div>
+                <div class="log-controls">
+                    <button id="clearBtn" class="secondary" style="padding: 6px 12px;" aria-label="Clear all log entries">Clear</button>
+                </div>
+            </div>
+            <div class="log-output" id="logOutput" role="log" aria-live="off" aria-labelledby="logsLabel">
+                <div class="empty-state">Logs will appear here. Click "Connect" to start.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Site Footer -->
+    <footer class="site-footer">
+        <div class="site-footer-inner">
+            <span class="version-info">
+                tor-js v0.1.0 | arti-client (official Tor Project)
+            </span>
+            <div class="footer-links">
+                <a href="https://gitlab.torproject.org/tpo/core/arti" target="_blank" rel="noopener noreferrer">Arti</a>
+                <a href="https://github.com/nickelc/webtor-rs" target="_blank" rel="noopener noreferrer">webtor-rs</a>
+            </div>
+        </div>
+    </footer>
+
+    <script type="module">
+        import initWasm, { init, TorClient, TorClientOptions, setLogCallback } from './pkg/tor_js.js';
+
+        // Constants
+        const MAX_LOG_ENTRIES = 500;
+
+        // URL validation
+        function validateUrl(url) {
+            if (!url || url.trim() === '') {
+                return { valid: false, error: 'URL cannot be empty' };
+            }
+            try {
+                const parsed = new URL(url);
+                if (!['https:', 'http:'].includes(parsed.protocol)) {
+                    return { valid: false, error: 'Only HTTP/HTTPS protocols are supported' };
+                }
+                const hostname = parsed.hostname;
+                if (hostname === 'localhost' ||
+                    hostname === '127.0.0.1' ||
+                    hostname.startsWith('192.168.') ||
+                    hostname.startsWith('10.') ||
+                    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname) ||
+                    hostname === '0.0.0.0') {
+                    return { valid: false, error: 'Private/local addresses are not allowed' };
+                }
+                return { valid: true, hostname };
+            } catch (e) {
+                return { valid: false, error: 'Invalid URL format' };
+            }
+        }
+
+        // Safe log entry creation
+        function createLogEntry(level, message) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            const time = document.createElement('span');
+            time.className = 'log-time';
+            const now = new Date();
+            const ms = String(now.getMilliseconds()).padStart(3, '0');
+            time.textContent = `[${now.toLocaleTimeString('en-US', { hour12: false })}.${ms}] `;
+
+            const levelSpan = document.createElement('span');
+            let levelClass = 'log-info';
+            let prefix = 'INFO';
+            switch (level) {
+                case 'ERROR': levelClass = 'log-error'; prefix = 'ERR '; break;
+                case 'WARN': levelClass = 'log-warn'; prefix = 'WARN'; break;
+                case 'DEBUG': levelClass = 'log-debug'; prefix = 'DBG '; break;
+                case 'TRACE': levelClass = 'log-debug'; prefix = 'TRC '; break;
+            }
+            levelSpan.className = levelClass;
+            levelSpan.textContent = prefix + ' ';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = message;
+
+            entry.appendChild(time);
+            entry.appendChild(levelSpan);
+            entry.appendChild(messageSpan);
+
+            return entry;
+        }
+
+        function log(level, message) {
+            const output = document.getElementById('logOutput');
+            if (!output) return;
+
+            // Remove empty state message on first log
+            const emptyState = output.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            // Enforce max log entries
+            while (output.children.length >= MAX_LOG_ENTRIES) {
+                output.removeChild(output.lastChild);
+            }
+
+            const entry = createLogEntry(level, message);
+            output.insertBefore(entry, output.firstChild);
+        }
+
+        // Global error handlers
+        window.addEventListener('error', (event) => {
+            console.error('Uncaught error:', event.error);
+            log('ERROR', 'Uncaught error: ' + (event.error?.message || 'Unknown error'));
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled promise rejection:', event.reason);
+            log('ERROR', 'Unhandled rejection: ' + (event.reason?.message || event.reason || 'Unknown error'));
+        });
+
+        async function run() {
+            const statusEl = document.getElementById('status');
+            const statusDot = document.getElementById('statusDot');
+            const openBtn = document.getElementById('openBtn');
+            const closeBtn = document.getElementById('closeBtn');
+            const fetchBtn = document.getElementById('fetchBtn');
+            const presetSelect = document.getElementById('presetSelect');
+            const urlInput = document.getElementById('urlInput');
+            const bridgeUrlSelect = document.getElementById('bridgeUrl');
+            const fingerprintInput = document.getElementById('fingerprint');
+            const fetchOutput = document.getElementById('fetchOutput');
+            const clearBtn = document.getElementById('clearBtn');
+            const logOutput = document.getElementById('logOutput');
+
+            // Preset selection handler
+            presetSelect.addEventListener('change', () => {
+                const value = presetSelect.value;
+                if (value !== 'custom') {
+                    urlInput.value = value;
+                }
+            });
+
+            // Bridge URL presets with fingerprints
+            const bridgeFingerprints = {
+                'wss://snowflake.pse.dev/': '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194',
+                'wss://snowflake.torproject.net/': '2B280B23E1107BB62ABFC40DDCC8824814F80A72',
+            };
+
+            bridgeUrlSelect.addEventListener('change', () => {
+                const fp = bridgeFingerprints[bridgeUrlSelect.value];
+                if (fp) {
+                    fingerprintInput.value = fp;
+                }
+            });
+
+            // Clear logs
+            clearBtn.addEventListener('click', () => {
+                logOutput.innerHTML = '<div class="empty-state">Logs cleared.</div>';
+            });
+
+            let torClient = null;
+
+            try {
+                statusEl.textContent = 'Loading WASM...';
+                statusDot.className = 'status-dot loading';
+
+                // Initialize WASM module
+                await initWasm();
+                init();
+
+                // Set up log callback to receive Rust logs
+                setLogCallback((level, target, message) => {
+                    log(level, message);
+                });
+
+                log('INFO', 'WASM module loaded');
+                statusEl.textContent = 'Ready to connect';
+                statusDot.className = 'status-dot';
+
+                openBtn.addEventListener('click', async () => {
+                    const bridgeUrl = bridgeUrlSelect.value;
+                    const fingerprint = fingerprintInput.value.trim();
+
+                    if (!fingerprint || fingerprint.length !== 40) {
+                        log('ERROR', 'Invalid fingerprint: must be 40 hex characters');
+                        return;
+                    }
+
+                    openBtn.disabled = true;
+                    statusEl.textContent = 'Connecting via Snowflake...';
+                    statusDot.className = 'status-dot loading';
+                    log('INFO', `Connecting to ${bridgeUrl} with fingerprint ${fingerprint.substring(0, 8)}...`);
+
+                    try {
+                        const startTime = performance.now();
+                        const options = new TorClientOptions(bridgeUrl, fingerprint);
+                        torClient = await new TorClient(options);
+
+                        const connectTime = ((performance.now() - startTime) / 1000).toFixed(1);
+                        statusEl.textContent = `Connected (${connectTime}s)`;
+                        statusDot.className = 'status-dot ready';
+                        log('INFO', `Connected in ${connectTime}s`);
+
+                        closeBtn.disabled = false;
+                        fetchBtn.disabled = false;
+
+                    } catch (e) {
+                        statusEl.textContent = 'Connection failed';
+                        statusDot.className = 'status-dot error';
+                        log('ERROR', 'Connection failed: ' + (e.message || e));
+                        openBtn.disabled = false;
+                    }
+                });
+
+                closeBtn.addEventListener('click', async () => {
+                    if (torClient) {
+                        try {
+                            await torClient.close();
+                            log('INFO', 'Disconnected');
+                        } catch (e) {
+                            log('ERROR', 'Close error: ' + (e.message || e));
+                        }
+                        torClient = null;
+                    }
+                    statusEl.textContent = 'Disconnected';
+                    statusDot.className = 'status-dot';
+                    openBtn.disabled = false;
+                    closeBtn.disabled = true;
+                    fetchBtn.disabled = true;
+                });
+
+                fetchBtn.addEventListener('click', async () => {
+                    const url = urlInput.value;
+
+                    const validation = validateUrl(url);
+                    if (!validation.valid) {
+                        fetchOutput.className = 'output-box error';
+                        fetchOutput.textContent = validation.error;
+                        return;
+                    }
+
+                    fetchOutput.className = 'output-box loading';
+                    fetchOutput.textContent = 'Fetching...';
+                    fetchBtn.disabled = true;
+                    log('INFO', `Fetching ${url}...`);
+
+                    try {
+                        const startTime = performance.now();
+                        const response = await torClient.fetch(url);
+                        const fetchTime = ((performance.now() - startTime) / 1000).toFixed(1);
+
+                        const text = response.text();
+                        fetchOutput.className = 'output-box success';
+                        fetchOutput.textContent = `Status: ${response.status} (${fetchTime}s)\n\n${text.substring(0, 2000)}`;
+                        log('INFO', `Fetch complete: ${response.status} (${fetchTime}s, ${text.length} bytes)`);
+                    } catch (e) {
+                        fetchOutput.className = 'output-box error';
+                        fetchOutput.textContent = e.message || String(e);
+                        log('ERROR', 'Fetch failed: ' + (e.message || e));
+                    }
+                    fetchBtn.disabled = false;
+                });
+
+                log('INFO', 'Ready - click "Connect" to start');
+
+            } catch (error) {
+                console.error('Failed to initialize:', error);
+                statusEl.textContent = 'Failed to load WASM';
+                statusDot.className = 'status-dot error';
+                log('ERROR', 'Initialization failed: ' + (error.message || error));
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', run);
+        } else {
+            run();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+[package]
+name = "tor-js"
+version = "0.1.0"
+edition = "2021"
+authors = ["Arti Contributors"]
+license = "MIT OR Apache-2.0"
+description = "WebAssembly bindings for arti-client Tor functionality"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Core arti-client with required features (pt-client implies bridge-client)
+arti-client = { path = "../arti-client", default-features = false, features = [
+    "pt-client",
+    "experimental-api",
+]}
+tor-rtcompat = { path = "../tor-rtcompat", default-features = false }
+
+# Snowflake transport
+webtor-rs-lite = { path = "../webtor-rs-lite" }
+
+# TLS for HTTPS over DataStream
+subtle-tls = { path = "../subtle-tls" }
+
+# HTTP support
+http = "1.1"
+url = "2.5"
+
+# WASM bindings
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3.69", features = ["console"] }
+serde-wasm-bindgen = "0.6"
+
+# Async runtime
+futures = "0.3"
+
+# Logging
+tracing = "0.1"
+tracing-wasm = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
+
+# Error handling
+console_error_panic_hook = "0.1"
+
+# Random number generation
+getrandom = { version = "0.2", features = ["js"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false

@@ -7408,6 +7408,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-js"
+version = "0.1.0"
+dependencies = [
+ "arti-client",
+ "console_error_panic_hook",
+ "futures",
+ "getrandom 0.2.17",
+ "http",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "subtle-tls",
+ "tor-rtcompat",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-wasm",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "webtor-rs-lite",
+]
+
+[[package]]
 name = "tor-key-forge"
 version = "0.38.0"
 dependencies = [

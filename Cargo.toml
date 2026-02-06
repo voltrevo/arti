@@ -80,7 +80,9 @@ members = [
 
     "crates/subtle-tls",
     "crates/webtor-rs",
+    "crates/webtor-rs-lite",
     "crates/webtor",
+    "crates/tor-js",
 
     "maint/fixup-features",
     "maint/keygen-openssh-test",

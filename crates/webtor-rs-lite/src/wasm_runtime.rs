@@ -36,9 +36,24 @@ impl SleepProvider for WasmRuntime {
     }
 }
 
+/// Wrapper to make gloo Timeout Send on WASM (which is single-threaded anyway)
+#[cfg(target_arch = "wasm32")]
+struct SendTimeout(gloo_timers::callback::Timeout);
+
+#[cfg(target_arch = "wasm32")]
+// SAFETY: WASM is single-threaded, so Send is safe
+unsafe impl Send for SendTimeout {}
+
 pub struct WasmSleep {
     rx: futures::channel::oneshot::Receiver<()>,
+    // Keep the timeout handle alive so it doesn't get cancelled
+    #[cfg(target_arch = "wasm32")]
+    _timeout: SendTimeout,
 }
+
+// SAFETY: WASM is single-threaded, so Send is safe
+#[cfg(target_arch = "wasm32")]
+unsafe impl Send for WasmSleep {}
 
 impl WasmSleep {
     fn new(duration: Duration) -> Self {
@@ -46,24 +61,12 @@ impl WasmSleep {
 
         #[cfg(target_arch = "wasm32")]
         {
-            use wasm_bindgen::prelude::*;
-            use wasm_bindgen::JsCast;
-
-            let millis =
-                i32::try_from(duration.as_millis().min(i32::MAX as u128)).unwrap_or(i32::MAX);
-
-            let closure = Closure::once(move || {
+            // gloo-timers works in both browsers and Node.js
+            let millis = u32::try_from(duration.as_millis().min(u32::MAX as u128)).unwrap_or(u32::MAX);
+            let timeout = gloo_timers::callback::Timeout::new(millis, move || {
                 let _ = tx.send(());
             });
-
-            // FIXME: window (nodejs/etc compatibility)
-            let window = web_sys::window().expect("should have a window in this context");
-            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                closure.as_ref().unchecked_ref(),
-                millis,
-            );
-
-            closure.forget();
+            Self { rx, _timeout: SendTimeout(timeout) }
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -72,9 +75,8 @@ impl WasmSleep {
                 std::thread::sleep(duration);
                 let _ = tx.send(());
             });
+            Self { rx }
         }
-
-        Self { rx }
     }
 }
 
