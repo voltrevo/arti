@@ -305,7 +305,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for TurboStream<S> {
         match Pin::new(&mut self.inner).poll_read(cx, &mut temp) {
             Poll::Ready(Ok(0)) => Poll::Ready(Ok(0)), // EOF
             Poll::Ready(Ok(n)) => {
-                tracing::info!("Turbo poll_read: got {} bytes from inner stream", n);
+                tracing::trace!("Turbo poll_read: got {} bytes from inner stream", n);
                 self.read_buffer.extend_from_slice(&temp[..n]);
                 // Wake to try decoding again
                 cx.waker().wake_by_ref();
@@ -330,7 +330,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for TurboStream<S> {
         // 3. On WriteZero error, the connection is corrupted - callers must reconnect, not retry
         let frame = TurboFrame::new(buf.to_vec());
         let encoded = frame.encode();
-        tracing::info!(
+        tracing::trace!(
             "Turbo poll_write: {} bytes data -> {} byte frame",
             buf.len(),
             encoded.len()

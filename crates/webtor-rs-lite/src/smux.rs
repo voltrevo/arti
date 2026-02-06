@@ -527,7 +527,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             if self.keepalive_timer.as_mut().poll(cx).is_ready() {
-                debug!("SMUX poll_read: keepalive timer fired, queueing NOP");
+                trace!("SMUX poll_read: keepalive timer fired, queueing NOP");
                 // Timer fired - queue a keepalive NOP
                 if self.pending_nop.is_none() {
                     let nop = SmuxSegment::nop(self.state.stream_id);
@@ -545,7 +545,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
         #[cfg(target_arch = "wasm32")]
         {
             if self.keepalive_timer.as_mut().poll(cx).is_ready() {
-                debug!("SMUX poll_read: keepalive timer fired, queueing NOP");
+                trace!("SMUX poll_read: keepalive timer fired, queueing NOP");
                 // Timer fired - queue a keepalive NOP
                 if self.pending_nop.is_none() {
                     let nop = SmuxSegment::nop(self.state.stream_id);
@@ -564,7 +564,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
         if let Some(nop_data) = self.pending_nop.take() {
             match Pin::new(&mut self.inner).poll_write(cx, &nop_data) {
                 Poll::Ready(Ok(n)) if n == nop_data.len() => {
-                    debug!("SMUX poll_read: sent NOP ({} bytes)", n);
+                    trace!("SMUX poll_read: sent NOP ({} bytes)", n);
                     self.last_nop_time = Instant::now();
                 }
                 Poll::Ready(Ok(_)) => {
@@ -590,7 +590,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
         if let Some(upd_data) = self.pending_upd.take() {
             match Pin::new(&mut self.inner).poll_write(cx, &upd_data) {
                 Poll::Ready(Ok(n)) if n == upd_data.len() => {
-                    debug!("SMUX poll_read: sent pending window update ({} bytes)", n);
+                    trace!("SMUX poll_read: sent pending window update ({} bytes)", n);
                 }
                 Poll::Ready(Ok(_)) => {
                     // Partial write - re-queue for later
@@ -648,7 +648,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                             continue;
                         }
                         SmuxCommand::Psh => {
-                            debug!(
+                            trace!(
                                 "SMUX poll_read: received PSH {} bytes for stream {}",
                                 segment.data.len(),
                                 segment.stream_id
@@ -667,7 +667,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                                     self.state.self_read,
                                     self.state.self_window,
                                 );
-                                debug!(
+                                trace!(
                                     "SMUX poll_read: queueing window update (consumed={}, window={})",
                                     self.state.self_read, self.state.self_window
                                 );
@@ -693,7 +693,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                         }
                         SmuxCommand::Upd => {
                             if let Ok(update) = SmuxUpdate::decode(&segment.data) {
-                                debug!(
+                                trace!(
                                     "SMUX poll_read: received UPD consumed={}, window={}",
                                     update.consumed, update.window
                                 );
@@ -703,7 +703,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                             continue;
                         }
                         SmuxCommand::Nop => {
-                            debug!("SMUX poll_read: received NOP, queueing response");
+                            trace!("SMUX poll_read: received NOP, queueing response");
                             // Queue NOP response (ping-pong keepalive)
                             let nop = SmuxSegment::nop(self.state.stream_id);
                             self.pending_nop = Some(nop.encode());
@@ -730,7 +730,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SmuxStream<S> {
                 Poll::Ready(Ok(0))
             }
             Poll::Ready(Ok(n)) => {
-                debug!(
+                trace!(
                     "SMUX poll_read: got {} bytes from inner: {:02x?}",
                     n,
                     &temp[..n]
@@ -772,7 +772,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for SmuxStream<S> {
         // and establish a new one. Retrying on the same connection will send malformed data.
         let segment = SmuxSegment::psh(self.state.stream_id, buf.to_vec());
         let encoded = segment.encode();
-        debug!(
+        trace!(
             "SMUX poll_write: sending {} bytes data as {} byte frame: {:02x?}",
             buf.len(),
             encoded.len(),

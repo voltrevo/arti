@@ -300,7 +300,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
         // Try to receive from KCP first
         match self.kcp.recv(buf) {
             Ok(n) => {
-                debug!("KCP read: received {} bytes from KCP queue", n);
+                trace!("KCP read: received {} bytes from KCP queue", n);
                 return Poll::Ready(Ok(n));
             }
             Err(kcp::Error::RecvQueueEmpty) => {}
@@ -317,7 +317,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                 Poll::Ready(Ok(0))
             }
             Poll::Ready(Ok(n)) => {
-                debug!("KCP read: got {} bytes from transport, feeding to KCP", n);
+                trace!("KCP read: got {} bytes from transport, feeding to KCP", n);
                 // Feed to KCP
                 if let Err(e) = self.kcp.input(&temp[..n]) {
                     debug!("KCP read: input error: {:?}", e);
@@ -340,7 +340,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                 // We need to send ACKs immediately or the sender will retransmit
                 let output_data = self.output.take();
                 if !output_data.is_empty() {
-                    debug!(
+                    trace!(
                         "KCP read: sending {} bytes of KCP output (ACKs)",
                         output_data.len()
                     );
@@ -369,11 +369,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                 // Try recv again
                 match self.kcp.recv(buf) {
                     Ok(n) => {
-                        debug!("KCP read: received {} bytes after input", n);
+                        trace!("KCP read: received {} bytes after input", n);
                         Poll::Ready(Ok(n))
                     }
                     Err(kcp::Error::RecvQueueEmpty) => {
-                        debug!("KCP read: recv queue still empty, pending");
+                        trace!("KCP read: recv queue still empty, pending");
                         cx.waker().wake_by_ref();
                         Poll::Pending
                     }
@@ -395,7 +395,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
                 // Check if KCP has data ready now
                 match self.kcp.recv(buf) {
                     Ok(n) => {
-                        debug!("KCP read: received {} bytes from queue (transport pending)", n);
+                        trace!("KCP read: received {} bytes from queue (transport pending)", n);
                         return Poll::Ready(Ok(n));
                     }
                     Err(kcp::Error::RecvQueueEmpty) => {}
@@ -406,7 +406,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for KcpStream<S> {
 
                 // If we have pending ACKs, wake ourselves to try sending them
                 if !self.pending_write.is_empty() {
-                    debug!("KCP read: transport pending but have {} bytes of pending ACKs", self.pending_write.len());
+                    trace!("KCP read: transport pending but have {} bytes of pending ACKs", self.pending_write.len());
                     cx.waker().wake_by_ref();
                 }
                 Poll::Pending
@@ -421,12 +421,12 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        debug!("KCP write: sending {} bytes", buf.len());
+        trace!("KCP write: sending {} bytes", buf.len());
 
         // Queue data in KCP
         match self.kcp.send(buf) {
             Ok(n) => {
-                debug!("KCP write: queued {} bytes in KCP", n);
+                trace!("KCP write: queued {} bytes in KCP", n);
 
                 // Update KCP state first (required before flush)
                 let current = self.current_ms();
@@ -445,13 +445,13 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
                 // Flush output
                 let output_data = self.output.take();
                 if !output_data.is_empty() {
-                    debug!(
+                    trace!(
                         "KCP write: flushing {} bytes to transport",
                         output_data.len()
                     );
                     match Pin::new(&mut self.transport).poll_write(cx, &output_data) {
                         Poll::Ready(Ok(written)) => {
-                            debug!("KCP write: wrote {} bytes to transport", written);
+                            trace!("KCP write: wrote {} bytes to transport", written);
                             Poll::Ready(Ok(n))
                         }
                         Poll::Ready(Err(e)) => {
@@ -476,7 +476,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
         // First, write any pending data (ACKs from poll_read)
         if !self.pending_write.is_empty() {
             let data = std::mem::take(&mut self.pending_write);
-            debug!("KCP flush: writing {} bytes of pending data", data.len());
+            trace!("KCP flush: writing {} bytes of pending data", data.len());
             match Pin::new(&mut self.transport).poll_write(cx, &data) {
                 Poll::Ready(Ok(n)) if n == data.len() => {}
                 Poll::Ready(Ok(n)) => {
@@ -501,7 +501,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for KcpStream<S> {
         // Flush output buffer from KCP flush
         let output_data = self.output.take();
         if !output_data.is_empty() {
-            debug!("KCP flush: writing {} bytes from KCP", output_data.len());
+            trace!("KCP flush: writing {} bytes from KCP", output_data.len());
             match Pin::new(&mut self.transport).poll_write(cx, &output_data) {
                 Poll::Ready(Ok(_)) => {}
                 Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
