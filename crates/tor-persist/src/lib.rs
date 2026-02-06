@@ -47,6 +47,7 @@
 // TODO #1645 (either remove this, or decide to have it everywhere)
 #![cfg_attr(not(all(feature = "experimental", feature = "full")), allow(unused))]
 
+mod custom;
 mod err;
 #[cfg(not(target_arch = "wasm32"))]
 mod fs;
@@ -66,8 +67,9 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
 /// Wrapper type for Results returned from this crate.
-type Result<T> = std::result::Result<T, crate::Error>;
+pub type Result<T> = std::result::Result<T, crate::Error>;
 
+pub use custom::{BoxedStateMgr, CustomStateMgr};
 pub use err::{Error, ErrorSource};
 #[cfg(not(target_arch = "wasm32"))]
 pub use fs::FsStateMgr;

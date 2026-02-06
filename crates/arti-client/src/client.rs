@@ -33,7 +33,7 @@ use tor_persist::state_dir::StateDirectory;
 #[cfg(not(target_arch = "wasm32"))]
 use tor_persist::FsStateMgr;
 #[cfg(target_arch = "wasm32")]
-use tor_persist::MemoryStateMgr;
+use tor_persist::{BoxedStateMgr, MemoryStateMgr};
 use tor_persist::StateMgr;
 use tor_proto::client::stream::{DataStream, IpVersionPreference, StreamParameters};
 #[cfg(all(
@@ -76,6 +76,79 @@ use crate::{TorClientBuilder, status, util};
 use tor_geoip::CountryCode;
 use tor_rtcompat::scheduler::TaskHandle;
 use tracing::{debug, info, instrument};
+
+// ============================================================================
+// WASM State Manager
+// ============================================================================
+
+/// State manager for WASM environments.
+///
+/// This enum allows using either the default in-memory storage or a custom
+/// storage backend (e.g., IndexedDB from JavaScript).
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+pub enum WasmStateMgr {
+    /// Default in-memory storage (state lost on page reload).
+    Memory(MemoryStateMgr),
+    /// Custom storage backend (e.g., backed by JavaScript storage).
+    Custom(BoxedStateMgr),
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WasmStateMgr {
+    /// Return a future that resolves when the state manager is unlocked.
+    ///
+    /// For WASM, this always resolves immediately since there's no real
+    /// inter-process locking.
+    pub fn wait_for_unlock(&self) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<> {
+        // Both variants resolve immediately in WASM
+        futures::future::ready(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl StateMgr for WasmStateMgr {
+    fn load<D>(&self, key: &str) -> tor_persist::Result<Option<D>>
+    where
+        D: serde::de::DeserializeOwned,
+    {
+        match self {
+            WasmStateMgr::Memory(m) => m.load(key),
+            WasmStateMgr::Custom(c) => c.load(key),
+        }
+    }
+
+    fn store<S>(&self, key: &str, val: &S) -> tor_persist::Result<()>
+    where
+        S: serde::Serialize,
+    {
+        match self {
+            WasmStateMgr::Memory(m) => m.store(key, val),
+            WasmStateMgr::Custom(c) => c.store(key, val),
+        }
+    }
+
+    fn can_store(&self) -> bool {
+        match self {
+            WasmStateMgr::Memory(m) => m.can_store(),
+            WasmStateMgr::Custom(c) => c.can_store(),
+        }
+    }
+
+    fn try_lock(&self) -> tor_persist::Result<tor_persist::LockStatus> {
+        match self {
+            WasmStateMgr::Memory(m) => m.try_lock(),
+            WasmStateMgr::Custom(c) => c.try_lock(),
+        }
+    }
+
+    fn unlock(&self) -> tor_persist::Result<()> {
+        match self {
+            WasmStateMgr::Memory(m) => m.unlock(),
+            WasmStateMgr::Custom(c) => c.unlock(),
+        }
+    }
+}
 
 /// An active client session on the Tor network.
 ///
@@ -173,9 +246,9 @@ pub struct TorClient<R: Runtime> {
     /// Location on disk where we store persistent data (cooked state manager).
     #[cfg(not(target_arch = "wasm32"))]
     statemgr: FsStateMgr,
-    /// In-memory state manager for WASM.
+    /// State manager for WASM (memory or custom storage).
     #[cfg(target_arch = "wasm32")]
-    statemgr: MemoryStateMgr,
+    statemgr: WasmStateMgr,
     /// Client address configuration
     addrcfg: Arc<MutCfg<ClientAddrConfig>>,
     /// Client DNS configuration
@@ -887,6 +960,7 @@ impl<R: Runtime> TorClient<R> {
         autobootstrap: BootstrapBehavior,
         dirmgr_builder: &dyn crate::builder::DirProviderBuilder<R>,
         dirmgr_extensions: tor_dirmgr::config::DirMgrExtensions,
+        #[cfg(target_arch = "wasm32")] custom_statemgr: Option<BoxedStateMgr>,
     ) -> StdResult<Self, ErrorDetail> {
         if crate::util::running_as_setuid() {
             return Err(tor_error::bad_api_usage!(
@@ -914,7 +988,10 @@ impl<R: Runtime> TorClient<R> {
         let statemgr = FsStateMgr::from_path_and_mistrust(&state_dir, mistrust)
             .map_err(ErrorDetail::StateMgrSetup)?;
         #[cfg(target_arch = "wasm32")]
-        let statemgr = MemoryStateMgr::new();
+        let statemgr = match custom_statemgr {
+            Some(custom) => WasmStateMgr::Custom(custom),
+            None => WasmStateMgr::Memory(MemoryStateMgr::new()),
+        };
         // Try to take state ownership early, so we'll know if we have it.
         // Note that this `try_lock()` may return `Ok` even if we can't acquire the lock.
         // (At this point we don't yet care if we have it.)

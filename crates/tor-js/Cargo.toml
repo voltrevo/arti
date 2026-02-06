@@ -17,6 +17,7 @@ arti-client = { path = "../arti-client", default-features = false, features = [
     "experimental-api",
 ]}
 tor-rtcompat = { path = "../tor-rtcompat", default-features = false }
+tor-persist = { path = "../tor-persist", default-features = false }
 
 # Snowflake transport
 webtor-rs-lite = { path = "../webtor-rs-lite" }

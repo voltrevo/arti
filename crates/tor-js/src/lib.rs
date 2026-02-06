@@ -33,6 +33,9 @@
 
 mod error;
 mod fetch;
+mod storage;
+
+pub use storage::{JsStorage, JsStorageInterface, JsStateMgr};
 
 use error::JsTorError;
 use fetch::HttpResponse;
@@ -169,6 +172,8 @@ pub struct TorClientOptions {
     mode: SnowflakeMode,
     /// Bridge fingerprint for verification (hex string, 40 chars)
     fingerprint: Option<String>,
+    /// Custom storage implementation (optional)
+    storage: Option<JsStorageInterface>,
 }
 
 #[wasm_bindgen]
@@ -187,6 +192,7 @@ impl TorClientOptions {
                 fingerprint: fp.clone(),
             },
             fingerprint: fp,
+            storage: None,
         }
     }
 
@@ -203,7 +209,23 @@ impl TorClientOptions {
                 fingerprint: fp.clone(),
             },
             fingerprint: fp,
+            storage: None,
         }
+    }
+
+    /// Set a custom storage implementation for persistent state.
+    ///
+    /// When set, the Tor client will persist guard selection and other state
+    /// to this storage, allowing faster reconnection across page reloads.
+    ///
+    /// If not set, in-memory storage is used (state lost on page reload).
+    ///
+    /// # Arguments
+    /// * `storage` - A JavaScript object implementing the TorStorage interface
+    #[wasm_bindgen(js_name = withStorage)]
+    pub fn with_storage(mut self, storage: JsStorageInterface) -> Self {
+        self.storage = Some(storage);
+        self
     }
 }
 
@@ -320,8 +342,28 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
     // 3. Create TorClient with WASM runtime
     let runtime = WasmRuntime::default();
 
-    let tor_client = ArtiTorClient::with_runtime(runtime)
-        .config(config)
+    // Build the client with optional custom storage
+    let mut builder = ArtiTorClient::with_runtime(runtime).config(config);
+
+    // Set up custom storage if provided
+    if let Some(js_storage_interface) = options.storage {
+        info!("Initializing custom JS storage...");
+        let js_storage = JsStorage::new(js_storage_interface);
+        let js_statemgr = JsStateMgr::new(js_storage)
+            .await
+            .map_err(|e| {
+                JsTorError::internal(format!("Failed to initialize storage: {:?}", e)).into_js_value()
+            })?;
+
+        // Wrap in BoxedStateMgr and set on builder
+        let boxed_statemgr = tor_persist::BoxedStateMgr::new(js_statemgr);
+        builder = builder.custom_state_mgr(boxed_statemgr);
+        info!("Custom storage configured");
+    } else {
+        info!("Using default in-memory storage");
+    }
+
+    let tor_client = builder
         .create_unbootstrapped()
         .map_err(|e| JsTorError::internal(format!("Failed to create client: {}", e)).into_js_value())?;
 
@@ -540,6 +582,66 @@ impl JsHttpResponse {
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
+/**
+ * Storage interface for persisting Tor client state.
+ *
+ * Implement this interface to provide custom storage (IndexedDB, filesystem, etc.).
+ * All methods must return Promises.
+ *
+ * When storage is provided, the Tor client will persist guard selection and other
+ * state, allowing faster reconnection across page reloads.
+ *
+ * @example
+ * ```typescript
+ * class IndexedDBStorage implements TorStorage {
+ *   async get(key: string): Promise<string | null> {
+ *     // Load from IndexedDB
+ *   }
+ *   async set(key: string, value: string): Promise<void> {
+ *     // Save to IndexedDB
+ *   }
+ *   async delete(key: string): Promise<void> {
+ *     // Delete from IndexedDB
+ *   }
+ *   async keys(prefix: string): Promise<string[]> {
+ *     // List keys matching prefix
+ *   }
+ * }
+ *
+ * const options = new TorClientOptions(url, fingerprint)
+ *   .withStorage(new IndexedDBStorage());
+ * const client = await new TorClient(options);
+ * ```
+ */
+export interface TorStorage {
+    /**
+     * Get a value by key.
+     * @param key - The storage key
+     * @returns The stored value as a string, or null if not found
+     */
+    get(key: string): Promise<string | null>;
+
+    /**
+     * Set a value by key.
+     * @param key - The storage key
+     * @param value - The value to store (JSON string)
+     */
+    set(key: string, value: string): Promise<void>;
+
+    /**
+     * Delete a value by key.
+     * @param key - The storage key
+     */
+    delete(key: string): Promise<void>;
+
+    /**
+     * List all keys with a given prefix.
+     * @param prefix - The key prefix to match
+     * @returns Array of matching keys
+     */
+    keys(prefix: string): Promise<string[]>;
+}
+
 export interface FetchInit {
     method?: string;
     headers?: Record<string, string>;
@@ -550,5 +652,13 @@ export interface FetchInit {
 export interface TorClient {
     fetch(url: string, init?: FetchInit): Promise<JsHttpResponse>;
     close(): Promise<void>;
+}
+
+export interface TorClientOptions {
+    /**
+     * Set a custom storage implementation for persistent state.
+     * If not provided, in-memory storage is used (state lost on page reload).
+     */
+    withStorage(storage: TorStorage): TorClientOptions;
 }
 "#;

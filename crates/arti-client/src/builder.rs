@@ -12,6 +12,8 @@ use std::{
 };
 use tor_dirmgr::{DirMgrConfig, DirMgrStore};
 use tor_error::{ErrorKind, HasKind as _};
+#[cfg(target_arch = "wasm32")]
+use tor_persist::BoxedStateMgr;
 use tor_rtcompat::Runtime;
 use tor_time::Instant;
 use tracing::instrument;
@@ -76,6 +78,12 @@ pub struct TorClientBuilder<R: Runtime> {
     /// Only available when `arti-client` is built with the `dirfilter` and `experimental-api` features.
     #[cfg(feature = "dirfilter")]
     dirfilter: tor_dirmgr::filter::FilterConfig,
+    /// Custom state manager for WASM environments.
+    ///
+    /// When set, this will be used instead of the default in-memory storage.
+    /// This allows JavaScript code to provide persistent storage (e.g., IndexedDB).
+    #[cfg(target_arch = "wasm32")]
+    custom_statemgr: Option<BoxedStateMgr>,
 }
 
 /// Longest allowable duration to wait for local resources to be available
@@ -100,6 +108,8 @@ impl<R: Runtime> TorClientBuilder<R> {
             local_resource_timeout: None,
             #[cfg(feature = "dirfilter")]
             dirfilter: None,
+            #[cfg(target_arch = "wasm32")]
+            custom_statemgr: None,
         }
     }
 
@@ -162,6 +172,20 @@ impl<R: Runtime> TorClientBuilder<R> {
         F: Into<Arc<dyn tor_dirmgr::filter::DirFilter + 'static>>,
     {
         self.dirfilter = Some(filter.into());
+        self
+    }
+
+    /// Set a custom state manager for persistent storage.
+    ///
+    /// Only available on WASM. When set, this will be used instead of the
+    /// default in-memory storage, allowing state to persist across sessions
+    /// (e.g., using IndexedDB from JavaScript).
+    ///
+    /// If not set, the default in-memory storage will be used, which means
+    /// all state is lost when the page reloads.
+    #[cfg(target_arch = "wasm32")]
+    pub fn custom_state_mgr(mut self, statemgr: BoxedStateMgr) -> Self {
+        self.custom_statemgr = Some(statemgr);
         self
     }
 
@@ -249,12 +273,17 @@ impl<R: Runtime> TorClientBuilder<R> {
             dirmgr_extensions.filter.clone_from(&self.dirfilter);
         }
 
+        #[cfg(target_arch = "wasm32")]
+        let custom_statemgr = self.custom_statemgr.clone();
+
         let result: Result<TorClient<R>> = TorClient::create_inner(
             self.runtime.clone(),
             &self.config,
             self.bootstrap_behavior,
             self.dirmgr_builder.as_ref(),
             dirmgr_extensions,
+            #[cfg(target_arch = "wasm32")]
+            custom_statemgr,
         )
         .map_err(ErrorDetail::into);
 

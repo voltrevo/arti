@@ -179,6 +179,34 @@ impl Error {
             resource,
         }
     }
+
+    /// Create an error for a failed load operation on an in-memory key.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn load_error(key: &str, source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Loading, Resource::Memory { key: key.to_string() })
+    }
+
+    /// Create an error for a failed store operation on an in-memory key.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn store_error(key: &str, source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Storing, Resource::Memory { key: key.to_string() })
+    }
+
+    /// Create an error for a failed lock operation.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn lock_error(source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Locking, Resource::Manager)
+    }
+
+    /// Create an error for a failed unlock operation.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn unlock_error(source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Unlocking, Resource::Manager)
+    }
 }
 
 impl tor_error::HasKind for Error {
