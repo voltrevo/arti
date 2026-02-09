@@ -52,21 +52,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloc-no-stdlib"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
-
-[[package]]
-name = "alloc-stdlib"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94fb8275041c72129eb51b7d0322c29b8387a0386127718b096429201a5d6ece"
-dependencies = [
- "alloc-no-stdlib",
-]
-
-[[package]]
 name = "alloca"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1143,27 +1128,6 @@ dependencies = [
  "futures-io",
  "futures-lite",
  "piper",
-]
-
-[[package]]
-name = "brotli"
-version = "7.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc97b8f16f944bba54f0433f07e30be199b6dc2bd25937444bbad560bcea29bd"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
- "brotli-decompressor",
-]
-
-[[package]]
-name = "brotli-decompressor"
-version = "4.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a334ef7c9e23abf0ce748e8cd309037da93e606ad52eb372e4ce327a0dcfbdfd"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
 ]
 
 [[package]]
@@ -2811,19 +2775,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9985c9503b412198aa4197559e9a318524ebc4519c229bfa05a535828c950b9d"
 
 [[package]]
-name = "gloo-console"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a17868f56b4a24f677b17c8cb69958385102fa879418052d60b50bc1727e261"
-dependencies = [
- "gloo-utils",
- "js-sys",
- "serde",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "gloo-timers"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2833,19 +2784,6 @@ dependencies = [
  "futures-core",
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "gloo-utils"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b5555354113b18c547c1d3a98fbf7fb32a9ff4f6fa112ce823a21641a0ba3aa"
-dependencies = [
- "js-sys",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -4794,12 +4732,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "public-suffix"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51315bca45305dd8aa64b831b33e71abac528ca8058c0651346a39b8d3009498"
-
-[[package]]
 name = "pwd-grp"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6483,17 +6415,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "tokio-test"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
-dependencies = [
- "futures-core",
- "tokio",
- "tokio-stream",
 ]
 
 [[package]]
@@ -8732,95 +8653,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12bed680863276c63889429bfd6cab3b99943659923822de1c8a39c49e4d722c"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "webtor"
-version = "0.5.7"
-dependencies = [
- "anyhow",
- "console_error_panic_hook",
- "futures",
- "getrandom 0.2.17",
- "gloo-console",
- "http",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "thiserror 1.0.69",
- "tracing",
- "tracing-subscriber",
- "tracing-wasm",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "webtor-rs",
-]
-
-[[package]]
-name = "webtor-rs"
-version = "0.5.7"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "brotli",
- "chacha20poly1305",
- "ed25519-dalek",
- "flate2",
- "futures",
- "futures-rustls",
- "gloo-timers",
- "hex",
- "http",
- "httparse",
- "js-sys",
- "kcp",
- "public-suffix",
- "rand 0.8.5",
- "rsa",
- "rustls",
- "rustls-pki-types",
- "rustls-webpki",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "sha3",
- "subtle-tls",
- "thiserror 1.0.69",
- "tokio",
- "tokio-rustls",
- "tokio-test",
- "tokio-tungstenite",
- "tokio-util",
- "tor-async-utils",
- "tor-cell",
- "tor-chanmgr",
- "tor-checkable",
- "tor-error",
- "tor-linkspec",
- "tor-llcrypto",
- "tor-memquota",
- "tor-netdoc",
- "tor-proto",
- "tor-protover",
- "tor-rtcompat",
- "tor-time",
- "tor-units",
- "tor-wasm-compat",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "webpki-roots 0.26.11",
- "x25519-dalek",
 ]
 
 [[package]]
