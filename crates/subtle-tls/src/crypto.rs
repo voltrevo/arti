@@ -255,6 +255,103 @@ impl KeyExchange {
     }
 }
 
+/// Cloneable key handle for AES-GCM (cheap JS handle clone)
+#[derive(Clone)]
+pub struct AesGcmKey {
+    key: CryptoKey,
+    #[allow(dead_code)]
+    key_size: usize,
+}
+
+/// Standalone async decrypt function (doesn't borrow Cipher)
+pub async fn aes_gcm_decrypt(
+    key: &AesGcmKey,
+    nonce: &[u8],
+    aad: &[u8],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    if nonce.len() != 12 {
+        return Err(TlsError::crypto("AES-GCM requires 12-byte nonce"));
+    }
+    if ciphertext.len() < 16 {
+        return Err(TlsError::crypto("Ciphertext too short (missing tag)"));
+    }
+
+    let subtle = get_subtle_crypto()?;
+    let nonce_array = Uint8Array::from(nonce);
+    let aad_array = Uint8Array::from(aad);
+    let ciphertext_array = Uint8Array::from(ciphertext);
+
+    let algorithm = Object::new();
+    Reflect::set(&algorithm, &"name".into(), &"AES-GCM".into())
+        .map_err(|_| TlsError::subtle_crypto("Failed to set algorithm name"))?;
+    Reflect::set(&algorithm, &"iv".into(), &nonce_array)
+        .map_err(|_| TlsError::subtle_crypto("Failed to set iv"))?;
+    Reflect::set(&algorithm, &"additionalData".into(), &aad_array)
+        .map_err(|_| TlsError::subtle_crypto("Failed to set additionalData"))?;
+    Reflect::set(&algorithm, &"tagLength".into(), &JsValue::from_f64(128.0))
+        .map_err(|_| TlsError::subtle_crypto("Failed to set tagLength"))?;
+
+    let promise: js_sys::Promise = subtle
+        .decrypt_with_object_and_buffer_source(
+            &algorithm,
+            &key.key,
+            &ciphertext_array.buffer(),
+        )
+        .map_err(|e| TlsError::subtle_crypto(format!("Decryption failed: {:?}", e)))?;
+
+    let plaintext = JsFuture::from(promise).await.map_err(|e| {
+        TlsError::crypto(format!("Decryption failed (bad tag?): {:?}", e))
+    })?;
+
+    let array_buffer: ArrayBuffer = plaintext.unchecked_into();
+    let uint8_array = Uint8Array::new(&array_buffer);
+    Ok(uint8_array.to_vec())
+}
+
+/// Standalone async encrypt function (doesn't borrow Cipher)
+pub async fn aes_gcm_encrypt(
+    key: &AesGcmKey,
+    nonce: &[u8],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    if nonce.len() != 12 {
+        return Err(TlsError::crypto("AES-GCM requires 12-byte nonce"));
+    }
+
+    let subtle = get_subtle_crypto()?;
+    let nonce_array = Uint8Array::from(nonce);
+    let aad_array = Uint8Array::from(aad);
+    let plaintext_array = Uint8Array::from(plaintext);
+
+    let algorithm = Object::new();
+    Reflect::set(&algorithm, &"name".into(), &"AES-GCM".into())
+        .map_err(|_| TlsError::subtle_crypto("Failed to set algorithm name"))?;
+    Reflect::set(&algorithm, &"iv".into(), &nonce_array)
+        .map_err(|_| TlsError::subtle_crypto("Failed to set iv"))?;
+    Reflect::set(&algorithm, &"additionalData".into(), &aad_array)
+        .map_err(|_| TlsError::subtle_crypto("Failed to set additionalData"))?;
+    Reflect::set(&algorithm, &"tagLength".into(), &JsValue::from_f64(128.0))
+        .map_err(|_| TlsError::subtle_crypto("Failed to set tagLength"))?;
+
+    let ciphertext = JsFuture::from(
+        subtle
+            .encrypt_with_object_and_buffer_source(
+                &algorithm,
+                &key.key,
+                &plaintext_array.buffer(),
+            )
+            .map_err(|e| TlsError::subtle_crypto(format!("Encryption failed: {:?}", e)))?,
+    )
+    .await
+    .map_err(|e| TlsError::subtle_crypto(format!("Encryption failed: {:?}", e)))?;
+
+    let array_buffer: ArrayBuffer = ciphertext.unchecked_into();
+    let uint8_array = Uint8Array::new(&array_buffer);
+    Ok(uint8_array.to_vec())
+}
+
 /// AES-GCM cipher for record encryption
 pub struct AesGcm {
     key: CryptoKey,
@@ -277,6 +374,14 @@ impl AesGcm {
             return Err(TlsError::crypto("AES-256-GCM requires 32-byte key"));
         }
         Self::new(key_bytes, 256).await
+    }
+
+    /// Get a cloneable key handle for use in standalone futures
+    pub fn key_handle(&self) -> AesGcmKey {
+        AesGcmKey {
+            key: self.key.clone(),
+            key_size: self.key_size,
+        }
     }
 
     async fn new(key_bytes: &[u8], bits: usize) -> Result<Self> {
@@ -463,6 +568,11 @@ impl ChaCha20Poly1305Cipher {
     }
 }
 
+/// Key handle extracted from a Cipher for use in standalone async futures
+pub enum CipherKeyHandle {
+    AesGcm(AesGcmKey),
+}
+
 /// Unified cipher interface supporting multiple AEAD algorithms
 pub enum Cipher {
     Aes128Gcm(AesGcm),
@@ -525,6 +635,16 @@ impl Cipher {
     /// Check if this cipher supports synchronous operations
     pub fn supports_sync(&self) -> bool {
         matches!(self, Cipher::ChaCha20Poly1305(_))
+    }
+
+    /// Extract key handle for standalone async operations
+    pub fn key_handle(&self) -> Option<CipherKeyHandle> {
+        match self {
+            Cipher::Aes128Gcm(c) | Cipher::Aes256Gcm(c) => {
+                Some(CipherKeyHandle::AesGcm(c.key_handle()))
+            }
+            Cipher::ChaCha20Poly1305(_) => None,
+        }
     }
 
     /// Get the key size for this cipher

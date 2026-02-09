@@ -3,7 +3,7 @@
 //! Handles reading and writing TLS records with encryption/decryption.
 //! TLS 1.3 uses AEAD (AES-GCM or ChaCha20-Poly1305) for all encryption.
 
-use crate::crypto::Cipher;
+use crate::crypto::{Cipher, CipherKeyHandle};
 use crate::error::{Result, TlsError};
 use crate::handshake::{
     CONTENT_TYPE_APPLICATION_DATA, CONTENT_TYPE_HANDSHAKE, TLS_AES_128_GCM_SHA256,
@@ -339,6 +339,42 @@ impl RecordLayer {
             // No cipher active, return as-is
             Ok((header[0], body.to_vec()))
         }
+    }
+
+    /// Check if the read cipher supports synchronous operations
+    pub fn read_cipher_supports_sync(&self) -> bool {
+        self.read_cipher
+            .as_ref()
+            .map(|c| c.aead.supports_sync())
+            .unwrap_or(true)
+    }
+
+    /// Check if the write cipher supports synchronous operations
+    pub fn write_cipher_supports_sync(&self) -> bool {
+        self.write_cipher
+            .as_ref()
+            .map(|c| c.aead.supports_sync())
+            .unwrap_or(true)
+    }
+
+    /// Get the read cipher's key handle and current nonce (for async decrypt)
+    /// Also increments the sequence number, since the caller will handle decryption.
+    pub fn read_cipher_start_async(&mut self) -> Option<(CipherKeyHandle, Vec<u8>)> {
+        let cipher = self.read_cipher.as_mut()?;
+        let key_handle = cipher.aead.key_handle()?;
+        let nonce = cipher.compute_nonce();
+        cipher.increment_sequence();
+        Some((key_handle, nonce))
+    }
+
+    /// Get the write cipher's key handle and current nonce (for async encrypt)
+    /// Also increments the sequence number, since the caller will handle encryption.
+    pub fn write_cipher_start_async(&mut self) -> Option<(CipherKeyHandle, Vec<u8>)> {
+        let cipher = self.write_cipher.as_mut()?;
+        let key_handle = cipher.aead.key_handle()?;
+        let nonce = cipher.compute_nonce();
+        cipher.increment_sequence();
+        Some((key_handle, nonce))
     }
 
     /// Encrypt a record synchronously (for use in poll_write)

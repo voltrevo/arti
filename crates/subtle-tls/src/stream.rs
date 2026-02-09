@@ -3,21 +3,33 @@
 //! Wraps an underlying stream with TLS encryption after handshake.
 
 use crate::cert::CertificateVerifier;
-use crate::crypto;
+use crate::crypto::{self, aes_gcm_decrypt, aes_gcm_encrypt, CipherKeyHandle};
 use crate::error::{Result, TlsError};
 use crate::handshake::{
     self, HandshakeState, CONTENT_TYPE_ALERT, CONTENT_TYPE_APPLICATION_DATA,
     CONTENT_TYPE_CHANGE_CIPHER_SPEC, CONTENT_TYPE_HANDSHAKE, HANDSHAKE_CERTIFICATE,
     HANDSHAKE_CERTIFICATE_VERIFY, HANDSHAKE_ENCRYPTED_EXTENSIONS, HANDSHAKE_FINISHED,
-    HANDSHAKE_SERVER_HELLO,
+    HANDSHAKE_SERVER_HELLO, TLS_VERSION_1_2,
 };
 use crate::record::RecordLayer;
 use crate::TlsConfig;
 use futures::io::{AsyncRead, AsyncWrite};
+use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tracing::{debug, info, trace, warn};
+
+type BoxedCryptoFuture = Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'static>>;
+
+struct PendingDecrypt {
+    future: BoxedCryptoFuture,
+}
+
+struct PendingEncrypt {
+    future: BoxedCryptoFuture,
+    original_len: usize,
+}
 
 /// TLS-encrypted stream
 pub struct TlsStream<S> {
@@ -37,6 +49,10 @@ pub struct TlsStream<S> {
     record_read_buffer: Vec<u8>,
     /// Buffer for pending write data (encrypted, ready to send to transport)
     record_write_buffer: Vec<u8>,
+    /// Pending async decryption operation
+    pending_decrypt: Option<PendingDecrypt>,
+    /// Pending async encryption operation
+    pending_encrypt: Option<PendingEncrypt>,
 }
 
 /// Stored keying material for RFC 8446 key export
@@ -166,6 +182,8 @@ where
             keying_material,
             record_read_buffer: Vec::new(),
             record_write_buffer: Vec::new(),
+            pending_decrypt: None,
+            pending_encrypt: None,
         })
     }
 
@@ -499,7 +517,7 @@ where
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        // First, drain any buffered plaintext
+        // Drain any buffered plaintext first
         if self.read_pos < self.read_buffer.len() {
             let available = &self.read_buffer[self.read_pos..];
             let to_copy = std::cmp::min(buf.len(), available.len());
@@ -514,8 +532,68 @@ where
             return Poll::Ready(Ok(to_copy));
         }
 
-        // Try to read and decrypt a TLS record
+        // Main loop: read records, decrypt, and dispatch
         loop {
+            // Check if we have a pending async decrypt operation
+            if let Some(ref mut pending) = self.pending_decrypt {
+                match Pin::new(&mut pending.future).poll(cx) {
+                    Poll::Ready(Ok(plaintext)) => {
+                        self.pending_decrypt = None;
+
+                        // TLS 1.3 inner plaintext: last byte is content type
+                        if plaintext.is_empty() {
+                            return Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "Empty decrypted record",
+                            )));
+                        }
+                        let actual_type = plaintext[plaintext.len() - 1];
+                        let data = &plaintext[..plaintext.len() - 1];
+
+                        match actual_type {
+                            CONTENT_TYPE_APPLICATION_DATA => {
+                                let to_copy = std::cmp::min(buf.len(), data.len());
+                                buf[..to_copy].copy_from_slice(&data[..to_copy]);
+                                if to_copy < data.len() {
+                                    self.read_buffer = data[to_copy..].to_vec();
+                                    self.read_pos = 0;
+                                }
+                                return Poll::Ready(Ok(to_copy));
+                            }
+                            CONTENT_TYPE_ALERT => {
+                                if data.len() >= 2 && data[0] == 1 && data[1] == 0 {
+                                    return Poll::Ready(Ok(0));
+                                }
+                                let err = Self::parse_alert(data);
+                                return Poll::Ready(Err(io::Error::new(
+                                    io::ErrorKind::ConnectionReset,
+                                    err.to_string(),
+                                )));
+                            }
+                            CONTENT_TYPE_HANDSHAKE => {
+                                trace!("Ignoring post-handshake message");
+                                continue;
+                            }
+                            CONTENT_TYPE_CHANGE_CIPHER_SPEC => {
+                                continue;
+                            }
+                            _ => {
+                                warn!("Ignoring unexpected content type: {}", actual_type);
+                                continue;
+                            }
+                        }
+                    }
+                    Poll::Ready(Err(e)) => {
+                        self.pending_decrypt = None;
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Async decryption failed: {}", e),
+                        )));
+                    }
+                    Poll::Pending => return Poll::Pending,
+                }
+            }
+
             // Check if we have enough data for a record header
             if self.record_read_buffer.len() >= 5 {
                 let content_type = self.record_read_buffer[0];
@@ -533,16 +611,13 @@ where
 
                 // Check if we have the full record
                 if self.record_read_buffer.len() >= total_len {
-                    // Extract the record
                     let record_data: Vec<u8> = self.record_read_buffer.drain(..total_len).collect();
                     let body = &record_data[5..];
 
-                    // Decrypt if cipher is active
-                    let (actual_type, plaintext) = if self.record_layer.has_read_cipher()
+                    if self.record_layer.has_read_cipher()
                         && content_type == CONTENT_TYPE_APPLICATION_DATA
                     {
-                        // Build header for AAD
-                        let header = [
+                        let header: [u8; 5] = [
                             record_data[0],
                             record_data[1],
                             record_data[2],
@@ -550,57 +625,113 @@ where
                             record_data[4],
                         ];
 
-                        // Decrypt synchronously using the record layer's cipher
-                        match self.record_layer.decrypt_record_sync(&header, body) {
-                            Ok((ct, pt)) => (ct, pt),
-                            Err(e) => {
-                                return Poll::Ready(Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    format!("Decryption failed: {}", e),
-                                )));
+                        if self.record_layer.read_cipher_supports_sync() {
+                            // ChaCha20: sync decrypt path
+                            match self.record_layer.decrypt_record_sync(&header, body) {
+                                Ok((actual_type, plaintext)) => {
+                                    match actual_type {
+                                        CONTENT_TYPE_APPLICATION_DATA => {
+                                            let to_copy = std::cmp::min(buf.len(), plaintext.len());
+                                            buf[..to_copy].copy_from_slice(&plaintext[..to_copy]);
+                                            if to_copy < plaintext.len() {
+                                                self.read_buffer = plaintext[to_copy..].to_vec();
+                                                self.read_pos = 0;
+                                            }
+                                            return Poll::Ready(Ok(to_copy));
+                                        }
+                                        CONTENT_TYPE_ALERT => {
+                                            if plaintext.len() >= 2 && plaintext[0] == 1 && plaintext[1] == 0 {
+                                                return Poll::Ready(Ok(0));
+                                            }
+                                            let err = Self::parse_alert(&plaintext);
+                                            return Poll::Ready(Err(io::Error::new(
+                                                io::ErrorKind::ConnectionReset,
+                                                err.to_string(),
+                                            )));
+                                        }
+                                        CONTENT_TYPE_HANDSHAKE => {
+                                            trace!("Ignoring post-handshake message");
+                                            continue;
+                                        }
+                                        CONTENT_TYPE_CHANGE_CIPHER_SPEC => {
+                                            continue;
+                                        }
+                                        _ => {
+                                            warn!("Ignoring unexpected content type: {}", actual_type);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    return Poll::Ready(Err(io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        format!("Decryption failed: {}", e),
+                                    )));
+                                }
                             }
+                        } else {
+                            // AES-GCM: start async decrypt
+                            let (key_handle, nonce) = self
+                                .record_layer
+                                .read_cipher_start_async()
+                                .expect("read cipher must exist");
+                            let body_owned = body.to_vec();
+                            let header_owned = header;
+
+                            let future: BoxedCryptoFuture = match key_handle {
+                                CipherKeyHandle::AesGcm(key) => Box::pin(async move {
+                                    aes_gcm_decrypt(
+                                        &key,
+                                        &nonce,
+                                        &header_owned,
+                                        &body_owned,
+                                    )
+                                    .await
+                                }),
+                            };
+
+                            self.pending_decrypt = Some(PendingDecrypt {
+                                future,
+                            });
+
+                            // Wake immediately to poll the future
+                            cx.waker().wake_by_ref();
+                            return Poll::Pending;
                         }
                     } else {
-                        (content_type, body.to_vec())
-                    };
-
-                    match actual_type {
-                        CONTENT_TYPE_APPLICATION_DATA => {
-                            // Copy to output buffer
-                            let to_copy = std::cmp::min(buf.len(), plaintext.len());
-                            buf[..to_copy].copy_from_slice(&plaintext[..to_copy]);
-
-                            // Buffer any remaining
-                            if to_copy < plaintext.len() {
-                                self.read_buffer = plaintext[to_copy..].to_vec();
-                                self.read_pos = 0;
+                        // No cipher or non-application data: pass through
+                        let (actual_type, plaintext) = (content_type, body.to_vec());
+                        match actual_type {
+                            CONTENT_TYPE_APPLICATION_DATA => {
+                                let to_copy = std::cmp::min(buf.len(), plaintext.len());
+                                buf[..to_copy].copy_from_slice(&plaintext[..to_copy]);
+                                if to_copy < plaintext.len() {
+                                    self.read_buffer = plaintext[to_copy..].to_vec();
+                                    self.read_pos = 0;
+                                }
+                                return Poll::Ready(Ok(to_copy));
                             }
-
-                            return Poll::Ready(Ok(to_copy));
-                        }
-                        CONTENT_TYPE_ALERT => {
-                            if plaintext.len() >= 2 && plaintext[0] == 1 && plaintext[1] == 0 {
-                                // close_notify - signal EOF
-                                return Poll::Ready(Ok(0));
+                            CONTENT_TYPE_ALERT => {
+                                if plaintext.len() >= 2 && plaintext[0] == 1 && plaintext[1] == 0 {
+                                    return Poll::Ready(Ok(0));
+                                }
+                                let err = Self::parse_alert(&plaintext);
+                                return Poll::Ready(Err(io::Error::new(
+                                    io::ErrorKind::ConnectionReset,
+                                    err.to_string(),
+                                )));
                             }
-                            let err = Self::parse_alert(&plaintext);
-                            return Poll::Ready(Err(io::Error::new(
-                                io::ErrorKind::ConnectionReset,
-                                err.to_string(),
-                            )));
-                        }
-                        CONTENT_TYPE_HANDSHAKE => {
-                            // Post-handshake message (e.g., NewSessionTicket), skip it
-                            trace!("Ignoring post-handshake message");
-                            continue;
-                        }
-                        CONTENT_TYPE_CHANGE_CIPHER_SPEC => {
-                            // Ignore CCS
-                            continue;
-                        }
-                        _ => {
-                            warn!("Ignoring unexpected content type: {}", actual_type);
-                            continue;
+                            CONTENT_TYPE_HANDSHAKE => {
+                                trace!("Ignoring post-handshake message");
+                                continue;
+                            }
+                            CONTENT_TYPE_CHANGE_CIPHER_SPEC => {
+                                continue;
+                            }
+                            _ => {
+                                warn!("Ignoring unexpected content type: {}", actual_type);
+                                continue;
+                            }
                         }
                     }
                 }
@@ -611,13 +742,11 @@ where
 
             match Pin::new(&mut self.inner).poll_read(cx, &mut temp) {
                 Poll::Ready(Ok(0)) => {
-                    // EOF from underlying stream
                     return Poll::Ready(Ok(0));
                 }
                 Poll::Ready(Ok(n)) => {
                     trace!("TlsStream poll_read: got {} bytes from transport", n);
                     self.record_read_buffer.extend_from_slice(&temp[..n]);
-                    // Continue loop to try parsing
                 }
                 Poll::Ready(Err(e)) => {
                     return Poll::Ready(Err(e));
@@ -639,9 +768,50 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        // First, flush any pending write buffer
+        // First, check if we have a pending async encrypt operation
+        if let Some(ref mut pending) = self.pending_encrypt {
+            match Pin::new(&mut pending.future).poll(cx) {
+                Poll::Ready(Ok(ciphertext)) => {
+                    let original_len = pending.original_len;
+                    self.pending_encrypt = None;
+
+                    // Build the full TLS record from the ciphertext
+                    let mut record = Vec::with_capacity(5 + ciphertext.len());
+                    record.push(CONTENT_TYPE_APPLICATION_DATA);
+                    record.push((TLS_VERSION_1_2 >> 8) as u8);
+                    record.push(TLS_VERSION_1_2 as u8);
+                    record.push((ciphertext.len() >> 8) as u8);
+                    record.push(ciphertext.len() as u8);
+                    record.extend_from_slice(&ciphertext);
+
+                    // Try to write the encrypted record
+                    match Pin::new(&mut self.inner).poll_write(cx, &record) {
+                        Poll::Ready(Ok(n)) => {
+                            if n < record.len() {
+                                self.record_write_buffer.extend_from_slice(&record[n..]);
+                            }
+                            return Poll::Ready(Ok(original_len));
+                        }
+                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                        Poll::Pending => {
+                            self.record_write_buffer = record;
+                            return Poll::Pending;
+                        }
+                    }
+                }
+                Poll::Ready(Err(e)) => {
+                    self.pending_encrypt = None;
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Async encryption failed: {}", e),
+                    )));
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
+        // Flush any pending write buffer
         while !self.record_write_buffer.is_empty() {
-            // Use mem::take to avoid clone while satisfying borrow checker
             let mut pending = std::mem::take(&mut self.record_write_buffer);
             let poll = Pin::new(&mut self.inner).poll_write(cx, &pending);
             match poll {
@@ -667,37 +837,71 @@ where
             }
         }
 
-        // Encrypt the new data and write it
-        // Encrypt using the record layer
-        let encrypted = match self
-            .record_layer
-            .encrypt_record_sync(CONTENT_TYPE_APPLICATION_DATA, buf)
-        {
-            Ok(data) => data,
-            Err(e) => {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Encryption failed: {}", e),
-                )));
-            }
-        };
-
-        // Try to write the encrypted record
-        match Pin::new(&mut self.inner).poll_write(cx, &encrypted) {
-            Poll::Ready(Ok(n)) => {
-                if n < encrypted.len() {
-                    // Partial write - buffer the rest
-                    self.record_write_buffer.extend_from_slice(&encrypted[n..]);
+        // Encrypt the new data
+        if self.record_layer.write_cipher_supports_sync() {
+            // ChaCha20: use sync path
+            let encrypted = match self
+                .record_layer
+                .encrypt_record_sync(CONTENT_TYPE_APPLICATION_DATA, buf)
+            {
+                Ok(data) => data,
+                Err(e) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Encryption failed: {}", e),
+                    )));
                 }
-                // Report how many plaintext bytes were written
-                Poll::Ready(Ok(buf.len()))
+            };
+
+            match Pin::new(&mut self.inner).poll_write(cx, &encrypted) {
+                Poll::Ready(Ok(n)) => {
+                    if n < encrypted.len() {
+                        self.record_write_buffer.extend_from_slice(&encrypted[n..]);
+                    }
+                    Poll::Ready(Ok(buf.len()))
+                }
+                Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                Poll::Pending => {
+                    self.record_write_buffer = encrypted;
+                    Poll::Pending
+                }
             }
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => {
-                // Buffer all for later
-                self.record_write_buffer = encrypted;
-                Poll::Pending
-            }
+        } else {
+            // AES-GCM: start async encrypt
+            let (key_handle, nonce) = self
+                .record_layer
+                .write_cipher_start_async()
+                .expect("write cipher must exist");
+
+            // TLS 1.3: append content type to plaintext before encryption
+            let mut plaintext = buf.to_vec();
+            plaintext.push(CONTENT_TYPE_APPLICATION_DATA);
+
+            // Build AAD header (need ciphertext length = plaintext + 16 tag)
+            let ciphertext_len = plaintext.len() + 16;
+            let aad: [u8; 5] = [
+                CONTENT_TYPE_APPLICATION_DATA,
+                (TLS_VERSION_1_2 >> 8) as u8,
+                TLS_VERSION_1_2 as u8,
+                (ciphertext_len >> 8) as u8,
+                ciphertext_len as u8,
+            ];
+
+            let original_len = buf.len();
+
+            let future: BoxedCryptoFuture = match key_handle {
+                CipherKeyHandle::AesGcm(key) => Box::pin(async move {
+                    aes_gcm_encrypt(&key, &nonce, &aad, &plaintext).await
+                }),
+            };
+
+            self.pending_encrypt = Some(PendingEncrypt {
+                future,
+                original_len,
+            });
+
+            cx.waker().wake_by_ref();
+            Poll::Pending
         }
     }
 
