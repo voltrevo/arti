@@ -5,6 +5,7 @@
 - [ ] fix pre-existing tests (`cargo test`)
 - [ ] automated testing
 - [ ] check/clean ai code
+- [ ] improve js storage handling (remove inmemory.rs?)
 - [ ] make tor-js API same/similar to https://www.npmjs.com/package/tor-js
 - [ ] faster bootstrap (allow external source? fix protocol bugs? both?)
 - [ ] fix microdesc stalling issue (when batch size or parallelism is higher)
