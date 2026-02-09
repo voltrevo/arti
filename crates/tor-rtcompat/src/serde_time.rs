@@ -9,6 +9,8 @@
 
 use tor_time::SystemTime;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+#[cfg(target_arch = "wasm32")]
 use std::time::Duration;
 
 /// Serialize a `SystemTime` in human-readable format.

@@ -28,6 +28,7 @@ use time::Duration;
 
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod inmemory;
 #[cfg(target_arch = "wasm32")]
 pub mod custom;

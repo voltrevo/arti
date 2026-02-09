@@ -549,8 +549,6 @@ async fn download_attempt<R: Runtime>(
     parallelism: usize,
     attempt_id: AttemptId,
 ) -> Result<()> {
-    use futures::StreamExt;
-
     let missing = state.missing_docs();
 
     // In test mode, use the batch fetch_multiple function for canned responses

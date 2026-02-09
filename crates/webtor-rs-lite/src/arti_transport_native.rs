@@ -8,7 +8,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::task::SpawnError;
 use tor_chanmgr::factory::{AbstractPtError, AbstractPtMgr, BootstrapReporter, ChannelFactory};
 use tor_error::{ErrorKind, HasKind, HasRetryTime, RetryTime};
 use tor_linkspec::{HasRelayIds, IntoOwnedChanTarget, OwnedChanTarget, OwnedChanTargetBuilder, PtTransportName};

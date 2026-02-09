@@ -32,8 +32,6 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use std::sync::LazyLock;
 
-use std::time;
-
 #[cfg(feature = "build_docs")]
 mod build;
 
