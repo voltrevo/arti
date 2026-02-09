@@ -587,6 +587,7 @@ async fn download_attempt<R: Runtime>(
                 Ok((request, response)) => {
                     if response.status_code() == 200 {
                         process_download_response(dirmgr, state, attempt_id, request, response, &mut n_errors)?;
+                        dirmgr.update_progress(attempt_id, state.bootstrap_progress());
                     } else {
                         trace!(
                             "cache declined request; reported status {:?}",
