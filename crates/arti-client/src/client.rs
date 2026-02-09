@@ -87,7 +87,7 @@ use tracing::{debug, info, instrument};
 /// storage backend (e.g., IndexedDB from JavaScript).
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone)]
-pub enum WasmStateMgr {
+pub(crate) enum WasmStateMgr {
     /// Default in-memory storage (state lost on page reload).
     Memory(MemoryStateMgr),
     /// Custom storage backend (e.g., backed by JavaScript storage).
@@ -100,7 +100,7 @@ impl WasmStateMgr {
     ///
     /// For WASM, this always resolves immediately since there's no real
     /// inter-process locking.
-    pub fn wait_for_unlock(&self) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<> {
+    pub(crate) fn wait_for_unlock(&self) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<> {
         // Both variants resolve immediately in WASM
         futures::future::ready(())
     }
