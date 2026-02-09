@@ -15,7 +15,7 @@
 //! You can think of this module as the one implementing the things unique
 //! to directory mirrors.
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -42,7 +42,7 @@ use tracing::warn;
 use crate::{
     database::{self, sql, ContentEncoding, Timestamp},
     err::{DatabaseError, FatalError, NetdocRequestError},
-    mirror::operation::download::ConsensusBoundDownloader,
+    mirror::operation::download::DownloadManager,
 };
 
 mod download;
@@ -86,7 +86,7 @@ fn get_recent_consensus(
         SELECT c.valid_after, c.fresh_until, c.valid_until, s.content
         FROM
           consensus AS c
-          INNER JOIN store AS s ON s.sha256 = c.sha256
+          INNER JOIN store AS s ON s.docid = c.docid
         WHERE
           flavor = ?1
           AND ?2 >= valid_after - ?3
@@ -184,7 +184,7 @@ fn get_recent_authority_certificates(
         SELECT s.content
         FROM
           authority_key_certificate AS a
-          INNER JOIN store AS s ON s.sha256 = a.sha256
+          INNER JOIN store AS s ON s.docid = a.docid
         WHERE
           (:id_rsa, :sk_rsa) = (a.kp_auth_id_rsa_sha1, a.kp_auth_sign_rsa_sha1)
           AND :now >= a.dir_key_published - :pre_tolerance
@@ -256,23 +256,24 @@ fn get_recent_authority_certificates(
 /// Downloads (missing) directory authority certificates from an authority.
 ///
 /// The key pairs (identity and signing keys) are specified in `missing`.
-/// This function will then use the [`ConsensusBoundDownloader`] to download
+/// This function will then use the [`DownloadManager`] to download
 /// the missing certificates from a directory authority.
 async fn download_authority_certificates<'a, 'b, R: Rng>(
     missing: &[AuthCertKeyIds],
-    downloader: &mut ConsensusBoundDownloader<'a, 'b>,
+    downloader: &DownloadManager<'a, 'b>,
+    preferred: Option<&'a Vec<SocketAddr>>,
     rng: &mut R,
-) -> Result<String, NetdocRequestError> {
+) -> Result<(&'a Vec<SocketAddr>, String), NetdocRequestError> {
     let mut requ = AuthCertRequest::new();
     missing.iter().for_each(|kp| requ.push(*kp));
 
-    let resp = downloader
-        .download(&requ, rng)
+    let (preferred, resp) = downloader
+        .download(&requ, preferred, rng)
         .await
         .map_err(NetdocRequestError::Download)?;
     let resp = String::from_utf8(resp)?;
 
-    Ok(resp)
+    Ok((preferred, resp))
 }
 
 /// Parses multiple raw directory authority certificates.
@@ -329,7 +330,7 @@ fn insert_authority_certificates(
     // Inserts an authority certificate into the meta table.
     //
     // Parameters:
-    // :sha256 - The SHA256 as found in the store table.
+    // :docid - The docid as found in the store table.
     // :id_rsa - The identity key fingerprint.
     // :sign_rsa - The signing key fingerprint.
     // :published - The published timestamp.
@@ -337,14 +338,14 @@ fn insert_authority_certificates(
     let mut stmt = tx.prepare_cached(sql!(
         "
         INSERT INTO authority_key_certificate
-          (sha256, kp_auth_id_rsa_sha1, kp_auth_sign_rsa_sha1, dir_key_published, dir_key_expires)
+          (docid, kp_auth_id_rsa_sha1, kp_auth_sign_rsa_sha1, dir_key_published, dir_key_expires)
         VALUES
-          (:sha256, :id_rsa, :sign_rsa, :published, :expires)
+          (:docid, :id_rsa, :sign_rsa, :published, :expires)
         "
     ))?;
 
     // Compress and insert all certificates into the store within the context of
-    // our (still pending) transaction.  Keep track of the uncompressed sha256
+    // our (still pending) transaction.  Keep track of the uncompressed docid
     // too.
     let certs = certs
         .iter()
@@ -354,16 +355,16 @@ fn insert_authority_certificates(
             // the end of the world if we change this later -- at worst, clients
             // will simply get it in a different encoding they prefer less, but
             // that should not be super critical.
-            let sha256 = database::store_insert(tx, raw.as_bytes(), ContentEncoding::iter())?;
-            Ok::<_, DatabaseError>((sha256, cert))
+            let docid = database::store_insert(tx, raw.as_bytes(), ContentEncoding::iter())?;
+            Ok::<_, DatabaseError>((docid, cert))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     // Insert every certificate, after it has been inserted into the store, into
     // the authority certificates meta table.
-    for (sha256, cert) in certs {
+    for (docid, cert) in certs {
         stmt.execute(named_params! {
-            ":sha256": sha256,
+            ":docid": docid,
             ":id_rsa": cert.fingerprint.as_hex_upper(),
             ":sign_rsa": cert.dir_signing_key.to_rsa_identity().as_hex_upper(),
             ":published": Timestamp::from(cert.dir_key_published.0),
@@ -525,7 +526,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use tor_time::SystemTime;
 
-    use crate::database;
+    use crate::database::{self, DocumentId};
 
     use super::*;
     use lazy_static::lazy_static;
@@ -557,23 +558,24 @@ mod test {
     }
 
     const CONSENSUS_CONTENT: &str = "Lorem ipsum dolor sit amet.";
-    const CONSENSUS_SHA256: &str =
-        "DD14CBBF0E74909AAC7F248A85D190AFD8DA98265CEF95FC90DFDDABEA7C2E66";
-
     const CERT_CONTENT: &[u8] = include_bytes!("../../testdata/authcert-longclaw");
-    const CERT_SHA256: &str = "8E16D249DF4E78E65FA8E0E863AC01A63995A8FB6F2B40526275BEB3E4AEABC9";
+
+    lazy_static! {
+        static ref CONSENSUS_DOCID: DocumentId = DocumentId::digest(CONSENSUS_CONTENT.as_bytes());
+        static ref CERT_DOCID: DocumentId = DocumentId::digest(CERT_CONTENT);
+    }
 
     fn create_dummy_db() -> Pool<SqliteConnectionManager> {
         let pool = database::open("").unwrap();
         database::rw_tx(&pool, |tx| {
             tx.execute(
-                sql!("INSERT INTO store (sha256, content) VALUES (?1, ?2)"),
-                params![CONSENSUS_SHA256, CONSENSUS_CONTENT.as_bytes()],
+                sql!("INSERT INTO store (docid, content) VALUES (?1, ?2)"),
+                params![*CONSENSUS_DOCID, CONSENSUS_CONTENT.as_bytes()],
             )
             .unwrap();
             tx.execute(
-                sql!("INSERT INTO store (sha256, content) VALUES (?1, ?2)"),
-                params![CERT_SHA256, CERT_CONTENT],
+                sql!("INSERT INTO store (docid, content) VALUES (?1, ?2)"),
+                params![*CERT_DOCID, CERT_CONTENT],
             )
             .unwrap();
 
@@ -581,13 +583,13 @@ mod test {
                 sql!(
                     "
                     INSERT INTO consensus
-                    (sha256, unsigned_sha3_256, flavor, valid_after, fresh_until, valid_until)
+                    (docid, unsigned_sha3_256, flavor, valid_after, fresh_until, valid_until)
                     VALUES
                     (?1, ?2, ?3, ?4, ?5, ?6)
                     "
                 ),
                 params![
-                    CONSENSUS_SHA256,
+                    *CONSENSUS_DOCID,
                     "0000000000000000000000000000000000000000000000000000000000000000", // not the correct hash
                     ConsensusFlavor::Plain.name(),
                     *VALID_AFTER,
@@ -600,13 +602,13 @@ mod test {
             tx.execute(sql!(
                 "
                 INSERT INTO authority_key_certificate
-                  (sha256, kp_auth_id_rsa_sha1, kp_auth_sign_rsa_sha1, dir_key_published, dir_key_expires)
+                  (docid, kp_auth_id_rsa_sha1, kp_auth_sign_rsa_sha1, dir_key_published, dir_key_expires)
                 VALUES
-                  (:sha256, :id_rsa, :sk_rsa, :published, :expires)
+                  (:docid, :id_rsa, :sk_rsa, :published, :expires)
                 "
                 ),
                 named_params! {
-                ":sha256": CERT_SHA256,
+                ":docid": *CERT_DOCID,
                 ":id_rsa": "49015F787433103580E3B66A1707A00E60F2D15B",
                 ":sk_rsa": "C5D153A6F0DA7CC22277D229DCBBF929D0589FE0",
                 ":published": 1764543578,
@@ -819,7 +821,7 @@ mod test {
                     "
                     UPDATE store
                     SET content = X'61'
-                    WHERE sha256 = (SELECT sha256 FROM authority_key_certificate)
+                    WHERE docid = (SELECT docid FROM authority_key_certificate)
                     "
                 ),
                 params![],
@@ -899,19 +901,21 @@ mod test {
 
         // Download certificate.
         let rt = PreferredRuntime::current().unwrap();
-        let mut downloader = ConsensusBoundDownloader::new(authorities.downloads(), &rt);
-        let certs_raw = download_authority_certificates(
+        let downloader = DownloadManager::new(authorities.downloads(), &rt);
+        let (preferred, certs_raw) = download_authority_certificates(
             &[AuthCertKeyIds {
                 id_fingerprint: RsaIdentity::from_hex("49015F787433103580E3B66A1707A00E60F2D15B")
                     .unwrap(),
                 sk_fingerprint: RsaIdentity::from_hex("C5D153A6F0DA7CC22277D229DCBBF929D0589FE0")
                     .unwrap(),
             }],
-            &mut downloader,
+            &downloader,
+            None,
             &mut testing_rng(),
         )
         .await
         .unwrap();
+        assert_eq!(preferred, &authorities.downloads()[0]);
         assert_eq!(certs_raw, include_str!("../../testdata/authcert-longclaw"));
 
         // Parse certificate.
@@ -951,7 +955,7 @@ mod test {
                     FROM
                       authority_key_certificate AS a
                     INNER JOIN
-                      store AS s ON a.sha256 = s.sha256
+                      store AS s ON a.docid = s.docid
                     "
                 ),
                 params![],

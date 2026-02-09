@@ -1,6 +1,6 @@
 [package]
 name = "tor-rtcompat"
-version = "0.38.0"
+version = "0.39.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 rust-version = "1.86"
@@ -10,6 +10,8 @@ description = "Compatibility layer for asynchronous runtimes, used by Tor"
 keywords = ["tor", "arti", "async"]
 categories = ["asynchronous"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
 
@@ -19,6 +21,7 @@ full = [
     "async-std",
     "tokio",
     "native-tls",
+    "tls-server",
     "tor-error/full",
     "tor-general-addr/full",
 ]
@@ -43,10 +46,14 @@ native-tls = ["native-tls-crate", "async-native-tls"]
 # which in turn introduces a GPL-incompatibility.
 rustls = [
     "futures-rustls",
+    "dep:rustls-dont-use",
     "rustls-pki-types",
     "rustls-webpki",
     "__is_nonadditive",
 ]
+
+# Build with TLS server support, if possible.
+tls-server = ["tor-cert-x509"]
 
 __is_nonadditive = []
 
@@ -56,6 +63,7 @@ arbitrary = { version = "1.3.2", optional = true, features = ["derive"] }
 async-trait = "0.1.54"
 tor-wasm-compat = { path = "../tor-wasm-compat" }
 asynchronous-codec = "0.7.0"
+cfg-if = "1.0.0"
 derive_more = { version = "2.0.1", features = ["full"] }
 dyn-clone = "1.0.17"
 educe = "0.4.22"
@@ -64,11 +72,12 @@ hex = "0.4.3"
 paste = "1"
 pin-project = "1"
 thiserror = "2"
-tor-error = { version = "0.38.0", path = "../tor-error", features = ["tracing"] }
-tor-general-addr = { version = "0.38.0", path = "../tor-general-addr" }
+tor-error = { version = "0.39.0", path = "../tor-error", features = ["tracing"] }
+tor-general-addr = { version = "0.39.0", path = "../tor-general-addr" }
 tracing = "0.1.36"
 void = "1"
-tor-time = { version = "0.38.0", path = "../tor-time" }
+tor-time = { version = "0.39.0", path = "../tor-time" }
+tor-cert-x509 = { version = "0.39.0", path = "../tor-cert-x509", optional = true }
 # Serde support for SystemTime serialization
 serde = { version = "1.0", features = ["derive"] }
 
@@ -86,6 +95,12 @@ futures-rustls = { version = "0.26.0", optional = true, default-features = false
     "ring",
 ] }
 native-tls-crate = { package = "native-tls", version = "0.2", optional = true }
+# We access the rustls library through the `futures_rustls::rustls` re-export,
+# but we still rely on specific rustls features which became available in a version later than
+# futures_rustls' minimum rustls version (for example `ServerCertVerifier::root_hint_subjects`).
+# So we need to specify our own minimum version of rustls,
+# and we rename it so that we continue to use rustls from only the futures_rustls re-export.
+rustls-dont-use = { package = "rustls", version = "0.23.21", default-features = false, optional = true }
 rustls-pki-types = { version = "1.8", optional = true }
 rustls-webpki = { version = "0.103.1", optional = true }
 smol = { version = "2.0.2", optional = true }
@@ -112,6 +127,7 @@ web-sys = { version = "0.3", features = [
     "Performance",
 ] }
 subtle-tls = { path = "../subtle-tls" }
+zeroize = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -120,6 +136,4 @@ libc = "0.2"
 assert_matches = "1.5.0"
 # Used for testing our TLS implementation.
 native-tls-crate = { package = "native-tls", version = "0.2" }
-
-[package.metadata.docs.rs]
-all-features = true
+tor-basic-utils = { version = "0.39.0", path = "../tor-basic-utils" }

@@ -9,8 +9,10 @@
 
 use crate::traits::{
     Blocking, CertifiedConn, NetStreamListener, NetStreamProvider, NoOpStreamOpsHandle,
-    SleepProvider, StreamOps, TlsConnector, TlsProvider, UdpProvider, UdpSocket,
+    SleepProvider, StreamOps, TlsAcceptorSettings, TlsConnector, TlsProvider, TlsServerUnsupported,
+    UdpProvider, UdpSocket,
 };
+use std::borrow::Cow;
 use tor_time::{CoarseInstant, CoarseTimeProvider, RealCoarseTimeProvider};
 use tor_wasm_compat::async_trait;
 use futures::task::{Spawn, SpawnError};
@@ -396,15 +398,89 @@ where
     }
 }
 
+/// An uninhabitable TLS type for server-side TLS, which WASM does not support.
+///
+/// This wraps `void::Void` so it can never be constructed. All trait methods
+/// use `void::unreachable()` to prove at compile time that the code paths are
+/// impossible. This is the same pattern as `UnimplementedTls` in
+/// `impls/unimpl_tls.rs`, duplicated here because that module is not compiled
+/// for WASM targets.
+#[derive(Clone, Debug)]
+pub struct WasmUnimplementedTls(void::Void);
+
+#[async_trait]
+impl<S: Send + 'static> TlsConnector<S> for WasmUnimplementedTls {
+    type Conn = WasmUnimplementedTls;
+
+    async fn negotiate_unvalidated(&self, _stream: S, _sni_hostname: &str) -> IoResult<Self::Conn> {
+        void::unreachable(self.0)
+    }
+}
+
+impl CertifiedConn for WasmUnimplementedTls {
+    fn export_keying_material(
+        &self,
+        _len: usize,
+        _label: &[u8],
+        _context: Option<&[u8]>,
+    ) -> IoResult<Vec<u8>> {
+        void::unreachable(self.0)
+    }
+
+    fn peer_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
+        void::unreachable(self.0)
+    }
+
+    fn own_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
+        void::unreachable(self.0)
+    }
+}
+
+impl AsyncRead for WasmUnimplementedTls {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut [u8],
+    ) -> Poll<IoResult<usize>> {
+        void::unreachable(self.0)
+    }
+}
+
+impl AsyncWrite for WasmUnimplementedTls {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &[u8],
+    ) -> Poll<IoResult<usize>> {
+        void::unreachable(self.0)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        void::unreachable(self.0)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        void::unreachable(self.0)
+    }
+}
+
+impl StreamOps for WasmUnimplementedTls {}
+
 impl<S> TlsProvider<S> for WasmRuntime
 where
     S: AsyncRead + AsyncWrite + StreamOps + Unpin + Send + 'static,
 {
     type Connector = WasmTlsConnector;
     type TlsStream = subtle_tls::TlsStream<S>;
+    type Acceptor = WasmUnimplementedTls;
+    type TlsServerStream = WasmUnimplementedTls;
 
     fn tls_connector(&self) -> Self::Connector {
         WasmTlsConnector::new()
+    }
+
+    fn tls_acceptor(&self, _settings: TlsAcceptorSettings) -> IoResult<Self::Acceptor> {
+        Err(TlsServerUnsupported {}.into())
     }
 
     fn supports_keying_material_export(&self) -> bool {
@@ -427,9 +503,14 @@ impl<S> CertifiedConn for subtle_tls::TlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
+    fn peer_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
         // subtle_tls::TlsStream::peer_certificate returns Option<&[u8]>
-        Ok(self.peer_certificate().map(|s| s.to_vec()))
+        Ok(self.peer_certificate().map(Cow::Borrowed))
+    }
+
+    fn own_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
+        // Client connections don't have their own certificate
+        Ok(None)
     }
 
     fn export_keying_material(

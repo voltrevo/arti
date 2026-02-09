@@ -27,6 +27,9 @@ members = [
     "crates/tor-general-addr",
     "crates/tor-events",
     "crates/tor-geoip",
+    "crates/tor-memquota-cost",
+    "crates/tor-llcrypto",
+    "crates/tor-cert-x509",
     "crates/tor-rtcompat",
     "crates/tor-rtmock",
     "crates/futures-copy",
@@ -38,7 +41,6 @@ members = [
     "crates/tor-rpcbase",
     "crates/tor-memquota",
     "crates/tor-units",
-    "crates/tor-llcrypto",
     "crates/tor-bytes",
     "crates/tor-protover",
     "crates/tor-checkable",
@@ -83,6 +85,7 @@ members = [
     "crates/tor-js",
 
     "maint/fixup-features",
+    "maint/keygen-client-auth-test",
     "maint/keygen-openssh-test",
 
     "examples/gsoc2023/connection-checker",

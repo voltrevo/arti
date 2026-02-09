@@ -42,12 +42,14 @@
 #![allow(clippy::needless_raw_string_hashes)] // complained-about code is fine, often best
 #![allow(clippy::needless_lifetimes)] // See arti#1765
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
+#![deny(clippy::unused_async)]
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 mod err;
 pub mod rsa;
+
 #[cfg(feature = "x509")]
-pub mod x509;
+pub use tor_cert_x509 as x509;
 
 use caret::caret_int;
 use tor_bytes::{Error as BytesError, Result as BytesResult};

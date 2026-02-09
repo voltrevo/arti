@@ -5,6 +5,7 @@ use futures::future::{FutureExt, RemoteHandle};
 use futures::stream;
 use futures::task::{Spawn, SpawnError};
 use futures::{AsyncRead, AsyncWrite, Future};
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::{self, Result as IoResult};
 use std::net;
@@ -12,6 +13,9 @@ use std::time::Duration;
 // Use tor_time types which work on WASM (re-exports std::time types on non-WASM)
 use tor_time::{CoarseTimeProvider, Instant, SystemTime};
 use tor_general_addr::unix;
+
+#[cfg(feature = "tls-server")]
+use tor_cert_x509::TlsKeyAndCert;
 
 /// A runtime for use by Tor client library code.
 ///
@@ -598,7 +602,19 @@ pub trait CertifiedConn {
     ) -> IoResult<Vec<u8>>;
     /// Try to return the (DER-encoded) peer certificate for this
     /// connection, if any.
-    fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>>;
+    fn peer_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>>;
+
+    /// Try to return the (DER-encoded) link certificate (if any) containing
+    /// the key we used to authenticate this connection.
+    ///
+    /// Ordinarily, this will return a certificate for server connections,
+    /// and None for client connections.
+    //
+    // NOTE: (The correct return value in the _absence_ of a certificate is None.
+    // Later, if we support optional certificates for clients,
+    // the place to return an Unsupported error would be
+    // from whatever function tries to set such a certificate.)
+    fn own_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>>;
 }
 
 /// An object that knows how to wrap a TCP connection (where the type of said TCP
@@ -637,11 +653,14 @@ pub trait TlsConnector<S> {
 
     /// Start a TLS session over the provided TCP stream `stream`.
     ///
-    /// Declare `sni_hostname` as the desired hostname, but don't actually check
+    /// For a client connection,
+    /// declare `sni_hostname` as the desired hostname, but don't actually check
     /// whether the hostname in the certificate matches it.  The connector may
     /// send `sni_hostname` as part of its handshake, if it supports
     /// [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) or one of
     /// the TLS 1.3 equivalents.
+    ///
+    /// (For a server connection, `sni_hostname` is ignored.)
     async fn negotiate_unvalidated(&self, stream: S, sni_hostname: &str) -> IoResult<Self::Conn>;
 }
 
@@ -662,9 +681,82 @@ pub trait TlsProvider<S: StreamOps>: Clone + Send + Sync + 'static {
     /// The type of the stream returned by that connector.
     type TlsStream: AsyncRead + AsyncWrite + StreamOps + CertifiedConn + Unpin + Send + 'static;
 
+    /// The Acceptor object that this provider can return, for handling incoming connections.
+    type Acceptor: TlsConnector<S, Conn = Self::TlsServerStream> + Send + Sync + Unpin;
+
+    /// The type of stream returned by that Acceptor.
+    type TlsServerStream: AsyncRead
+        + AsyncWrite
+        + StreamOps
+        + CertifiedConn
+        + Unpin
+        + Send
+        + 'static;
+
     /// Return a TLS connector for use with this runtime.
     fn tls_connector(&self) -> Self::Connector;
 
+    /// Return a TLS acceptor for use with this runtime.
+    ///
+    /// Not every [`TlsProvider`] supports this method.
+    /// For those that do, this method is only supported
+    /// when `tor-rtcompat` is built with the `tls-server` feature.
+    /// When this method is unsupported, it returns an error.
+    fn tls_acceptor(&self, settings: TlsAcceptorSettings) -> IoResult<Self::Acceptor>;
+
     /// Return true iff the keying material exporters (RFC 5705) is supported.
     fn supports_keying_material_export(&self) -> bool;
+}
+
+/// Settings used for constructing a TlsAcceptor.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct TlsAcceptorSettings {
+    /// The certificates and keys for this acceptor.
+    #[cfg(feature = "tls-server")]
+    pub(crate) identity: TlsKeyAndCert,
+
+    #[cfg(not(feature = "tls-server"))]
+    unconstructable: void::Void,
+    //
+    // TODO: Add support for additional certificates in a chain.
+    // TODO: Possibly, add support for PEM.
+}
+
+impl TlsAcceptorSettings {
+    /// Create a new TlsAcceptorSettings from a certificate and its associated private key,
+    /// both in DER format.
+    ///
+    /// Does not perform full (or even, necessarily, any) validation.
+    //
+    // TODO: It would be great to take a tor_cert::x509::TlsKeyAndCert instead,
+    // but that would (apparently) introduce a dependency cycle.  It would be cool to figure out how
+    // to invert that.
+    #[allow(clippy::unnecessary_wraps)]
+    #[cfg(feature = "tls-server")]
+    pub fn new(identity: TlsKeyAndCert) -> std::io::Result<Self> {
+        Ok(Self { identity })
+    }
+
+    /// Return the primary certificate for this [`TlsAcceptorSettings`], in DER format.
+    pub fn cert_der(&self) -> &[u8] {
+        #[cfg(not(feature = "tls-server"))]
+        {
+            void::unreachable(self.unconstructable);
+        }
+        #[cfg(feature = "tls-server")]
+        self.identity.certificates_der()[0]
+    }
+}
+
+/// An error returned by TlsProvider::tls_acceptor when the TlsProvider does not have TLS server support.
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+#[error("This TlsProvider does not support running as a server")]
+pub struct TlsServerUnsupported {}
+
+impl From<TlsServerUnsupported> for io::Error {
+    fn from(value: TlsServerUnsupported) -> Self {
+        io::Error::new(io::ErrorKind::Unsupported, value)
+    }
 }

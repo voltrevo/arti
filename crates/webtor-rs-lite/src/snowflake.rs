@@ -24,6 +24,7 @@ use crate::smux::SmuxStream;
 use crate::snowflake_broker::{BROKER_URL, DEFAULT_BRIDGE_FINGERPRINT};
 use crate::turbo::TurboStream;
 use futures::{AsyncRead, AsyncWrite};
+use std::borrow::Cow;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -236,17 +237,19 @@ impl tor_rtcompat::StreamOps for SnowflakeStream {
 }
 
 impl tor_rtcompat::CertifiedConn for SnowflakeStream {
-    fn peer_certificate(&self) -> io::Result<Option<Vec<u8>>> {
+    fn peer_certificate(&self) -> io::Result<Option<Cow<'_, [u8]>>> {
         match &self.inner {
             #[cfg(target_arch = "wasm32")]
             SnowflakeInner::WebRtc(tls) => {
-                // TlsStream::peer_certificate returns Option<&[u8]>
-                // CertifiedConn trait expects io::Result<Option<Vec<u8>>>
-                Ok(tls.peer_certificate().map(|cert| cert.to_vec()))
+                Ok(tls.peer_certificate().map(Cow::Borrowed))
             }
             #[cfg(not(target_arch = "wasm32"))]
             SnowflakeInner::Placeholder => unreachable!("Snowflake not available on native"),
         }
+    }
+
+    fn own_certificate(&self) -> io::Result<Option<Cow<'_, [u8]>>> {
+        Ok(None)
     }
 
     fn export_keying_material(

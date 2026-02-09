@@ -24,6 +24,7 @@ use crate::smux::SmuxStream;
 use crate::turbo::TurboStream;
 use crate::websocket::WebSocketStream;
 use futures::{AsyncRead, AsyncWrite};
+use std::borrow::Cow;
 use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -224,13 +225,23 @@ impl SnowflakeWsStream {
             .peer_certificates()
             .and_then(|certs| certs.first().map(|c| Vec::from(c.as_ref()))))
     }
+
+    /// Get our own certificate (DER encoded) - always None for client connections
+    pub fn own_certificate(&self) -> io::Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
 }
 
 impl tor_rtcompat::StreamOps for SnowflakeWsStream {}
 
 impl tor_rtcompat::CertifiedConn for SnowflakeWsStream {
-    fn peer_certificate(&self) -> io::Result<Option<Vec<u8>>> {
+    fn peer_certificate(&self) -> io::Result<Option<Cow<'_, [u8]>>> {
         self.peer_certificate()
+            .map(|opt| opt.map(Cow::Owned))
+    }
+
+    fn own_certificate(&self) -> io::Result<Option<Cow<'_, [u8]>>> {
+        Ok(None)
     }
 
     fn export_keying_material(

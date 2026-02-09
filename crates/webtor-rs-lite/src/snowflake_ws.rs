@@ -22,6 +22,7 @@
 use crate::error::{Result, TorError};
 use crate::websocket::WebSocketStream;
 use futures::{AsyncRead, AsyncWrite};
+use std::borrow::Cow;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -152,12 +153,16 @@ impl SnowflakeWsStream {
 impl tor_rtcompat::StreamOps for SnowflakeWsStream {}
 
 impl tor_rtcompat::CertifiedConn for SnowflakeWsStream {
-    fn peer_certificate(&self) -> io::Result<Option<Vec<u8>>> {
+    fn peer_certificate(&self) -> io::Result<Option<Cow<'_, [u8]>>> {
         match &self.inner {
             SnowflakeWsInner::Connected(tls) => {
-                Ok(tls.peer_certificate().map(|cert| cert.to_vec()))
+                Ok(tls.peer_certificate().map(Cow::Borrowed))
             }
         }
+    }
+
+    fn own_certificate(&self) -> io::Result<Option<Cow<'_, [u8]>>> {
+        Ok(None)
     }
 
     fn export_keying_material(

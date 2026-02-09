@@ -20,10 +20,9 @@ use std::iter;
 
 use tor_wasm_compat::async_trait;
 use futures::channel::mpsc;
-use futures_await_test::async_test;
 use itertools::{Itertools, zip_eq};
 #[cfg(feature = "relay")]
-use safelog::Sensitive;
+use {safelog::Sensitive, std::net::IpAddr};
 
 use tor_cell::chancell::msg::PaddingNegotiateCmd;
 use tor_config::PaddingLevel;
@@ -149,6 +148,7 @@ impl AbstractChannelFactory for FakeChannelFactory {
     async fn build_channel_using_incoming(
         &self,
         _peer: Sensitive<std::net::SocketAddr>,
+        _my_addrs: Vec<IpAddr>,
         _stream: Self::Stream,
         _memquota: ChannelAccount,
     ) -> Result<Arc<Self::Channel>> {
@@ -281,8 +281,8 @@ impl CaseContext {
 /// told.  For example each PaddingNegotiation in a control message will be sent precisely
 /// once (assuming it can be sent before the channel is closed or the next one arrives).
 /// The timing parameters, and enablement, are passed directly to the padding timer.
-#[async_test]
-async fn padding_control_through_layer() {
+#[test]
+fn padding_control_through_layer() {
     test_with_all_runtimes!(padding_control_through_layer_impl);
 }
 

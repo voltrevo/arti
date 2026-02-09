@@ -44,14 +44,14 @@ pub(crate) fn run<R: ToplevelRuntime>(
     // This implies listening on localhost ports.
 
     // TODO: Parse a string rather than calling new_localhost.
-    let socks_listen = match proxy_matches.get_one::<String>("socks-port") {
-        Some(p) => Listen::new_localhost(p.parse().expect("Invalid port specified")),
+    let socks_listen = match proxy_matches.get_one::<u16>("socks-port") {
+        Some(p) => Listen::new_localhost(*p),
         None => config.proxy().socks_listen.clone(),
     };
 
     // TODO: Parse a string rather than calling new_localhost.
-    let dns_listen = match proxy_matches.get_one::<String>("dns-port") {
-        Some(p) => Listen::new_localhost(p.parse().expect("Invalid port specified")),
+    let dns_listen = match proxy_matches.get_one::<u16>("dns-port") {
+        Some(p) => Listen::new_localhost(*p),
         None => config.proxy().dns_listen.clone(),
     };
 
@@ -223,9 +223,12 @@ async fn run_proxy<R: ToplevelRuntime>(
 
     if proxy.is_empty() {
         if !launched_onion_svc {
-            // TODO: rename "socks_port" to "proxy_port", preserving compat, once http-connect is stable.
+            // TODO: rename "socks_listen" to "proxy_listen", preserving compat, once http-connect is stable.
             warn!(
-                "No proxy port set; specify -p PORT (for `socks_port`) or -d PORT (for `dns_port`). Alternatively, use the `socks_port` or `dns_port` configuration option."
+                "No proxy address set; \
+                specify -p PORT (to override `socks_listen`) \
+                or -d PORT (to override `dns_listen`). \
+                Alternatively, use the `socks_listen` or `dns_listen` configuration options."
             );
             return Ok(());
         } else {

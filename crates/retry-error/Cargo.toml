@@ -1,6 +1,6 @@
 [package]
 name = "retry-error"
-version = "0.10.0"
+version = "0.10.1"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 rust-version = "1.86"
@@ -18,7 +18,7 @@ derive_more = { version = "2.0.1", features = ["full"] }
 thiserror = "2"
 
 [dependencies]
-tor-time = { path = "../tor-time", version = "0.38.0" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 
 [features]
 full = []

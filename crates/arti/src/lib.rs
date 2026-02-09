@@ -42,6 +42,7 @@
 #![allow(clippy::needless_raw_string_hashes)] // complained-about code is fine, often best
 #![allow(clippy::needless_lifetimes)] // See arti#1765
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
+#![deny(clippy::unused_async)]
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -303,14 +304,16 @@ where
                             .short('p')
                             .action(ArgAction::Set)
                             .value_name("PORT")
-                            .help("Port to listen on for SOCKS connections (overrides the port in the config if specified).")
+                            .value_parser(clap::value_parser!(u16))
+                            .help(r#"Localhost port to listen on for SOCKS connections (0 means "disabled"; overrides addresses in the config if specified)."#)
                     )
                     .arg(
                         Arg::new("dns-port")
                             .short('d')
                             .action(ArgAction::Set)
                             .value_name("PORT")
-                            .help("Port to listen on for DNS request (overrides the port in the config if specified).")
+                            .value_parser(clap::value_parser!(u16))
+                            .help(r#"Localhost port to listen on for DNS requests (0 means "disabled"; overrides addresses in the config if specified)."#)
                     )
             )
             .subcommand_required(true)

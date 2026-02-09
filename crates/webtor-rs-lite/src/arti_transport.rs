@@ -180,12 +180,14 @@ impl SnowflakeChannelFactory {
 
         let runtime = WasmRuntime::default();
 
-        // Extract peer certificate from TLS stream
+        // Extract peer certificate from TLS stream (convert to owned before moving stream)
         let peer_cert = stream.peer_certificate().map_err(|e| tor_chanmgr::Error::Io {
             action: "get peer certificate",
             peer: None,
             source: e.into(),
         })?;
+
+        let peer_cert = peer_cert.map(|c| c.into_owned());
 
         let peer_cert = peer_cert.ok_or_else(|| tor_chanmgr::Error::Io {
             action: "get peer certificate",
@@ -228,7 +230,7 @@ impl SnowflakeChannelFactory {
 
         // Verify channel and finish handshake
         let verified = unverified
-            .check(&peer, &peer_cert, Some(system_time_now()))
+            .verify(&peer, &peer_cert, Some(system_time_now()))
             .map_err(|e| tor_chanmgr::Error::Proto {
                 source: e,
                 peer: peer.clone().to_logged(),

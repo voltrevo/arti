@@ -131,7 +131,7 @@ impl<R: Runtime> SnowflakeChannelFactory<R> {
 
         // Verify channel and finish handshake
         let verified = unverified
-            .check(&peer, &peer_cert, Some(SystemTime::now()))
+            .verify(&peer, &peer_cert, Some(SystemTime::now()))
             .map_err(|e| tor_chanmgr::Error::Proto {
                 source: e,
                 peer: peer.clone().to_logged(),

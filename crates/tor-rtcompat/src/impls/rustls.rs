@@ -2,7 +2,11 @@
 //!
 //! #
 
+#[cfg(feature = "tls-server")]
+pub(crate) mod rustls_server;
+
 use crate::StreamOps;
+use crate::tls::TlsAcceptorSettings;
 use crate::traits::{CertifiedConn, TlsConnector, TlsProvider};
 
 use tor_wasm_compat::async_trait;
@@ -15,6 +19,7 @@ use rustls_pki_types::{CertificateDer, ServerName};
 use tracing::instrument;
 use webpki::EndEntityCert; // this is actually rustls_webpki.
 
+use std::borrow::Cow;
 use std::{
     io::{self, Error as IoError, Result as IoResult},
     sync::Arc,
@@ -58,11 +63,11 @@ pub struct RustlsProvider {
 }
 
 impl<S> CertifiedConn for futures_rustls::client::TlsStream<S> {
-    fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
+    fn peer_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
         let (_, session) = self.get_ref();
         Ok(session
             .peer_certificates()
-            .and_then(|certs| certs.first().map(|c| Vec::from(c.as_ref()))))
+            .and_then(|certs| certs.first().map(|c| Cow::from(c.as_ref()))))
     }
 
     fn export_keying_material(
@@ -75,6 +80,11 @@ impl<S> CertifiedConn for futures_rustls::client::TlsStream<S> {
         session
             .export_keying_material(Vec::with_capacity(len), label, context)
             .map_err(|e| IoError::new(io::ErrorKind::InvalidData, e))
+    }
+
+    fn own_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
+        // This is a client stream, so (as we build them currently) we know we didn't present a certificate.
+        Ok(None)
     }
 }
 
@@ -125,6 +135,22 @@ where
         RustlsConnector {
             connector,
             _phantom: std::marker::PhantomData,
+        }
+    }
+
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "tls-server")] {
+            type Acceptor = rustls_server::RustlsAcceptor<S>;
+            type TlsServerStream = rustls_server::RustlsServerStream<S>;
+            fn tls_acceptor(&self, settings: TlsAcceptorSettings) -> IoResult<Self::Acceptor> {
+                rustls_server::RustlsAcceptor::new(&settings)
+            }
+        } else {
+            type Acceptor = crate::tls::UnimplementedTls;
+            type TlsServerStream = crate::tls::UnimplementedTls;
+            fn tls_acceptor(&self, _settings: TlsAcceptorSettings) -> IoResult<Self::Acceptor> {
+                Err(crate::tls::TlsServerUnsupported{}.into())
+            }
         }
     }
 

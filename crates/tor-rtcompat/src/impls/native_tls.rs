@@ -1,11 +1,17 @@
 //! Implementation for using `native_tls`
 
-use crate::traits::{CertifiedConn, StreamOps, TlsConnector, TlsProvider};
+use crate::{
+    tls::{TlsAcceptorSettings, UnimplementedTls},
+    traits::{CertifiedConn, StreamOps, TlsConnector, TlsProvider},
+};
 
 use tor_wasm_compat::async_trait;
 use futures::{AsyncRead, AsyncWrite};
 use native_tls_crate as native_tls;
-use std::io::{Error as IoError, Result as IoResult};
+use std::{
+    borrow::Cow,
+    io::{Error as IoError, Result as IoResult},
+};
 use tracing::instrument;
 
 /// A [`TlsProvider`] that uses `native_tls`.
@@ -26,12 +32,12 @@ impl<S> CertifiedConn for async_native_tls::TlsStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
+    fn peer_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
         let cert = self.peer_certificate();
         match cert {
             Ok(Some(c)) => {
                 let der = c.to_der().map_err(IoError::other)?;
-                Ok(Some(der))
+                Ok(Some(Cow::from(der)))
             }
             Ok(None) => Ok(None),
             Err(e) => Err(IoError::other(e)),
@@ -48,6 +54,15 @@ where
             std::io::ErrorKind::Unsupported,
             tor_error::bad_api_usage!("native-tls does not support exporting keying material"),
         ))
+    }
+
+    fn own_certificate(&self) -> IoResult<Option<Cow<'_, [u8]>>> {
+        // This is a client stream, so (as we build them currently) we know we didn't present a
+        // certificate.
+        //
+        // TODO: If we ever implement server-side native_tls support, we need to change this.
+        // But first we'd need an implementation for export_keying_material.
+        Ok(None)
     }
 }
 
@@ -95,6 +110,9 @@ where
 
     type TlsStream = async_native_tls::TlsStream<S>;
 
+    type Acceptor = UnimplementedTls;
+    type TlsServerStream = UnimplementedTls;
+
     fn tls_connector(&self) -> Self::Connector {
         let mut builder = native_tls::TlsConnector::builder();
         // These function names are scary, but they just mean that we
@@ -115,6 +133,12 @@ where
             connector,
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    fn tls_acceptor(&self, _settings: TlsAcceptorSettings) -> IoResult<Self::Acceptor> {
+        // TODO: In principle, there's nothing preventing us from implementing this,
+        // except for the fact we decided to base our relay support on rustls.
+        Err(crate::tls::TlsServerUnsupported {}.into())
     }
 
     fn supports_keying_material_export(&self) -> bool {

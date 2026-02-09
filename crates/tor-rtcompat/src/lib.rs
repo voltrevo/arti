@@ -42,6 +42,7 @@
 #![allow(clippy::needless_raw_string_hashes)] // complained-about code is fine, often best
 #![allow(clippy::needless_lifetimes)] // See arti#1765
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
+#![deny(clippy::unused_async)]
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -83,7 +84,14 @@ pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 /// Traits used to describe TLS connections and objects that can
 /// create them.
 pub mod tls {
-    pub use crate::traits::{CertifiedConn, TlsConnector};
+    #[cfg(all(
+        any(feature = "native-tls", feature = "rustls"),
+        any(feature = "async-std", feature = "tokio", feature = "smol")
+    ))]
+    pub use crate::impls::unimpl_tls::UnimplementedTls;
+    pub use crate::traits::{
+        CertifiedConn, TlsAcceptorSettings, TlsConnector, TlsServerUnsupported,
+    };
 
     #[cfg(all(
         feature = "native-tls",
@@ -95,6 +103,12 @@ pub mod tls {
         any(feature = "tokio", feature = "async-std", feature = "smol")
     ))]
     pub use crate::impls::rustls::RustlsProvider;
+    #[cfg(all(
+        feature = "rustls",
+        feature = "tls-server",
+        any(feature = "tokio", feature = "async-std", feature = "smol")
+    ))]
+    pub use crate::impls::rustls::rustls_server::{RustlsAcceptor, RustlsServerStream};
 }
 
 #[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio"))]
@@ -401,7 +415,20 @@ macro_rules! test_with_one_runtime {
     not(miri), // Many of these tests use real sockets or SystemTime.
 ))]
 mod test {
-    #![allow(clippy::unwrap_used, clippy::unnecessary_wraps)]
+    // @@ begin test lint list maintained by maint/add_warning @@
+    #![allow(clippy::bool_assert_comparison)]
+    #![allow(clippy::clone_on_copy)]
+    #![allow(clippy::dbg_macro)]
+    #![allow(clippy::mixed_attributes_style)]
+    #![allow(clippy::print_stderr)]
+    #![allow(clippy::print_stdout)]
+    #![allow(clippy::single_char_pattern)]
+    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unchecked_time_subtraction)]
+    #![allow(clippy::useless_vec)]
+    #![allow(clippy::needless_pass_by_value)]
+    //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+    #![allow(clippy::unnecessary_wraps)]
     use crate::SleepProviderExt;
     use crate::ToplevelRuntime;
 
@@ -598,8 +625,8 @@ mod test {
 
     // Try listening on an address and connecting there, except using TLS.
     //
-    // Note that since we don't have async tls server support yet, I'm just
-    // going to use a thread.
+    // Note that since we didn't have TLS server support when this test was first written,
+    // we're going to use a thread.
     fn simple_tls<R: ToplevelRuntime>(runtime: &R) -> IoResult<()> {
         /*
          A simple expired self-signed rsa-2048 certificate.
@@ -657,6 +684,67 @@ mod test {
         })?;
 
         th.join().unwrap()?;
+        IoResult::Ok(())
+    }
+
+    fn simple_tls_server<R: ToplevelRuntime>(runtime: &R) -> IoResult<()> {
+        let mut rng = tor_basic_utils::test_rng::testing_rng();
+        let tls_cert = tor_cert_x509::TlsKeyAndCert::create(
+            &mut rng,
+            std::time::SystemTime::now(),
+            "prospit.example.org",
+            "derse.example.org",
+        )
+        .unwrap();
+        let cert = tls_cert.certificates_der()[0].to_vec();
+        let settings = TlsAcceptorSettings::new(tls_cert).unwrap();
+
+        let Ok(tls_acceptor) = runtime.tls_acceptor(settings) else {
+            println!("Skipping tls-server test for runtime {:?}", &runtime);
+            return IoResult::Ok(());
+        };
+        println!("Running tls-server test for runtime {:?}", &runtime);
+
+        let tls_connector = runtime.tls_connector();
+
+        let localhost: SocketAddr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0).into();
+        let rt1 = runtime.clone();
+
+        let msg = b"Derse Reviles Him And Outlaws Frogs Wherever They Can";
+        runtime.block_on(async move {
+            let listener = runtime.listen(&localhost).await.unwrap();
+            let address = listener.local_addr().unwrap();
+
+            let h1 = runtime
+                .spawn_with_handle(async move {
+                    let conn = listener.incoming().next().await.unwrap().unwrap().0;
+                    let mut conn = tls_acceptor.negotiate_unvalidated(conn, "").await.unwrap();
+
+                    let mut buf = vec![];
+                    conn.read_to_end(&mut buf).await.unwrap();
+                    (buf, conn.own_certificate().unwrap().unwrap().into_owned())
+                })
+                .unwrap();
+
+            let h2 = runtime
+                .spawn_with_handle(async move {
+                    let conn = rt1.connect(&address).await.unwrap();
+                    let mut conn = tls_connector
+                        .negotiate_unvalidated(conn, "prospit.example.org")
+                        .await
+                        .unwrap();
+                    conn.write_all(msg).await.unwrap();
+                    conn.close().await.unwrap();
+                    conn.peer_certificate().unwrap().unwrap().into_owned()
+                })
+                .unwrap();
+
+            let (received, server_own_cert) = h1.await;
+            let client_peer_cert = h2.await;
+            assert_eq!(received, msg);
+            assert_eq!(&server_own_cert, &cert);
+            assert_eq!(&client_peer_cert, &cert);
+        });
         IoResult::Ok(())
     }
 
@@ -737,5 +825,6 @@ mod test {
 
     tls_runtime_tests! {
         simple_tls,
+        simple_tls_server,
     }
 }
