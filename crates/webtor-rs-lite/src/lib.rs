@@ -15,7 +15,10 @@ pub mod snowflake_broker;
 pub mod snowflake_ws;
 pub mod time;
 pub mod turbo;
+
+#[cfg(target_arch = "wasm32")]
 pub mod wasm_runtime;
+
 pub mod websocket;
 
 #[cfg(target_arch = "wasm32")]

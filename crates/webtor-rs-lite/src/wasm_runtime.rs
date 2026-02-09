@@ -37,29 +37,24 @@ impl SleepProvider for WasmRuntime {
 }
 
 /// Wrapper to make gloo Timeout Send on WASM (which is single-threaded anyway)
-#[cfg(target_arch = "wasm32")]
 struct SendTimeout(gloo_timers::callback::Timeout);
 
-#[cfg(target_arch = "wasm32")]
 // SAFETY: WASM is single-threaded, so Send is safe
 unsafe impl Send for SendTimeout {}
 
 pub struct WasmSleep {
     rx: futures::channel::oneshot::Receiver<()>,
     // Keep the timeout handle alive so it doesn't get cancelled
-    #[cfg(target_arch = "wasm32")]
     _timeout: SendTimeout,
 }
 
 // SAFETY: WASM is single-threaded, so Send is safe
-#[cfg(target_arch = "wasm32")]
 unsafe impl Send for WasmSleep {}
 
 impl WasmSleep {
     fn new(duration: Duration) -> Self {
         let (tx, rx) = futures::channel::oneshot::channel();
 
-        #[cfg(target_arch = "wasm32")]
         {
             // gloo-timers works in both browsers and Node.js
             let millis = u32::try_from(duration.as_millis().min(u32::MAX as u128)).unwrap_or(u32::MAX);
@@ -67,15 +62,6 @@ impl WasmSleep {
                 let _ = tx.send(());
             });
             Self { rx, _timeout: SendTimeout(timeout) }
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            std::thread::spawn(move || {
-                std::thread::sleep(duration);
-                let _ = tx.send(());
-            });
-            Self { rx }
         }
     }
 }
