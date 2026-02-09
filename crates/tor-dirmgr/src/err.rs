@@ -215,6 +215,7 @@ impl Error {
 
     /// Construct a new `Error` from `std::io::Error` for an error that occurred
     /// while locking a file.
+    #[cfg_attr(target_arch = "wasm32", expect(dead_code))]
     pub(crate) fn from_lockfile(err: std::io::Error) -> Error {
         Error::LockFile(Arc::new(err))
     }

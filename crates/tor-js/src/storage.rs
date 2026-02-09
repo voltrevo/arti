@@ -202,16 +202,6 @@ impl JsStateMgr {
         });
     }
 
-    /// Schedule an async delete from JS storage.
-    fn schedule_delete(&self, key: String) {
-        let js_storage = self.js_storage.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            if let Err(e) = js_storage.delete(&key).await {
-                tracing::warn!("JsStateMgr: failed to delete key {}: {:?}", key, e);
-            }
-        });
-    }
-
 }
 
 impl CustomStateMgr for JsStateMgr {

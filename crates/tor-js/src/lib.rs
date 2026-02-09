@@ -257,7 +257,7 @@ impl TorClient {
     ///
     /// # Arguments
     /// * `url` - The URL to fetch
-    /// * `init` - Optional fetch init options (method, headers, body, timeout)
+    /// * `init` - Optional fetch init options (method, headers, body)
     ///
     /// # Returns
     /// A Promise that resolves to a JsHttpResponse
@@ -409,7 +409,7 @@ struct FetchInit {
     headers: Option<HashMap<String, String>>,
     #[serde(skip)]
     body: Option<Vec<u8>>,
-    timeout: Option<u32>,
+    // TODO: support AbortSignal-style cancellation via a `signal` option
 }
 
 /// Perform a fetch request
@@ -658,7 +658,7 @@ export interface FetchInit {
     method?: string;
     headers?: Record<string, string>;
     body?: string | Uint8Array | ArrayBuffer;
-    timeout?: number;
+    // TODO: signal?: AbortSignal;
 }
 
 export interface TorClient {

@@ -37,7 +37,8 @@ impl SleepProvider for WasmRuntime {
 }
 
 /// Wrapper to make gloo Timeout Send on WASM (which is single-threaded anyway)
-struct SendTimeout(gloo_timers::callback::Timeout);
+// Field is held for its Drop side-effect, not read.
+struct SendTimeout(#[expect(dead_code)] gloo_timers::callback::Timeout);
 
 // SAFETY: WASM is single-threaded, so Send is safe
 unsafe impl Send for SendTimeout {}
