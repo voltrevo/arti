@@ -569,26 +569,9 @@ mod timeimpl {
     use crate::{Error, NetdocErrorKind as EK, Pos, Result};
     use tor_time::SystemTime;
     use time::{
-        OffsetDateTime, PrimitiveDateTime, format_description::FormatItem,
+        PrimitiveDateTime, format_description::FormatItem,
         macros::format_description,
     };
-
-    /// Convert OffsetDateTime to SystemTime via unix timestamp
-    fn odt_to_systemtime(odt: OffsetDateTime) -> SystemTime {
-        let secs = odt.unix_timestamp();
-        let nanos = odt.nanosecond();
-        let duration = std::time::Duration::new(secs as u64, nanos);
-        SystemTime::UNIX_EPOCH + duration
-    }
-
-    /// Convert SystemTime to OffsetDateTime via unix timestamp
-    fn systemtime_to_odt(t: SystemTime) -> OffsetDateTime {
-        let duration = t
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::ZERO);
-        OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
-            .unwrap_or(OffsetDateTime::UNIX_EPOCH)
-    }
 
     /// A wall-clock time, encoded in Iso8601 format with an intervening
     /// space between the date and time.
@@ -611,7 +594,7 @@ mod timeimpl {
                     .at_pos(Pos::at(s))
                     .with_msg(format!("invalid time: {}", e))
             })?;
-            Ok(Iso8601TimeSp(odt_to_systemtime(d.assume_utc())))
+            Ok(Iso8601TimeSp(tor_time::systemtime_from_offset_datetime(d.assume_utc())))
         }
     }
 
@@ -623,7 +606,7 @@ mod timeimpl {
         t: SystemTime,
         format_desc: &[FormatItem],
     ) -> core::result::Result<String, std::fmt::Error> {
-        systemtime_to_odt(t)
+        tor_time::offset_datetime_from_systemtime(t)
             .format(format_desc)
             .map_err(|_| std::fmt::Error)
     }
@@ -660,7 +643,7 @@ mod timeimpl {
                     .at_pos(Pos::at(s))
                     .with_msg(format!("invalid time: {}", e))
             })?;
-            Ok(Iso8601TimeNoSp(odt_to_systemtime(d.assume_utc())))
+            Ok(Iso8601TimeNoSp(tor_time::systemtime_from_offset_datetime(d.assume_utc())))
         }
     }
 

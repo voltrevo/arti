@@ -10,7 +10,7 @@ use derive_more::{From, Into};
 use thiserror::Error;
 use time::format_description::FormatItem;
 use time::macros::format_description;
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::PrimitiveDateTime;
 use tor_error::{Bug, into_internal};
 
 /// A UTC timestamp that can be encoded in ISO 8601 format,
@@ -45,12 +45,7 @@ impl FromStr for Iso8601TimeSlug {
 
     fn from_str(s: &str) -> Result<Iso8601TimeSlug, Self::Err> {
         let d = PrimitiveDateTime::parse(s, &ISO_8601SP_FMT)?;
-        let odt = d.assume_utc();
-        // Convert OffsetDateTime to SystemTime via unix timestamp
-        let secs = odt.unix_timestamp();
-        let nanos = odt.nanosecond();
-        let duration = std::time::Duration::new(secs as u64, nanos);
-        Ok(Iso8601TimeSlug(SystemTime::UNIX_EPOCH + duration))
+        Ok(Iso8601TimeSlug(tor_time::systemtime_from_offset_datetime(d.assume_utc())))
     }
 }
 
@@ -77,13 +72,7 @@ pub enum BadIso8601TimeSlug {
 
 impl fmt::Display for Iso8601TimeSlug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Convert SystemTime to OffsetDateTime via unix timestamp
-        let duration = self.0
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::ZERO);
-        let odt = OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
-            .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-        let ts = odt
+        let ts = tor_time::offset_datetime_from_systemtime(self.0)
             .format(ISO_8601SP_FMT)
             .map_err(|_| fmt::Error)?;
 

@@ -768,10 +768,7 @@ impl<R: Runtime> DirMgr<R> {
             let reset_at = state.reset_time();
             match reset_at {
                 Some(t) => {
-                    // Convert via unix timestamp for cross-platform compatibility
-                    let duration = t.duration_since(SystemTime::UNIX_EPOCH).unwrap_or(std::time::Duration::ZERO);
-                    let odt = time::OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-                    trace!("Sleeping until {}", odt);
+                    trace!("Sleeping until {}", tor_time::offset_datetime_from_systemtime(t));
                     schedule.sleep_until_wallclock(t).await?;
                 }
                 None => return Ok(()),
@@ -1171,11 +1168,7 @@ pub(crate) fn default_consensus_cutoff(
     /// for the fact that consensuses have some lifetime.
     const MIN_AGE_TO_ALLOW: Duration = Duration::from_secs(3 * 3600);
     let allow_skew = std::cmp::max(MIN_AGE_TO_ALLOW, tolerance.post_valid_tolerance());
-    // Convert via unix timestamp for cross-platform compatibility
-    let input_time = now - allow_skew;
-    let duration = input_time.duration_since(SystemTime::UNIX_EPOCH).unwrap_or(std::time::Duration::ZERO);
-    let cutoff = time::OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
-        .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+    let cutoff = tor_time::offset_datetime_from_systemtime(now - allow_skew);
     // We now round cutoff to the next hour, so that we aren't leaking our exact
     // time to the directory cache.
     //
@@ -1189,11 +1182,7 @@ pub(crate) fn default_consensus_cutoff(
     );
     let cutoff = cutoff + Duration::from_secs(3600);
 
-    // Convert back to SystemTime via unix timestamp
-    let secs = cutoff.unix_timestamp();
-    let nanos = cutoff.nanosecond();
-    let result_duration = std::time::Duration::new(secs as u64, nanos);
-    Ok(SystemTime::UNIX_EPOCH + result_duration)
+    Ok(tor_time::systemtime_from_offset_datetime(cutoff))
 }
 
 /// Return a list of the protocols [supported](tor_protover::doc_supported) by this crate

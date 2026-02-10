@@ -8096,6 +8096,7 @@ dependencies = [
  "coarsetime",
  "derive_more",
  "httpdate",
+ "humantime",
  "humantime-serde",
  "paste",
  "serde",

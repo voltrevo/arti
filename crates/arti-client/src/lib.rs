@@ -142,11 +142,7 @@ pub(crate) fn software_release_date() -> tor_time::SystemTime {
     let date = time::Date::parse(release_date::ARTI_CLIENT_RELEASE_DATE, &format)
         .expect("Invalid hard-coded release date!?");
     let odt = OffsetDateTime::new_utc(date, time::Time::MIDNIGHT);
-    // Convert via unix timestamp for cross-platform compatibility
-    let secs = odt.unix_timestamp();
-    let nanos = odt.nanosecond();
-    let duration = std::time::Duration::new(secs as u64, nanos);
-    tor_time::SystemTime::UNIX_EPOCH + duration
+    tor_time::systemtime_from_offset_datetime(odt)
 }
 
 #[cfg(test)]

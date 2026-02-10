@@ -20,7 +20,6 @@ use educe::Educe;
 use futures::{Future, StreamExt, stream::Stream};
 use itertools::chain;
 use paste::paste;
-use time::OffsetDateTime;
 use tor_basic_utils::skip_fmt;
 use tor_netdir::DirEvent;
 use tor_netdoc::doc::netstatus;
@@ -457,13 +456,8 @@ impl fmt::Display for DirProgress {
                     )
                     .expect("Invalid time format")
                 });
-            // Convert via unix timestamp for cross-platform compatibility
-            let duration = t
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or(std::time::Duration::ZERO);
-            let odt = OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
-                .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-            odt.format(&FORMAT)
+            tor_time::offset_datetime_from_systemtime(t)
+                .format(&FORMAT)
                 .unwrap_or_else(|_| "(could not format)".into())
         }
 

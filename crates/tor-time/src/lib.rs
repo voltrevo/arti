@@ -139,6 +139,73 @@ pub fn time_duration_to_std(d: time::Duration) -> std::time::Duration {
     std::time::Duration::new(secs, nanos)
 }
 
+/// Convert an [`OffsetDateTime`](time::OffsetDateTime) to a [`SystemTime`].
+///
+/// This converts via unix timestamp for cross-platform compatibility (including WASM).
+///
+/// # Example
+///
+/// ```
+/// use tor_time::systemtime_from_offset_datetime;
+/// use time::OffsetDateTime;
+///
+/// let odt = OffsetDateTime::UNIX_EPOCH;
+/// let st = systemtime_from_offset_datetime(odt);
+/// assert_eq!(st, tor_time::UNIX_EPOCH);
+/// ```
+pub fn systemtime_from_offset_datetime(odt: time::OffsetDateTime) -> SystemTime {
+    let secs = odt.unix_timestamp();
+    let nanos = odt.nanosecond();
+    let duration = std::time::Duration::new(secs as u64, nanos);
+    UNIX_EPOCH + duration
+}
+
+/// Convert a [`SystemTime`] to an [`OffsetDateTime`](time::OffsetDateTime).
+///
+/// This converts via unix timestamp for cross-platform compatibility (including WASM).
+///
+/// Returns [`OffsetDateTime::UNIX_EPOCH`](time::OffsetDateTime::UNIX_EPOCH) if the
+/// conversion fails (e.g., time before the epoch).
+///
+/// # Example
+///
+/// ```
+/// use tor_time::{UNIX_EPOCH, offset_datetime_from_systemtime};
+/// use time::OffsetDateTime;
+///
+/// let odt = offset_datetime_from_systemtime(UNIX_EPOCH);
+/// assert_eq!(odt, OffsetDateTime::UNIX_EPOCH);
+/// ```
+pub fn offset_datetime_from_systemtime(t: SystemTime) -> time::OffsetDateTime {
+    let duration = t
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(std::time::Duration::ZERO);
+    time::OffsetDateTime::from_unix_timestamp(duration.as_secs() as i64)
+        .unwrap_or(time::OffsetDateTime::UNIX_EPOCH)
+}
+
+/// Parse an RFC3339 timestamp string into a [`SystemTime`].
+///
+/// This wraps [`humantime::parse_rfc3339`], converting the result from
+/// `std::time::SystemTime` into `tor_time::SystemTime` for cross-platform
+/// compatibility (including WASM).
+///
+/// # Example
+///
+/// ```
+/// use tor_time::parse_rfc3339;
+///
+/// let t = parse_rfc3339("2023-07-05T11:25:56Z").unwrap();
+/// ```
+pub fn parse_rfc3339(s: &str) -> Result<SystemTime, humantime::TimestampError> {
+    let std_time = humantime::parse_rfc3339(s)?;
+    // humantime returns std::time::SystemTime; convert via duration-since-epoch
+    let duration = std_time
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or(std::time::Duration::ZERO);
+    Ok(UNIX_EPOCH + duration)
+}
+
 /// Format a `SystemTime` as an HTTP date string (cross-platform).
 ///
 /// This wraps `httpdate::fmt_http_date`, handling the type conversion
@@ -215,5 +282,55 @@ mod tests {
     fn test_time_duration_to_std_zero() {
         let d = time::Duration::ZERO;
         assert_eq!(time_duration_to_std(d), std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn test_systemtime_from_offset_datetime() {
+        use time::OffsetDateTime;
+
+        // UNIX_EPOCH roundtrip
+        let st = systemtime_from_offset_datetime(OffsetDateTime::UNIX_EPOCH);
+        assert_eq!(st, UNIX_EPOCH);
+
+        // Known time
+        let odt = OffsetDateTime::from_unix_timestamp(1705315800).unwrap();
+        let st = systemtime_from_offset_datetime(odt);
+        assert_eq!(st, UNIX_EPOCH + Duration::from_secs(1705315800));
+    }
+
+    #[test]
+    fn test_offset_datetime_from_systemtime() {
+        use time::OffsetDateTime;
+
+        // UNIX_EPOCH roundtrip
+        let odt = offset_datetime_from_systemtime(UNIX_EPOCH);
+        assert_eq!(odt, OffsetDateTime::UNIX_EPOCH);
+
+        // Known time
+        let st = UNIX_EPOCH + Duration::from_secs(1705315800);
+        let odt = offset_datetime_from_systemtime(st);
+        assert_eq!(odt.unix_timestamp(), 1705315800);
+    }
+
+    #[test]
+    fn test_odt_systemtime_roundtrip() {
+        use time::OffsetDateTime;
+
+        let odt = OffsetDateTime::from_unix_timestamp(1700000000).unwrap();
+        let st = systemtime_from_offset_datetime(odt);
+        let odt2 = offset_datetime_from_systemtime(st);
+        assert_eq!(odt.unix_timestamp(), odt2.unix_timestamp());
+    }
+
+    #[test]
+    fn test_parse_rfc3339() {
+        let t = parse_rfc3339("2023-07-05T11:25:56Z").unwrap();
+        let formatted = format_rfc3339(t);
+        assert_eq!(formatted, "2023-07-05T11:25:56Z");
+    }
+
+    #[test]
+    fn test_parse_rfc3339_invalid() {
+        assert!(parse_rfc3339("not a timestamp").is_err());
     }
 }
