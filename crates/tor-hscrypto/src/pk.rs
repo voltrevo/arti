@@ -819,7 +819,7 @@ mod test {
     use hex_literal::hex;
     use itertools::izip;
     use std::time::Duration;
-use tor_time::SystemTime;
+    use tor_time::SystemTime;
     use tor_basic_utils::test_rng::testing_rng;
 
     use super::*;

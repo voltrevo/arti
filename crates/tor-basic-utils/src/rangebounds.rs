@@ -115,7 +115,7 @@ mod test {
     use Bound::{Excluded as Excl, Included as Incl, Unbounded};
     use std::fmt::Debug;
     use std::time::Duration;
-use tor_time::SystemTime;
+    use tor_time::SystemTime;
 
     /// A helper that computes the intersection of `range1` and `range2`.
     ///
