@@ -703,7 +703,7 @@ pub(super) mod test {
     use hex_literal::hex;
     use regex::Regex;
     use std::time::Duration;
-use tor_time::SystemTime;
+    use tor_time::SystemTime;
 
     use super::*;
     use crate::channel::handler::test::MsgBuf;
