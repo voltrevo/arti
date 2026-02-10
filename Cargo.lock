@@ -8019,7 +8019,6 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-webpki",
- "serde",
  "smol",
  "socket2 0.6.2",
  "subtle-tls",
@@ -8097,7 +8096,9 @@ dependencies = [
  "coarsetime",
  "derive_more",
  "httpdate",
+ "humantime-serde",
  "paste",
+ "serde",
  "time",
  "web-time",
 ]

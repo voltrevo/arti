@@ -74,6 +74,8 @@ pub use web_time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 // Re-export coarse time types
 pub use coarse_time::{CoarseDuration, CoarseInstant, CoarseTimeProvider, RealCoarseTimeProvider};
 
+pub mod serde_time;
+
 /// Format a `SystemTime` as an RFC3339 string (cross-platform).
 ///
 /// This function provides consistent time formatting across native and WASM platforms

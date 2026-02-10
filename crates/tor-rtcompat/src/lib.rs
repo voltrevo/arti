@@ -60,7 +60,6 @@ mod dyn_time;
 pub mod general;
 mod opaque;
 pub mod scheduler;
-pub mod serde_time;
 mod timer;
 mod traits;
 pub mod unimpl;

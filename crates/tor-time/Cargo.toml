@@ -18,12 +18,14 @@ full = []
 web-time = "1.1"
 time = { version = "0.3.20", features = ["formatting"] }
 derive_more = { version = "2.0.1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
 paste = "1"
 httpdate = "1.0"
 
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 coarsetime = "0.1.20"
+humantime-serde = "1.1"
 
 # Enable serde support for web-time's SystemTime on WASM
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -7,7 +7,7 @@
 //! On WASM, it uses a duration-since-epoch format that's compatible with
 //! `web_time::SystemTime`.
 
-use tor_time::SystemTime;
+use crate::SystemTime;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(target_arch = "wasm32")]
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 /// Serialize a `SystemTime` in human-readable format.
 ///
-/// Use with `#[serde(with = "tor_rtcompat::serde_time")]`
+/// Use with `#[serde(with = "tor_time::serde_time")]`
 pub fn serialize<S>(time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -45,7 +45,7 @@ where
 
 /// Deserialize a `SystemTime` from human-readable format.
 ///
-/// Use with `#[serde(with = "tor_rtcompat::serde_time")]`
+/// Use with `#[serde(with = "tor_time::serde_time")]`
 pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
 where
     D: Deserializer<'de>,
@@ -88,7 +88,7 @@ where
 
 /// Module for serializing `Option<SystemTime>`.
 ///
-/// Use with `#[serde(with = "tor_rtcompat::serde_time::option")]`
+/// Use with `#[serde(with = "tor_time::serde_time::option")]`
 pub mod option {
     use super::*;
 
