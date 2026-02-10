@@ -71,7 +71,6 @@ use crate::memquota::{ChannelAccount, CircuitAccount, SpecificAccount as _};
 use crate::util::err::ChannelClosed;
 use crate::util::oneshot_broadcast;
 use crate::util::timeout::TimeoutEstimator;
-use crate::util::ts::AtomicOptTimestamp;
 use crate::{ClockSkew, client};
 use crate::{Error, Result};
 use cfg_if::cfg_if;
@@ -88,7 +87,7 @@ use tor_error::internal;
 use tor_linkspec::{HasRelayIds, OwnedChanTarget};
 use tor_memquota::mq_queue::{self, ChannelSpec as _, MpscSpec};
 use tor_rtcompat::{DynTimeProvider, SleepProvider, StreamOps};
-use tor_time::{CoarseInstant, CoarseTimeProvider};
+use tor_time::{AtomicOptTimestamp, CoarseInstant, CoarseTimeProvider};
 
 #[cfg(feature = "circ-padding")]
 use tor_async_utils::counting_streams::{self, CountingSink, CountingStream};

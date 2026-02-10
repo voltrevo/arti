@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// that lets us do atomic updates. On WASM, it uses `js_sys::Date::now()`
 /// with millisecond precision since coarsetime doesn't support WASM.
 #[derive(Default, Debug)]
-pub(crate) struct AtomicOptTimestamp {
+pub struct AtomicOptTimestamp {
     /// A timestamp describing when this timestamp was last updated.
     ///
     /// On native: coarsetime ticks
@@ -26,14 +26,14 @@ pub(crate) struct AtomicOptTimestamp {
 #[cfg(not(target_arch = "wasm32"))]
 impl AtomicOptTimestamp {
     /// Construct a new timestamp that has never been updated.
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         AtomicOptTimestamp {
             latest: AtomicU64::new(0),
         }
     }
 
     /// Update this timestamp to (at least) the current time.
-    pub(crate) fn update(&self) {
+    pub fn update(&self) {
         // TODO: Do we want to use 'Instant::recent() instead,' and
         // add an updater thread?
         self.update_to(coarsetime::Instant::now());
@@ -41,7 +41,7 @@ impl AtomicOptTimestamp {
 
     /// If the timestamp is currently unset, then set it to the current time.
     /// Otherwise leave it alone.
-    pub(crate) fn update_if_none(&self) {
+    pub fn update_if_none(&self) {
         let now = coarsetime::Instant::now().as_ticks();
 
         let _ignore = self
@@ -50,14 +50,14 @@ impl AtomicOptTimestamp {
     }
 
     /// Clear the timestamp and make it not updated again.
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         self.latest.store(0, Ordering::Relaxed);
     }
 
     /// Return the time since `update` was last called.
     ///
     /// Return `None` if update was never called.
-    pub(crate) fn time_since_update(&self) -> Option<coarsetime::Duration> {
+    pub fn time_since_update(&self) -> Option<coarsetime::Duration> {
         self.time_since_update_at(coarsetime::Instant::now())
     }
 
@@ -67,7 +67,7 @@ impl AtomicOptTimestamp {
     /// Return `None` if `update` was never called, or `now` is before
     /// that time.
     #[inline]
-    pub(crate) fn time_since_update_at(
+    pub fn time_since_update_at(
         &self,
         now: coarsetime::Instant,
     ) -> Option<coarsetime::Duration> {
@@ -82,7 +82,7 @@ impl AtomicOptTimestamp {
 
     /// Update this timestamp to (at least) the time `now`.
     #[inline]
-    pub(crate) fn update_to(&self, now: coarsetime::Instant) {
+    pub fn update_to(&self, now: coarsetime::Instant) {
         self.latest.fetch_max(now.as_ticks(), Ordering::Relaxed);
     }
 }
@@ -91,7 +91,7 @@ impl AtomicOptTimestamp {
 #[cfg(target_arch = "wasm32")]
 impl AtomicOptTimestamp {
     /// Construct a new timestamp that has never been updated.
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         AtomicOptTimestamp {
             latest: AtomicU64::new(0),
         }
@@ -103,14 +103,14 @@ impl AtomicOptTimestamp {
     }
 
     /// Update this timestamp to (at least) the current time.
-    pub(crate) fn update(&self) {
+    pub fn update(&self) {
         let now = Self::now_ms();
         self.latest.fetch_max(now, Ordering::Relaxed);
     }
 
     /// If the timestamp is currently unset, then set it to the current time.
     /// Otherwise leave it alone.
-    pub(crate) fn update_if_none(&self) {
+    pub fn update_if_none(&self) {
         let now = Self::now_ms();
         let _ignore = self
             .latest
@@ -118,14 +118,14 @@ impl AtomicOptTimestamp {
     }
 
     /// Clear the timestamp and make it not updated again.
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         self.latest.store(0, Ordering::Relaxed);
     }
 
     /// Return the time since `update` was last called.
     ///
     /// Return `None` if update was never called.
-    pub(crate) fn time_since_update(&self) -> Option<std::time::Duration> {
+    pub fn time_since_update(&self) -> Option<std::time::Duration> {
         self.time_since_update_at(Self::now_ms())
     }
 
@@ -135,7 +135,7 @@ impl AtomicOptTimestamp {
     /// Return `None` if `update` was never called, or `now_ms` is before
     /// that time.
     #[inline]
-    pub(crate) fn time_since_update_at(&self, now_ms: u64) -> Option<std::time::Duration> {
+    pub fn time_since_update_at(&self, now_ms: u64) -> Option<std::time::Duration> {
         let earlier = self.latest.load(Ordering::Relaxed);
         if now_ms >= earlier && earlier != 0 {
             Some(std::time::Duration::from_millis(now_ms - earlier))
@@ -146,7 +146,7 @@ impl AtomicOptTimestamp {
 
     /// Update this timestamp to (at least) the time `now_ms` (in milliseconds).
     #[inline]
-    pub(crate) fn update_to(&self, now_ms: u64) {
+    pub fn update_to(&self, now_ms: u64) {
         self.latest.fetch_max(now_ms, Ordering::Relaxed);
     }
 }

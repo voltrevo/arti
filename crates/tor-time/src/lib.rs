@@ -67,12 +67,15 @@
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 mod coarse_time;
+mod atomic_opt_ts;
 
 // Re-export web_time types (std::time on native, web_time impl on WASM)
 pub use web_time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
 // Re-export coarse time types
 pub use coarse_time::{CoarseDuration, CoarseInstant, CoarseTimeProvider, RealCoarseTimeProvider};
+
+pub use atomic_opt_ts::AtomicOptTimestamp;
 
 pub mod serde_time;
 
