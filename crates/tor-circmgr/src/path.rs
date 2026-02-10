@@ -17,7 +17,7 @@ pub(crate) mod exitpath;
 pub(crate) mod hspath;
 
 use std::result::Result as StdResult;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 
 use itertools::Either;
 use rand::Rng;

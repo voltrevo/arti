@@ -33,6 +33,7 @@ tor-error = { path = "../tor-error", version = "0.39.0", features = ["tracing"] 
 tor-log-ratelim = { path = "../tor-log-ratelim", version = "0.39.0" }
 tor-memquota-cost = { path = "../tor-memquota-cost", version = "0.39.0" }
 tor-rtcompat = { version = "0.39.0", path = "../tor-rtcompat" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing = "0.1.36"
 visibility = { version = "0.1.0", optional = true }
 void = "1"
@@ -43,6 +44,7 @@ safelog = { path = "../safelog", version = "0.7.0" }
 serde_json = "1.0.50"
 tor-basic-utils = { path = "../tor-basic-utils", version = "0.39.0" }
 tor-rtcompat = { version = "0.39.0", path = "../tor-rtcompat", features = ["tokio", "native-tls"] }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tor-rtmock = { path = "../tor-rtmock", version = "0.39.0" }
 tracing-test = "0.2.4"
 

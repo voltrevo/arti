@@ -36,7 +36,7 @@ use derive_builder::Builder;
 use smallvec::SmallVec;
 
 use std::result::Result as StdResult;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 
 #[cfg(feature = "hsdesc-inner-docs")]
 pub use {inner::HsDescInner, middle::HsDescMiddle, outer::HsDescOuter};

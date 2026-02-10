@@ -26,7 +26,7 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 
 use rusqlite::{OpenFlags, OptionalExtension, Transaction, params};
 use time::OffsetDateTime;

@@ -23,6 +23,7 @@ humantime = "2"
 thiserror = "2"
 tor-error = { path = "../tor-error", version = "0.39.0" }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.39.0" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing = "0.1.36"
 weak-table = "0.3.0"
 

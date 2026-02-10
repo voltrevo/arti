@@ -296,6 +296,7 @@ dependencies = [
  "tokio-socks",
  "tor-config",
  "tor-rtcompat",
+ "tor-time",
  "tracing",
  "tracing-subscriber",
 ]
@@ -357,6 +358,7 @@ dependencies = [
  "tor-relay-selection",
  "tor-rpcbase",
  "tor-rtcompat",
+ "tor-time",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
@@ -5008,8 +5010,8 @@ version = "0.10.1"
 dependencies = [
  "anyhow",
  "derive_more",
- "humantime",
  "thiserror 2.0.18",
+ "tor-time",
 ]
 
 [[package]]
@@ -6523,6 +6525,7 @@ dependencies = [
  "slab",
  "smallvec",
  "thiserror 2.0.18",
+ "tor-time",
  "weak-table",
 ]
 
@@ -6570,6 +6573,7 @@ dependencies = [
  "tor-llcrypto",
  "tor-memquota",
  "tor-protover",
+ "tor-time",
  "tor-units",
  "void",
 ]
@@ -6594,6 +6598,7 @@ dependencies = [
  "tor-checkable",
  "tor-error",
  "tor-llcrypto",
+ "tor-time",
 ]
 
 [[package]]
@@ -6648,6 +6653,7 @@ dependencies = [
  "tor-rtcompat",
  "tor-rtmock",
  "tor-socksproto",
+ "tor-time",
  "tor-units",
  "tracing",
  "void",
@@ -6661,6 +6667,7 @@ dependencies = [
  "signature",
  "thiserror 2.0.18",
  "tor-llcrypto",
+ "tor-time",
 ]
 
 [[package]]
@@ -6709,6 +6716,7 @@ dependencies = [
  "tor-relay-selection",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tor-units",
  "tracing",
  "visibility",
@@ -6807,6 +6815,7 @@ dependencies = [
  "tor-proto",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tracing",
 ]
 
@@ -6888,6 +6897,7 @@ dependencies = [
  "tor-protover",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tracing",
  "tracing-test",
 ]
@@ -6927,6 +6937,7 @@ dependencies = [
  "tor-llcrypto",
  "tor-netdoc",
  "tor-rtcompat",
+ "tor-time",
  "tracing",
  "weak-table",
  "zstd",
@@ -6945,6 +6956,7 @@ dependencies = [
  "static_assertions",
  "strum",
  "thiserror 2.0.18",
+ "tor-time",
  "tracing",
  "tracing-test",
  "void",
@@ -7026,6 +7038,7 @@ dependencies = [
  "tor-relay-selection",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tor-units",
  "tracing",
 ]
@@ -7107,6 +7120,7 @@ dependencies = [
  "tor-key-forge",
  "tor-llcrypto",
  "tor-memquota",
+ "tor-time",
  "tor-units",
  "void",
  "zeroize",
@@ -7208,6 +7222,7 @@ dependencies = [
  "tor-relay-selection",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tracing",
  "tracing-test",
  "void",
@@ -7233,6 +7248,7 @@ dependencies = [
  "tor-checkable",
  "tor-error",
  "tor-llcrypto",
+ "tor-time",
 ]
 
 [[package]]
@@ -7273,6 +7289,7 @@ dependencies = [
  "tor-key-forge",
  "tor-llcrypto",
  "tor-persist",
+ "tor-time",
  "tracing",
  "visibility",
  "walkdir",
@@ -7359,6 +7376,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tor-error",
  "tor-rtcompat",
+ "tor-time",
  "tracing",
  "weak-table",
 ]
@@ -7392,6 +7410,7 @@ dependencies = [
  "tor-memquota-cost",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tracing",
  "tracing-test",
  "visibility",
@@ -7439,6 +7458,7 @@ dependencies = [
  "tor-llcrypto",
  "tor-netdoc",
  "tor-protover",
+ "tor-time",
  "tor-units",
  "tracing",
  "typed-index-collections",
@@ -7489,6 +7509,7 @@ dependencies = [
  "tor-linkspec",
  "tor-llcrypto",
  "tor-protover",
+ "tor-time",
  "tor-units",
  "visibility",
  "visible",
@@ -7523,6 +7544,7 @@ dependencies = [
  "tor-async-utils",
  "tor-basic-utils",
  "tor-error",
+ "tor-time",
  "tracing",
  "tracing-test",
  "void",
@@ -7597,6 +7619,7 @@ dependencies = [
  "tor-relay-crypto",
  "tor-rtcompat",
  "tor-rtmock",
+ "tor-time",
  "tor-units",
  "tracing",
  "tracing-test",
@@ -7662,6 +7685,7 @@ dependencies = [
  "tor-keymgr",
  "tor-llcrypto",
  "tor-persist",
+ "tor-time",
 ]
 
 [[package]]
@@ -7744,7 +7768,6 @@ dependencies = [
  "asynchronous-codec",
  "blocking",
  "cfg-if",
- "coarsetime",
  "derive_more",
  "dyn-clone",
  "educe",
@@ -7767,6 +7790,7 @@ dependencies = [
  "tor-cert-x509",
  "tor-error",
  "tor-general-addr",
+ "tor-time",
  "tracing",
  "void",
  "zeroize",
@@ -7797,6 +7821,7 @@ dependencies = [
  "tor-error",
  "tor-general-addr",
  "tor-rtcompat",
+ "tor-time",
  "tracing",
  "tracing-test",
  "void",
@@ -7818,6 +7843,22 @@ dependencies = [
  "thiserror 2.0.18",
  "tor-bytes",
  "tor-error",
+]
+
+[[package]]
+name = "tor-time"
+version = "0.39.0"
+dependencies = [
+ "coarsetime",
+ "derive_more",
+ "httpdate",
+ "humantime",
+ "humantime-serde",
+ "js-sys",
+ "paste",
+ "serde",
+ "time",
+ "web-time",
 ]
 
 [[package]]
@@ -8438,6 +8479,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 

@@ -416,7 +416,8 @@ mod test {
     use crate::types::relay_flags::RelayFlag;
 
     use std::net::SocketAddr;
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
+    use tor_time::SystemTime;
 
     #[test]
     fn consensus() {

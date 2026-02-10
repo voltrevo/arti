@@ -174,7 +174,8 @@ use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use tor_time::SystemTime;
 
 use derive_deftly::{Deftly, define_derive_deftly};
 use derive_more::{AsRef, Deref};

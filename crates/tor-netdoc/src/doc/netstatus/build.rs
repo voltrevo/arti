@@ -15,7 +15,7 @@ use tor_protover::Protocols;
 
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 
 pub(crate) mod md;
 #[cfg(feature = "plain-consensus")]

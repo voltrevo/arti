@@ -12,6 +12,7 @@
 //! which relay they are for, which requires a valid consensus
 //! directory.
 
+use tor_time::SystemTime;
 use crate::parse::keyword::Keyword;
 use crate::parse::parser::SectionRules;
 use crate::parse::tokenize::{ItemResult, NetDocReader};
@@ -31,8 +32,6 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use std::sync::LazyLock;
 
-use std::time;
-
 #[cfg(feature = "build_docs")]
 mod build;
 
@@ -49,7 +48,7 @@ pub const DOC_DIGEST_LEN: usize = 32;
 pub struct MicrodescAnnotation {
     /// A time at which this microdescriptor was last listed in some
     /// consensus document.
-    last_listed: Option<time::SystemTime>,
+    last_listed: Option<SystemTime>,
 }
 
 /// The digest of a microdescriptor as used in microdesc consensuses

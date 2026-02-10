@@ -3,13 +3,15 @@
 use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::pin::Pin;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
+use tor_time::{Instant, SystemTime};
 
 use dyn_clone::DynClone;
 use educe::Educe;
 use paste::paste;
 
-use crate::{CoarseInstant, CoarseTimeProvider, SleepProvider};
+use crate::SleepProvider;
+use tor_time::{CoarseInstant, CoarseTimeProvider};
 
 //-------------------- handle PreferredRuntime maybe not existing ----------
 

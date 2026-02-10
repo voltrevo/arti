@@ -9,7 +9,7 @@ use super::{AuthCert, AuthCertVersion, CrossCert, CrossCertObject};
 use crate::{BuildError as Error, BuildResult};
 use std::net::SocketAddrV4;
 use std::ops::Range;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 use tor_llcrypto::pk::rsa;
 
 /// A builder object used to construct an authority certificate.

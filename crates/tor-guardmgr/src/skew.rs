@@ -7,7 +7,8 @@
 //     of bridges is very small, see if we can still use that to make a
 //     low-confidence value.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tor_time::Instant;
 
 use tor_proto::ClockSkew;
 

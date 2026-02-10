@@ -26,7 +26,7 @@ use tor_llcrypto::pk::keymanip::convert_curve25519_to_ed25519_public;
 
 use base64ct::{Base64, Encoding};
 
-use std::time::SystemTime;
+use tor_time::SystemTime;
 
 use smallvec::SmallVec;
 

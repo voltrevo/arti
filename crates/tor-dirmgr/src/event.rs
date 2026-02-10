@@ -13,14 +13,13 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     task::Poll,
-    time::SystemTime,
 };
+use tor_time::SystemTime;
 
 use educe::Educe;
 use futures::{Future, StreamExt, stream::Stream};
 use itertools::chain;
 use paste::paste;
-use time::OffsetDateTime;
 use tor_basic_utils::skip_fmt;
 use tor_netdir::DirEvent;
 use tor_netdoc::doc::netstatus;
@@ -457,7 +456,7 @@ impl fmt::Display for DirProgress {
                     )
                     .expect("Invalid time format")
                 });
-            OffsetDateTime::from(t)
+            tor_time::offset_datetime_from_systemtime(t)
                 .format(&FORMAT)
                 .unwrap_or_else(|_| "(could not format)".into())
         }

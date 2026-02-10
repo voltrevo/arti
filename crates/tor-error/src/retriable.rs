@@ -1,11 +1,9 @@
 //! Declare the `RetryTime` enumeration and related code.
 
 use derive_more::{From, Into};
-use std::{
-    cmp::Ordering,
-    time::{Duration, Instant},
-};
+use std::{cmp::Ordering, time::Duration};
 use strum::EnumDiscriminants;
+use tor_time::Instant;
 
 /// A description of when an operation may be retried.
 ///

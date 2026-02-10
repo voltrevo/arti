@@ -3,7 +3,7 @@
 use rand::Rng;
 use std::fmt::{self, Display};
 use std::sync::Arc;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 use tracing::{instrument, trace};
 #[cfg(not(feature = "geoip"))]
 use void::Void;

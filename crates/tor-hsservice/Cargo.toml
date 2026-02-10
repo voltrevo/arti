@@ -138,6 +138,7 @@ tor-proto = { version = "0.39.0", path = "../tor-proto", features = [
 tor-protover = { version = "0.39.0", path = "../tor-protover" }
 tor-relay-selection = { path = "../tor-relay-selection", version = "0.39.0" }
 tor-rtcompat = { version = "0.39.0", path = "../tor-rtcompat" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing = "0.1.36"
 void = "1"
 

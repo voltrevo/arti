@@ -97,6 +97,7 @@ use tor_memquota::{
     mq_queue::{self, ChannelSpec as _},
 };
 use tor_rtcompat::DynTimeProvider;
+use tor_time::AtomicOptTimestamp;
 
 #[doc(hidden)]
 pub use {derive_deftly, tor_memquota};
@@ -104,7 +105,7 @@ pub use {derive_deftly, tor_memquota};
 /// Timestamp object that we update whenever we get incoming traffic.
 ///
 /// Used to implement [`time_since_last_incoming_traffic`]
-static LAST_INCOMING_TRAFFIC: util::ts::AtomicOptTimestamp = util::ts::AtomicOptTimestamp::new();
+static LAST_INCOMING_TRAFFIC: AtomicOptTimestamp = AtomicOptTimestamp::new();
 
 /// Called whenever we receive incoming traffic.
 ///

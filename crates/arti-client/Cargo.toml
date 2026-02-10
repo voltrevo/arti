@@ -209,6 +209,7 @@ tor-protover = { path = "../tor-protover", version = "0.39.0" }
 tor-ptmgr = { path = "../tor-ptmgr", version = "0.39.0", optional = true }
 tor-rpcbase = { path = "../tor-rpcbase", version = "0.39.0", optional = true }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.39.0" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing = "0.1.36"
 visibility = { version = "0.1.0", optional = true }
 void = "1"
@@ -230,6 +231,7 @@ tokio-crate = { package = "tokio", version = "1.7", features = [
 toml = "0.9.5"
 tor-relay-selection = { path = "../tor-relay-selection", version = "0.39.0" }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.39.0", features = ["tokio", "native-tls"] }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing-subscriber = "0.3.20"
 tracing-test = "0.2.4"
 

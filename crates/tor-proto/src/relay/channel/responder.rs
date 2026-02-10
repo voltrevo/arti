@@ -11,7 +11,8 @@ use tracing::instrument;
 
 use tor_cell::chancell::msg;
 use tor_linkspec::OwnedChanTarget;
-use tor_rtcompat::{CertifiedConn, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CertifiedConn, SleepProvider, StreamOps};
+use tor_time::CoarseTimeProvider;
 
 use crate::{
     ClockSkew, Error, RelayIdentities, Result,

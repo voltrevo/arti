@@ -5,7 +5,8 @@ use futures::io::{AsyncRead, AsyncWrite};
 use futures::stream::StreamExt;
 use rand::Rng;
 use std::net::IpAddr;
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
+use tor_time::SystemTime;
 use tracing::trace;
 
 use safelog::Sensitive;
@@ -15,7 +16,8 @@ use tor_cell::chancell::{
 };
 use tor_error::internal;
 use tor_linkspec::ChannelMethod;
-use tor_rtcompat::{CertifiedConn, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CertifiedConn, SleepProvider, StreamOps};
+use tor_time::{CoarseInstant, CoarseTimeProvider};
 
 use crate::channel::handshake::{
     ChannelBaseHandshake, ChannelInitiatorHandshake, UnverifiedChannel, unauthenticated_clock_skew,
@@ -290,11 +292,11 @@ impl<
         &mut self,
     ) -> Result<(
         Option<(msg::Authenticate, msg::Certs)>,
-        (msg::Netinfo, coarsetime::Instant),
+        (msg::Netinfo, CoarseInstant),
     )> {
         let mut auth_cell: Option<msg::Authenticate> = None;
         let mut certs_cell: Option<msg::Certs> = None;
-        let mut netinfo_cell: Option<(msg::Netinfo, coarsetime::Instant)> = None;
+        let mut netinfo_cell: Option<(msg::Netinfo, CoarseInstant)> = None;
 
         // IMPORTANT: Protocol wise, we MUST only allow one single cell of each type for a valid
         // handshake. Any duplicates lead to a failure. They can arrive in any order unfortunately
@@ -327,7 +329,7 @@ impl<
                             "Somehow tried to record a duplicate NETINFO cell"
                         )));
                     }
-                    netinfo_cell = Some((n, coarsetime::Instant::now()));
+                    netinfo_cell = Some((n, CoarseInstant::now()));
                     break;
                 }
                 // This should not happen because the ChannelFrame makes sure that only allowed cell on
@@ -363,7 +365,7 @@ impl<
     async fn send_cells_to_initiator<F>(
         &mut self,
         now_fn: F,
-    ) -> Result<(coarsetime::Instant, SystemTime)>
+    ) -> Result<(CoarseInstant, SystemTime)>
     where
         F: FnOnce() -> SystemTime,
     {

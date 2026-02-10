@@ -7,7 +7,8 @@ use std::fmt::{self, Debug, Display};
 use std::num::NonZeroU8;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
+use tor_time::{format_rfc3339, Instant, SystemTime};
 
 use async_trait::async_trait;
 use derive_more::{Deref, DerefMut};
@@ -1072,7 +1073,7 @@ impl<R: Runtime, M: Mockable<R>> Manager<R, M> {
             match if_modified_since {
                 Some(ims) => format!(
                     " if-modified-since {}",
-                    humantime::format_rfc3339_seconds(ims),
+                    format_rfc3339(ims),
                 ),
                 None => "".into(),
             }

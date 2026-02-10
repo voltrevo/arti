@@ -48,6 +48,7 @@ tor-cert-x509 = { path = "../tor-cert-x509", version = "0.39.0", optional = true
 tor-checkable = { path = "../tor-checkable", version = "0.39.0" }
 tor-error = { path = "../tor-error", version = "0.39.0" }
 tor-llcrypto = { path = "../tor-llcrypto", version = "0.39.0" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 
 [dev-dependencies]
 base64ct = "1.5.1"

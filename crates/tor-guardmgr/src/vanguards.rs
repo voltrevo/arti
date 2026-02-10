@@ -9,7 +9,8 @@ mod err;
 mod set;
 
 use std::sync::{Arc, RwLock, Weak};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use tor_time::SystemTime;
 
 use futures::stream::BoxStream;
 use futures::{FutureExt as _, future};

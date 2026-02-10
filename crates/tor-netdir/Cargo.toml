@@ -55,6 +55,7 @@ full = [
 __is_experimental = []
 
 [dependencies]
+tor-time = { path = "../tor-time", version = "0.39.0" }
 async-trait = "0.1.54"
 bitflags = "2"
 derive_more = { version = "2.0.1", features = ["full"] }

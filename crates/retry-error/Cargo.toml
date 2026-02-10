@@ -18,7 +18,7 @@ derive_more = { version = "2.0.1", features = ["full"] }
 thiserror = "2"
 
 [dependencies]
-humantime = "2"
+tor-time = { path = "../tor-time", version = "0.39.0" }
 
 [features]
 full = []

@@ -4,7 +4,8 @@ use crate::{CertType, ErasedKey, InvalidCertError, KeyUnknownCert, Result};
 use tor_cert::{Ed25519Cert, EncodedEd25519Cert, SigCheckedCert, UncheckedCert};
 use tor_llcrypto::pk::ed25519::{self, Ed25519Identity};
 
-use std::{result::Result as StdResult, time::SystemTime};
+use std::result::Result as StdResult;
+use tor_time::SystemTime;
 
 /// A key certificate.
 #[derive(Clone, Debug)]

@@ -37,8 +37,10 @@ pub(crate) use {
     std::path::{Path, PathBuf},
     std::str::FromStr,
     std::sync::{Arc, Mutex, MutexGuard},
-    std::time::{Duration, Instant, SystemTime},
+    std::time::{Duration, Instant},
 };
+
+pub(crate) use tor_time::SystemTime;
 
 //---------- upstreams ----------
 

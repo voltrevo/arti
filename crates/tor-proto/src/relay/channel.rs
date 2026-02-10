@@ -24,7 +24,8 @@ use tor_llcrypto::pk::{
     rsa::RsaIdentity,
 };
 use tor_relay_crypto::pk::RelayLinkSigningKeypair;
-use tor_rtcompat::{CertifiedConn, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CertifiedConn, SleepProvider, StreamOps};
+use tor_time::CoarseTimeProvider;
 
 use crate::channel::ChannelType;
 use crate::channel::handshake::VerifiedChannel;

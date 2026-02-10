@@ -55,7 +55,6 @@
 pub(crate) mod impls;
 pub mod task;
 
-mod coarse_time;
 mod compound;
 mod dyn_time;
 pub mod general;
@@ -69,12 +68,11 @@ pub mod unix;
 #[cfg(any(feature = "async-std", feature = "tokio", feature = "smol"))]
 use std::io;
 pub use traits::{
-    Blocking, CertifiedConn, CoarseTimeProvider, NetStreamListener, NetStreamProvider,
-    NoOpStreamOpsHandle, Runtime, SleepProvider, SpawnExt, StreamOps, TlsProvider, ToplevelBlockOn,
-    ToplevelRuntime, UdpProvider, UdpSocket, UnsupportedStreamOp,
+    Blocking, CertifiedConn, NetStreamListener, NetStreamProvider, NoOpStreamOpsHandle, Runtime,
+    SleepProvider, SpawnExt, StreamOps, TlsProvider, ToplevelBlockOn, ToplevelRuntime, UdpProvider,
+    UdpSocket, UnsupportedStreamOp,
 };
 
-pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};
 pub use dyn_time::DynTimeProvider;
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 
@@ -437,7 +435,8 @@ mod test {
     use std::io::Result as IoResult;
     use std::net::SocketAddr;
     use std::net::{Ipv4Addr, SocketAddrV4};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use tor_time::Instant;
 
     // Test "sleep" with a tiny delay, and make sure that at least that
     // much delay happens.

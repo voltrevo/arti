@@ -22,7 +22,8 @@ use tracing::trace;
 use tor_cell::chancell::msg;
 use tor_error::internal;
 use tor_linkspec::{ChannelMethod, OwnedChanTarget};
-use tor_rtcompat::{CertifiedConn, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CertifiedConn, SleepProvider, StreamOps};
+use tor_time::CoarseTimeProvider;
 
 use crate::{
     ClockSkew, Error, RelayIdentities, Result,

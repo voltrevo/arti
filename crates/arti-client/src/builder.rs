@@ -8,11 +8,12 @@ use crate::{
 use std::{
     result::Result as StdResult,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tor_dirmgr::{DirMgrConfig, DirMgrStore};
 use tor_error::{ErrorKind, HasKind as _};
 use tor_rtcompat::Runtime;
+use tor_time::Instant;
 use tracing::instrument;
 
 /// An object that knows how to construct some kind of DirProvider.

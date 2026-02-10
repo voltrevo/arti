@@ -70,7 +70,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_socks::tcp::Socks5Stream;
 use tor_config::{ConfigurationSource, ConfigurationSources};

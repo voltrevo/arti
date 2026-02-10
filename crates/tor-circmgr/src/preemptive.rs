@@ -3,7 +3,7 @@
 use crate::{PathConfig, PreemptiveCircuitConfig, TargetPort, TargetTunnelUsage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use tor_time::Instant;
 use tracing::warn;
 
 /// Predicts what circuits might be used in future based on past activity, and suggests

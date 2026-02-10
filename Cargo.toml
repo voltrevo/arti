@@ -20,6 +20,7 @@ members = [
     "crates/caret",
     "crates/fs-mistrust",
     "crates/safelog",
+    "crates/tor-time",
     "crates/retry-error",
     "crates/tor-error",
     "crates/tor-general-addr",

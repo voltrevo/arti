@@ -14,7 +14,7 @@ use oneshot_fused_workaround as oneshot;
 use serde::{Serialize, de::DeserializeOwned};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use tor_time::SystemTime;
 use tor_error::warn_report;
 use tracing::info;
 

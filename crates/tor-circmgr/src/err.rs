@@ -1,6 +1,7 @@
 //! Declare an error type for tor-circmgr
 
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
+use tor_time::Instant;
 
 use futures::task::SpawnError;
 use retry_error::RetryError;

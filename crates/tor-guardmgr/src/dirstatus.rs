@@ -1,6 +1,7 @@
 //! Types and code to track the readiness status of a directory cache.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tor_time::Instant;
 use tor_basic_utils::retry::RetryDelay;
 
 /// Status information about whether a

@@ -107,6 +107,7 @@ tor-persist = { path = "../tor-persist", version = "0.39.0" }
 tor-proto = { path = "../tor-proto", version = "0.39.0" }
 tor-protover = { path = "../tor-protover", version = "0.39.0", features = ["serde"] }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.39.0" }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing = "0.1.36"
 
 [dev-dependencies]
@@ -117,6 +118,7 @@ hex-literal = "1.0"
 tempfile = "3"
 tor-linkspec = { path = "../tor-linkspec", version = "0.39.0" }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.39.0", features = ["tokio", "native-tls"] }
+tor-time = { path = "../tor-time", version = "0.39.0" }
 tor-rtmock = { path = "../tor-rtmock", version = "0.39.0" }
 tracing-test = "0.2.4"
 [package.metadata.docs.rs]

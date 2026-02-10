@@ -4,12 +4,13 @@ use futures::SinkExt;
 use futures::io::{AsyncRead, AsyncWrite};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 use tor_cell::chancell::msg;
 use tracing::{debug, instrument, trace};
 
 use tor_linkspec::{ChannelMethod, OwnedChanTarget};
-use tor_rtcompat::{CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{SleepProvider, StreamOps};
+use tor_time::CoarseTimeProvider;
 
 use crate::ClockSkew;
 use crate::Result;
@@ -180,7 +181,7 @@ impl<
         self,
         peer: &OwnedChanTarget,
         peer_cert: &[u8],
-        now: Option<std::time::SystemTime>,
+        now: Option<tor_time::SystemTime>,
     ) -> Result<VerifiedClientChannel<T, S>> {
         let inner = self.inner.check(peer, peer_cert, now)?;
         Ok(VerifiedClientChannel { inner })

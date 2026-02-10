@@ -6,8 +6,9 @@ use pin_project::pin_project;
 use std::{
     pin::Pin,
     task::{Context, Poll},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+use tor_time::SystemTime;
 
 /// An error value given when a function times out.
 ///

@@ -1,6 +1,7 @@
 //! An internal pool object that we use to implement HsCircPool.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tor_time::Instant;
 
 use crate::{
     AbstractTunnel,

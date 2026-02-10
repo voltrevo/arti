@@ -77,7 +77,7 @@ use super::AnonymousPathBuilder;
 use {
     crate::path::{TorPath, pick_path},
     crate::{DirInfo, PathConfig},
-    std::time::SystemTime,
+    tor_time::SystemTime,
     tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable},
     tor_rtcompat::Runtime,
 };

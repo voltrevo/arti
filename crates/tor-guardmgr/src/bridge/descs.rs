@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::SystemTime;
+use tor_time::SystemTime;
 
 use crate::{
     bridge::BridgeConfig,
@@ -239,7 +239,7 @@ impl Universe for BridgeSet {
         }
     }
 
-    fn timestamp(&self) -> std::time::SystemTime {
+    fn timestamp(&self) -> SystemTime {
         // We just use the current time as the timestamp of this BridgeSet.
         // This makes the guard code treat a BridgeSet as _continuously updated_:
         // anything listed in the guard set is treated as listed right up to this

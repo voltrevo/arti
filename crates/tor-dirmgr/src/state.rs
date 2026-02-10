@@ -14,8 +14,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::mem;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
-use time::OffsetDateTime;
+use std::time::Duration;
+use tor_time::{format_rfc3339, SystemTime};
 use tor_basic_utils::RngExt as _;
 use tor_dircommon::retry::DownloadSchedule;
 use tor_error::{internal, warn_report};
@@ -895,9 +895,9 @@ impl PendingNetDir {
                                 The current consensus is fresh until {}, and valid until {}. \
                                 I've picked {} as the earliest time to replace it.",
                             missing.len(),
-                            OffsetDateTime::from(nd.lifetime().fresh_until()),
-                            OffsetDateTime::from(nd.lifetime().valid_until()),
-                            OffsetDateTime::from(replace_dir_time)
+                            format_rfc3339(nd.lifetime().fresh_until()),
+                            format_rfc3339(nd.lifetime().valid_until()),
+                            format_rfc3339(replace_dir_time)
                         );
                         *self = PendingNetDir::Yielding {
                             netdir: Some(nd),

@@ -421,7 +421,8 @@ mod tests {
     use std::cmp::Ordering;
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
+use tor_time::SystemTime;
     use tempfile::{TempDir, tempdir};
     use tor_cert::{CertifiedKey, Ed25519Cert};
     use tor_checkable::{SelfSigned, Timebound};

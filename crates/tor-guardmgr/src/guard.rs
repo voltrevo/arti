@@ -6,7 +6,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
+use tor_time::{Instant, SystemTime};
 use tracing::{info, trace, warn};
 
 use crate::dirstatus::DirStatus;
@@ -140,7 +141,7 @@ pub(crate) struct Guard {
     pt_targets: Vec<PtTarget>,
 
     /// When, approximately, did we first add this guard to our sample?
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "tor_time::serde_time")]
     added_at: SystemTime,
 
     /// What version of this crate added this guard to our sample?
@@ -155,7 +156,7 @@ pub(crate) struct Guard {
     ///
     /// (We call a guard "confirmed" if we have successfully used it at
     /// least once.)
-    #[serde(with = "humantime_serde")]
+    #[serde(default, with = "tor_time::serde_time::option")]
     confirmed_at: Option<SystemTime>,
 
     /// If this guard is not listed in the current-consensus, this is the
@@ -163,7 +164,7 @@ pub(crate) struct Guard {
     ///
     /// A guard counts as "unlisted" if it is absent, unusable, or
     /// doesn't have the Guard flag.
-    #[serde(with = "humantime_serde")]
+    #[serde(default, with = "tor_time::serde_time::option")]
     unlisted_since: Option<SystemTime>,
 
     /// True if this guard is listed in the latest consensus, but we don't

@@ -1,6 +1,7 @@
 //! Entry points for use with async_std runtimes.
 pub use crate::impls::async_std::create_runtime as create_runtime_impl;
-use crate::{RealCoarseTimeProvider, ToplevelBlockOn, compound::CompoundRuntime};
+use crate::{ToplevelBlockOn, compound::CompoundRuntime};
+use tor_time::RealCoarseTimeProvider;
 use std::io::Result as IoResult;
 
 #[cfg(feature = "native-tls")]

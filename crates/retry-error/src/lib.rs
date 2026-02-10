@@ -48,7 +48,8 @@
 use std::error::Error;
 use std::fmt::{self, Debug, Display, Error as FmtError, Formatter};
 use std::iter;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
+use tor_time::{format_rfc3339, Instant, SystemTime};
 
 /// An error type for use when we're going to do something a few times,
 /// and they might all fail.
@@ -329,7 +330,7 @@ impl<E: AsRef<dyn Error>> Display for RetryError<E> {
                         write!(
                             f,
                             " at {} ({})",
-                            humantime::format_rfc3339(first_at),
+                            format_rfc3339(first_at),
                             FormatTimeAgo(timestamp.elapsed())
                         )?;
                     }
@@ -351,10 +352,10 @@ impl<E: AsRef<dyn Error>> Display for RetryError<E> {
                     {
                         let duration = last_ts.saturating_duration_since(*first_ts);
 
-                        write!(f, " (from {} ", humantime::format_rfc3339(first_at))?;
+                        write!(f, " (from {} ", format_rfc3339(first_at))?;
 
                         if duration.as_secs() > 0 {
-                            write!(f, "to {}", humantime::format_rfc3339(first_at + duration))?;
+                            write!(f, "to {}", format_rfc3339(first_at + duration))?;
                         }
 
                         write!(f, ", {})", FormatTimeAgo(last_ts.elapsed()))?;

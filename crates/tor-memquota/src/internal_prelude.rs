@@ -60,7 +60,8 @@ pub(crate) use {
     tor_config::{ConfigBuildError, ExplicitOrAuto, ReconfigureError},
     tor_error::{Bug, ErrorKind, HasKind, error_report, internal, into_internal, trace_report},
     tor_log_ratelim::log_ratelim,
-    tor_rtcompat::{CoarseInstant, CoarseTimeProvider, DynTimeProvider, SpawnExt as _},
+    tor_rtcompat::{DynTimeProvider, SpawnExt as _},
+    tor_time::{CoarseInstant, CoarseTimeProvider},
 };
 
 pub(crate) use crate::{

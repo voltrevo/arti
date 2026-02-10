@@ -51,6 +51,7 @@ testing = ["__is_experimental"]
 __is_experimental = []
 
 [dependencies]
+tor-time = { path = "../tor-time", version = "0.39.0" }
 amplify = { version = "4", default-features = false, features = ["derive"] }
 arrayvec = "0.7.3"
 cfg-if = "1.0.0"

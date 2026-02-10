@@ -524,7 +524,7 @@ mod test {
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
-    use std::time::SystemTime;
+    use tor_time::SystemTime;
 
     use crate::database::{self, DocumentId};
 

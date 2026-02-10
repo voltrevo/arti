@@ -17,7 +17,7 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use tor_time::Instant;
 use tor_proto::ClockSkew;
 
 use tor_basic_utils::skip_fmt;

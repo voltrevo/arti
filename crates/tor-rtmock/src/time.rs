@@ -20,15 +20,17 @@ use std::{
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
-    time::{Duration, Instant, SystemTime},
+    time::Duration,
 };
+use tor_time::{Instant, SystemTime};
 
 use futures::Future;
 use tracing::trace;
 
 use std::collections::HashSet;
 use std::fmt::Formatter;
-use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, SleepProvider};
+use tor_rtcompat::SleepProvider;
+use tor_time::{CoarseInstant, CoarseTimeProvider};
 
 use crate::time_core::MockTimeCore;
 
@@ -203,7 +205,7 @@ pub struct Sleeping {
 
 impl Default for MockSleepProvider {
     fn default() -> Self {
-        let wallclock = humantime::parse_rfc3339("2023-07-05T11:25:56Z").expect("parse");
+        let wallclock = tor_time::parse_rfc3339("2023-07-05T11:25:56Z").expect("parse");
         MockSleepProvider::new(wallclock)
     }
 }

@@ -20,7 +20,8 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::iter::FromIterator;
 use std::pin::Pin;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use tor_time::{fmt_http_date, SystemTime};
 
 use itertools::Itertools;
 
@@ -266,7 +267,7 @@ impl sealed::RequestableInner for ConsensusRequest {
         if let Some(when) = self.last_consensus_date() {
             req = req.header(
                 http::header::IF_MODIFIED_SINCE,
-                httpdate::fmt_http_date(when),
+                fmt_http_date(when),
             );
         }
 
@@ -814,7 +815,7 @@ mod test {
         let d3 = SystemTime::now();
         let mut req = ConsensusRequest::default();
 
-        let when = httpdate::fmt_http_date(d3);
+        let when = fmt_http_date(d3);
 
         req.push_authority_id(d1);
         req.push_old_consensus_digest(*d2);
