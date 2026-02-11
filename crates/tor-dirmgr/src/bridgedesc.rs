@@ -9,7 +9,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
-use async_trait::async_trait;
+use tor_async_compat::async_trait;
 use derive_more::{Deref, DerefMut};
 use educe::Educe;
 use futures::FutureExt;

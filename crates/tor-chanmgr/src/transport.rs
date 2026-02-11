@@ -1,6 +1,6 @@
 //! Code to define the notion of a "Transport" and implement a default transport.
 
-use async_trait::async_trait;
+use tor_async_compat::async_trait;
 use futures::{AsyncRead, AsyncWrite};
 use tor_linkspec::OwnedChanTarget;
 

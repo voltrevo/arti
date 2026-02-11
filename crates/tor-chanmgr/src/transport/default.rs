@@ -3,7 +3,7 @@
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use async_trait::async_trait;
+use tor_async_compat::async_trait;
 use futures::{FutureExt, StreamExt, TryFutureExt, stream::FuturesUnordered};
 use safelog::sensitive as sv;
 use tor_error::bad_api_usage;

@@ -5,7 +5,7 @@ use crate::mgr::{self, MockablePlan};
 use crate::path::OwnedPath;
 use crate::usage::{SupportedTunnelUsage, TargetTunnelUsage};
 use crate::{DirInfo, Error, PathConfig, Result, timeouts};
-use async_trait::async_trait;
+use tor_async_compat::async_trait;
 use educe::Educe;
 use futures::future::OptionFuture;
 use std::sync::Arc;

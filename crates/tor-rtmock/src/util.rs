@@ -184,7 +184,7 @@ define_derive_deftly! {
 // For macro visibility reasons, this must come *lexically after* the macro,
 // to allow it to refer to the macro in the doc comment.
 pub(crate) mod impl_runtime_prelude {
-    pub(crate) use async_trait::async_trait;
+    pub(crate) use tor_async_compat::async_trait;
     pub(crate) use derive_deftly::Deftly;
     pub(crate) use futures::Future;
     pub(crate) use futures::task::{FutureObj, Spawn, SpawnError};

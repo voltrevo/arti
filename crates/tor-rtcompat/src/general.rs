@@ -1,6 +1,6 @@
 //! Support for streams and listeners on `general::SocketAddr`.
 
-use async_trait::async_trait;
+use tor_async_compat::async_trait;
 use futures::{AsyncRead, AsyncWrite, StreamExt as _, stream};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
 use std::net;
