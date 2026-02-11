@@ -563,7 +563,6 @@ async fn download_attempt<R: Runtime>(
             dirmgr.note_errors(attempt_id, n_errors);
         }
         dirmgr.update_progress(attempt_id, state.bootstrap_progress());
-        return Ok(());
     }
 
     // In production, process responses incrementally as they arrive
