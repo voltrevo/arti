@@ -4,7 +4,7 @@
 - [ ] merge tor-time
 - [ ] code review tor-async-compat
 - [ ] merge tor-async-compat
-- [ ] fix pre-existing tests (`cargo test`)
+- [x] fix pre-existing tests (`cargo test`)
 - [ ] automated testing
 - [ ] check/clean ai code
 - [ ] improve js storage handling (remove inmemory.rs?)

@@ -62,6 +62,9 @@ impl DownloadScheduleBuilder {
         let mut bld = self.clone();
         bld.attempts.get_or_insert(3);
         bld.initial_delay.get_or_insert_with(|| Duration::new(1, 0));
+        #[cfg(not(target_arch = "wasm32"))]
+        bld.parallelism.get_or_insert(4);
+        #[cfg(target_arch = "wasm32")]
         bld.parallelism.get_or_insert(2);
         bld.build()
     }
