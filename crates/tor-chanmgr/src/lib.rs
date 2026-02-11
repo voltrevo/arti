@@ -139,7 +139,7 @@ pub struct ChanMgr<R: Runtime> {
     bootstrap_status: event::ConnStatusEvents,
 
     /// The runtime. Needed to possibly spawn tasks.
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    #[cfg_attr(not(feature = "relay"), expect(dead_code))]
     runtime: R,
 }
 
