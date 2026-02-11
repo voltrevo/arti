@@ -2,6 +2,8 @@
 
 - [ ] code review tor-time
 - [ ] merge tor-time
+- [ ] code review tor-async-compat
+- [ ] merge tor-async-compat
 - [ ] fix pre-existing tests (`cargo test`)
 - [ ] automated testing
 - [ ] check/clean ai code
