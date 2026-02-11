@@ -269,8 +269,7 @@ mod test {
     use futures::FutureExt;
     use futures::StreamExt;
     use std::time::Duration;
-
-    use crate::Instant;
+    use tor_time::Instant;
 
     #[test]
     fn it_fires_immediately() {
