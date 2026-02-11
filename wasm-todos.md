@@ -7,6 +7,10 @@
 - [ ] check/clean ai code
 - [ ] improve js storage handling (remove inmemory.rs?)
 - [ ] make tor-js API same/similar to https://www.npmjs.com/package/tor-js
+  - agree on API
+  - websocket?
+  - isolated clients (share network caching)
+  - sockets
 - [ ] faster bootstrap (allow external source? fix timing bugs? both?)
 - [ ] fix microdesc stalling issue (when batch size or parallelism is higher)
 - [ ] try fix suspected timing bugs (downloads unblocked by ping loop) (related to faster bootstrap)
