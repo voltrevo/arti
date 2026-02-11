@@ -12,8 +12,7 @@ categories = ["network-programming", "cryptography"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 
 [features]
-default = ["mmap", "compression", "sqlite"]
-sqlite = ["dep:rusqlite", "dep:fslock"]
+default = ["mmap", "compression"]
 full = [
     "routerdesc",
     "bridge-client",
@@ -72,7 +71,6 @@ digest = "0.10.0"
 educe = "0.4.22"
 event-listener = "5"
 fs-mistrust = { path = "../fs-mistrust", version = "0.13.1" }
-fslock = { version = "0.2.0", optional = true }
 futures = "0.3.14"
 hex = "0.4"
 humantime = "2"
@@ -83,7 +81,6 @@ oneshot-fused-workaround = { path = "../oneshot-fused-workaround", version = "0.
 paste = "1.0.3"
 postage = { version = "0.5.0", default-features = false, features = ["futures-traits"] }
 rand = "0.9.1"
-rusqlite = { version = "0.38.0", features = ["time"], optional = true }
 safelog = { path = "../safelog", version = "0.7.0" }
 scopeguard = "1"
 serde = { version = "1.0.103", features = ["derive"] }
@@ -113,6 +110,10 @@ tor-protover = { path = "../tor-protover", version = "0.39.0", features = ["serd
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.39.0" }
 tor-time = { path = "../tor-time", version = "0.39.0" }
 tracing = "0.1.36"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+fslock = { version = "0.2.0" }
+rusqlite = { version = "0.38.0", features = ["time"] }
 
 [dev-dependencies]
 anyhow = "1.0.23"

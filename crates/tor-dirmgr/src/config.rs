@@ -97,9 +97,9 @@ impl DirMgrConfig {
     /// persistent SQLite-backed store. Otherwise, it creates an in-memory
     /// store that does not persist across restarts.
     pub(crate) fn open_store(&self, readonly: bool) -> Result<DynStore> {
-        #[cfg(feature = "sqlite")]
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            Ok(Box::new(
+            return Ok(Box::new(
                 crate::storage::SqliteStore::from_path_and_mistrust(
                     &self.cache_dir,
                     &self.cache_trust,
@@ -107,9 +107,9 @@ impl DirMgrConfig {
                 )?,
             ))
         }
-        #[cfg(not(feature = "sqlite"))]
+        #[cfg(target_arch = "wasm32")]
         {
-            Ok(Box::new(crate::storage::InMemoryStore::new(readonly)))
+            return Ok(Box::new(crate::storage::InMemoryStore::new(readonly)))
         }
     }
 

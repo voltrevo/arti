@@ -28,16 +28,16 @@ use std::str::Utf8Error;
 use tor_time::SystemTime;
 use time::Duration;
 
-#[cfg(feature = "sqlite")]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod sqlite;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod inmemory;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod custom;
 
-#[cfg(feature = "sqlite")]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use sqlite::SqliteStore;
-#[cfg(not(feature = "sqlite"))]
+#[cfg(target_arch = "wasm32")]
 pub(crate) use inmemory::InMemoryStore;
 
 #[cfg(target_arch = "wasm32")]

@@ -28,7 +28,7 @@ pub enum Error {
     #[error("Corrupt cache: {0}")]
     CacheCorruption(&'static str),
     /// rusqlite gave us an error.
-    #[cfg(feature = "sqlite")]
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("Error from sqlite database")]
     SqliteError(#[source] Arc<rusqlite::Error>),
     /// Error while creating a read-only store.
@@ -254,7 +254,7 @@ impl Error {
             | Error::BadJsonInCache(_)
             | Error::Bug(_) => false,
 
-            #[cfg(feature = "sqlite")]
+            #[cfg(not(target_arch = "wasm32"))]
             Error::SqliteError(_) => false,
 
             // For this one, we delegate.
@@ -326,7 +326,7 @@ impl Error {
             | Error::BadJsonInCache(_)
             | Error::ExternalDirProvider { .. } => BootstrapAction::Fatal,
 
-            #[cfg(feature = "sqlite")]
+            #[cfg(not(target_arch = "wasm32"))]
             Error::SqliteError(_) => BootstrapAction::Fatal,
 
             // These should actually be impossible during the bootstrap process.
@@ -335,7 +335,7 @@ impl Error {
     }
 }
 
-#[cfg(feature = "sqlite")]
+#[cfg(not(target_arch = "wasm32"))]
 impl From<rusqlite::Error> for Error {
     fn from(err: rusqlite::Error) -> Self {
         use ErrorKind as EK;
@@ -361,7 +361,7 @@ impl HasKind for Error {
             E::CacheCorruption(_) => EK::CacheCorrupted,
             E::CachePermissions(e) => e.cache_error_kind(),
             E::CacheAccess(e) => e.cache_error_kind(),
-            #[cfg(feature = "sqlite")]
+            #[cfg(not(target_arch = "wasm32"))]
             E::SqliteError(e) => sqlite_error_kind(e),
             E::ReadOnlyStorage(_) => EK::LocalResourceAlreadyInUse,
             E::UnrecognizedSchema { .. } => EK::CacheCorrupted,
@@ -397,7 +397,7 @@ impl HasKind for Error {
 }
 
 /// Convert a sqlite error code into a real ErrorKind.
-#[cfg(feature = "sqlite")]
+#[cfg(not(target_arch = "wasm32"))]
 fn sqlite_error_kind(e: &rusqlite::Error) -> ErrorKind {
     use ErrorKind as EK;
     use rusqlite::ErrorCode as RE;
