@@ -182,7 +182,12 @@ impl DocQuery {
         /// How many objects can be put in a single HTTP GET line?
         const N: usize = 500;
         /// DEBUG: Use smaller batch size for microdescs to isolate stall issue
-        const MICRODESC_N: usize = 20;
+        const MICRODESC_N: usize = {
+            #[cfg(target_arch = "wasm32")]
+            {20}
+            #[cfg(not(target_arch = "wasm32"))]
+            {500}
+        };
         match self {
             LatestConsensus { .. } => vec![self],
             AuthCert(mut v) => {
