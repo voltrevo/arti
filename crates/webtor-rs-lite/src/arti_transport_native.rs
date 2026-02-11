@@ -271,13 +271,3 @@ impl<R: Runtime> AbstractPtMgr for SnowflakePtMgr<R> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pt_mgr_creation() {
-        // Just verify the types compile - actual runtime test would need tokio
-    }
-}
