@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use futures::FutureExt as _;
 use futures::task::SpawnError;
 
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use educe::Educe;
 use either::Either::{self, *};
 use postage::stream::Stream as _;

@@ -5,7 +5,7 @@ use crate::mgr::state::{ChannelForTarget, PendingChannelHandle};
 use crate::util::defer::Defer;
 use crate::{ChanProvenance, ChannelConfig, ChannelUsage, Dormancy, Error, Result};
 
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use futures::future::Shared;
 use oneshot_fused_workaround as oneshot;
 use std::result::Result as StdResult;

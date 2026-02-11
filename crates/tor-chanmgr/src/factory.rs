@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::event::ChanMgrEventSender;
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use tor_error::{HasKind, HasRetryTime, internal};
 use tor_linkspec::{HasChanMethod, OwnedChanTarget, PtTransportName};
 use tor_proto::channel::Channel;

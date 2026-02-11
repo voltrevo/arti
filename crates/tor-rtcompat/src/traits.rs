@@ -1,5 +1,5 @@
 //! Declarations for traits that we need our runtimes to implement.
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use asynchronous_codec::Framed;
 use futures::future::{FutureExt, RemoteHandle};
 use futures::stream;

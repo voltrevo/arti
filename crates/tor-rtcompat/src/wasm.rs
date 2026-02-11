@@ -14,7 +14,7 @@ use crate::traits::{
 };
 use std::borrow::Cow;
 use tor_time::{CoarseInstant, CoarseTimeProvider, RealCoarseTimeProvider};
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use futures::task::{Spawn, SpawnError};
 use futures::{stream, AsyncRead, AsyncWrite, Future};
 use std::fmt::Debug;

@@ -7,7 +7,7 @@ use tor_rtcompat::{
 };
 
 use anyhow::anyhow;
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use futures::io::{AsyncRead, AsyncWrite};
 use pin_project::pin_project;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};

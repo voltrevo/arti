@@ -18,7 +18,7 @@ use tor_rtcompat::{
 };
 use tor_rtcompat::{UdpProvider, UdpSocket};
 
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use futures::FutureExt;
 use futures::channel::mpsc;
 use futures::io::{AsyncRead, AsyncWrite};

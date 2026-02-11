@@ -1,6 +1,6 @@
 [package]
-name = "tor-wasm-compat"
-version = "0.1.0"
+name = "tor-async-compat"
+version = "0.39.0"
 edition = "2024"
 rust-version = "1.86"
 license = "MIT OR Apache-2.0"

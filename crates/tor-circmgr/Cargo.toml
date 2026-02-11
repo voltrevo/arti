@@ -73,7 +73,7 @@ __is_experimental = []
 [dependencies]
 amplify = { version = "4", default-features = false, features = ["derive"] }
 async-trait = "0.1.54"
-tor-wasm-compat = { path = "../tor-wasm-compat" }
+tor-async-compat = { path = "../tor-async-compat", version = "0.39.0" }
 cfg-if = "1.0.0"
 derive-deftly = { version = "~1.6.0", features = ["full", "beta"] }
 derive_builder = { version = "0.11.2", package = "derive_builder_fork_arti" }

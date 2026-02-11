@@ -3,7 +3,7 @@
 use crate::path::{OwnedPath, TorPath};
 use crate::timeouts::{self, Action};
 use crate::{Error, Result};
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use futures::Future;
 use oneshot_fused_workaround as oneshot;
 use std::sync::{

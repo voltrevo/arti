@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use educe::Educe;
 use futures::{AsyncRead, AsyncWrite};
 use itertools::Itertools;

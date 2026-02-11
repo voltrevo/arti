@@ -77,7 +77,7 @@ use {
 };
 #[cfg(feature = "tor-channel-factory")]
 use {
-    tor_wasm_compat::async_trait,
+    tor_async_compat::async_trait,
     tor_chanmgr::{
         builder::ChanBuilder,
         factory::{AbstractPtError, ChannelFactory},

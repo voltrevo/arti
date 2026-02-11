@@ -34,7 +34,7 @@ use tor_linkspec::{HasRelayIds, IntoOwnedChanTarget, OwnedChanTarget, OwnedChanT
 use tor_llcrypto::pk::rsa::RsaIdentity;
 use tor_proto::channel::Channel;
 use tor_proto::memquota::ChannelAccount;
-use tor_wasm_compat::async_trait;
+use tor_async_compat::async_trait;
 use tracing::{debug, info, warn};
 
 use crate::snowflake::{SnowflakeBridge, SnowflakeConfig};

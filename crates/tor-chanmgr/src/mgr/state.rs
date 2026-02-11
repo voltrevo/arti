@@ -870,7 +870,7 @@ mod test {
 
     use super::*;
     use crate::factory::BootstrapReporter;
-    use tor_wasm_compat::async_trait;
+    use tor_async_compat::async_trait;
     use std::sync::{Arc, Mutex};
     use tor_llcrypto::pk::ed25519::Ed25519Identity;
     use tor_proto::channel::params::ChannelPaddingInstructionsUpdates;
