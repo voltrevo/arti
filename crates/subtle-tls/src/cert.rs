@@ -5,7 +5,7 @@
 
 use crate::crypto::get_subtle_crypto;
 use crate::error::{Result, TlsError};
-use crate::trust_store::TrustStore;
+use crate::trust_store::{TrustStore, get_trust_store};
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use tracing::{debug, info, trace, warn};
 use wasm_bindgen::prelude::*;
@@ -29,7 +29,9 @@ impl CertificateVerifier {
         let trust_store = if skip_verification {
             None
         } else {
-            TrustStore::new().ok()
+            // Use the global trust store so that extended roots (loaded after
+            // bootstrap) are visible to all subsequent TLS connections.
+            get_trust_store().ok()
         };
 
         Self {
@@ -240,34 +242,35 @@ impl CertificateVerifier {
             }
 
             // Check if the last cert was issued by a trusted root
-            if trust_store.is_issued_by_trusted_root(last_cert_der) {
+            if let Some(root_der) = trust_store.find_issuing_trusted_root(last_cert_der) {
+                // Parse the root certificate and cryptographically verify its signature
+                // on the last chain certificate (not just name matching)
+                let (_, root_cert) = X509Certificate::from_der(&root_der).map_err(|e| {
+                    TlsError::certificate(format!("Failed to parse trusted root: {}", e))
+                })?;
+
+                self.verify_signature(&last_cert, &root_cert).await?;
+
                 info!(
-                    "Certificate chain issued by trusted root (issuer: {})",
+                    "Certificate chain verified: issued by trusted root (issuer: {})",
                     last_cert.issuer()
                 );
-                // For intermediates, we should ideally verify the signature against the root
-                // but the root may not be in the chain. Accept if issuer matches.
                 return Ok(());
             }
 
-            // Not in trust store - warn but continue (for now)
-            // In strict mode, this should be an error
-            warn!(
-                "Certificate chain does not terminate at a trusted root. Last cert: {}",
-                last_cert.subject()
-            );
+            // Not in trust store and not issued by a trusted root -- reject
+            return Err(TlsError::certificate(format!(
+                "Certificate chain does not terminate at a trusted root. \
+                 Last cert subject: {}, issuer: {}",
+                last_cert.subject(),
+                last_cert.issuer()
+            )));
         } else {
-            // No trust store available
-            if last_cert.issuer() == last_cert.subject() {
-                // Self-signed - verify signature against itself
-                self.verify_signature(&last_cert, &last_cert).await?;
-                debug!("Self-signed certificate signature verified");
-            } else {
-                warn!("Certificate chain verification incomplete - no trust store");
-            }
+            // No trust store available but verification was requested -- reject
+            return Err(TlsError::certificate(
+                "Certificate verification required but no trust store is available",
+            ));
         }
-
-        Ok(())
     }
 
     /// Verify a certificate's signature using the issuer's public key

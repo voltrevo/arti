@@ -54,8 +54,16 @@ impl RecordCipher {
         nonce
     }
 
-    fn increment_sequence(&mut self) {
-        self.sequence = self.sequence.wrapping_add(1);
+    fn increment_sequence(&mut self) -> Result<()> {
+        // TLS 1.3 (RFC 8446 Section 5.3) requires terminating the connection
+        // if the sequence number would wrap past 2^64-1 to prevent nonce reuse.
+        if self.sequence == u64::MAX {
+            return Err(TlsError::record(
+                "Sequence number limit reached (2^64-1), connection must be terminated",
+            ));
+        }
+        self.sequence += 1;
+        Ok(())
     }
 }
 
@@ -169,7 +177,7 @@ impl RecordLayer {
                     aad
                 );
                 let plaintext = cipher.aead.decrypt(&nonce, aad, &body).await?;
-                cipher.increment_sequence();
+                cipher.increment_sequence()?;
 
                 // TLS 1.3: plaintext format is [content][content_type][zeros...]
                 // The content type is the last byte. We don't strip padding zeros because
@@ -238,7 +246,7 @@ impl RecordLayer {
             ];
 
             let ciphertext = cipher.aead.encrypt(&nonce, &aad, &plaintext).await?;
-            cipher.increment_sequence();
+            cipher.increment_sequence()?;
 
             (CONTENT_TYPE_APPLICATION_DATA, ciphertext)
         } else {
@@ -325,7 +333,7 @@ impl RecordLayer {
 
             // Decrypt using synchronous API
             let plaintext = cipher.aead.decrypt_sync(&nonce, header, body)?;
-            cipher.increment_sequence();
+            cipher.increment_sequence()?;
 
             // TLS 1.3 inner plaintext: last byte is content type
             if plaintext.is_empty() {
@@ -359,22 +367,34 @@ impl RecordLayer {
 
     /// Get the read cipher's key handle and current nonce (for async decrypt)
     /// Also increments the sequence number, since the caller will handle decryption.
-    pub fn read_cipher_start_async(&mut self) -> Option<(CipherKeyHandle, Vec<u8>)> {
-        let cipher = self.read_cipher.as_mut()?;
-        let key_handle = cipher.aead.key_handle()?;
+    pub fn read_cipher_start_async(&mut self) -> Result<Option<(CipherKeyHandle, Vec<u8>)>> {
+        let cipher = match self.read_cipher.as_mut() {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        let key_handle = match cipher.aead.key_handle() {
+            Some(h) => h,
+            None => return Ok(None),
+        };
         let nonce = cipher.compute_nonce();
-        cipher.increment_sequence();
-        Some((key_handle, nonce))
+        cipher.increment_sequence()?;
+        Ok(Some((key_handle, nonce)))
     }
 
     /// Get the write cipher's key handle and current nonce (for async encrypt)
     /// Also increments the sequence number, since the caller will handle encryption.
-    pub fn write_cipher_start_async(&mut self) -> Option<(CipherKeyHandle, Vec<u8>)> {
-        let cipher = self.write_cipher.as_mut()?;
-        let key_handle = cipher.aead.key_handle()?;
+    pub fn write_cipher_start_async(&mut self) -> Result<Option<(CipherKeyHandle, Vec<u8>)>> {
+        let cipher = match self.write_cipher.as_mut() {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        let key_handle = match cipher.aead.key_handle() {
+            Some(h) => h,
+            None => return Ok(None),
+        };
         let nonce = cipher.compute_nonce();
-        cipher.increment_sequence();
-        Some((key_handle, nonce))
+        cipher.increment_sequence()?;
+        Ok(Some((key_handle, nonce)))
     }
 
     /// Encrypt a record synchronously (for use in poll_write)
@@ -398,7 +418,7 @@ impl RecordLayer {
             ];
 
             let ciphertext = cipher.aead.encrypt_sync(&nonce, &header, &plaintext)?;
-            cipher.increment_sequence();
+            cipher.increment_sequence()?;
 
             // Build full record
             let mut record = Vec::with_capacity(5 + ciphertext.len());

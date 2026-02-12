@@ -380,23 +380,12 @@ where
             return Err(TlsError::handshake("Missing EncryptedExtensions"));
         }
 
-        // Validate certificates if not skipping verification
-        if !config.skip_verification {
-            if !got_certificate {
-                return Err(TlsError::handshake("Missing Certificate message"));
-            }
-            if !got_certificate_verify {
-                return Err(TlsError::handshake("Missing CertificateVerify message"));
-            }
-
-            // Verify certificate chain
-            let verifier = CertificateVerifier::new(&handshake.server_name, false);
-            verifier.verify_chain(&cert_chain).await?;
-
-            // Verify CertificateVerify signature
-            // We need the server's public key from the leaf certificate
+        // CertificateVerify: Always verify when the server sent a Certificate.
+        // This proves the server possesses the private key for the certificate,
+        // regardless of whether we trust the certificate chain (defense-in-depth).
+        // In TLS 1.3, Certificate and CertificateVerify are always sent together.
+        if got_certificate && got_certificate_verify {
             if let Some(leaf_der) = cert_chain.first() {
-                // Extract SubjectPublicKeyInfo from the certificate
                 let server_public_key = extract_public_key_spki(leaf_der)?;
 
                 crate::cert::verify_certificate_verify(
@@ -406,7 +395,24 @@ where
                     &server_public_key,
                 )
                 .await?;
+                debug!("CertificateVerify signature verified (key possession confirmed)");
             }
+        } else if got_certificate && !got_certificate_verify {
+            // In TLS 1.3, if a Certificate is sent, CertificateVerify MUST follow
+            return Err(TlsError::handshake(
+                "Server sent Certificate but no CertificateVerify",
+            ));
+        }
+
+        // Certificate chain validation: Only when skip_verification is false
+        if !config.skip_verification {
+            if !got_certificate {
+                return Err(TlsError::handshake("Missing Certificate message"));
+            }
+
+            // Verify certificate chain against trust store (WebPKI validation)
+            let verifier = CertificateVerifier::new(&handshake.server_name, false);
+            verifier.verify_chain(&cert_chain).await?;
         }
 
         debug!("Encrypted handshake phase completed");
@@ -671,10 +677,24 @@ where
                             }
                         } else {
                             // AES-GCM: start async decrypt
-                            let (key_handle, nonce) = self
+                            let (key_handle, nonce) = match self
                                 .record_layer
                                 .read_cipher_start_async()
-                                .expect("read cipher must exist");
+                            {
+                                Ok(Some(v)) => v,
+                                Ok(None) => {
+                                    return Poll::Ready(Err(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        "Read cipher not available for async decrypt",
+                                    )));
+                                }
+                                Err(e) => {
+                                    return Poll::Ready(Err(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        format!("Sequence number overflow: {}", e),
+                                    )));
+                                }
+                            };
                             let body_owned = body.to_vec();
                             let header_owned = header;
 
@@ -868,10 +888,24 @@ where
             }
         } else {
             // AES-GCM: start async encrypt
-            let (key_handle, nonce) = self
+            let (key_handle, nonce) = match self
                 .record_layer
                 .write_cipher_start_async()
-                .expect("write cipher must exist");
+            {
+                Ok(Some(v)) => v,
+                Ok(None) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "Write cipher not available for async encrypt",
+                    )));
+                }
+                Err(e) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Sequence number overflow: {}", e),
+                    )));
+                }
+            };
 
             // TLS 1.3: append content type to plaintext before encryption
             let mut plaintext = buf.to_vec();

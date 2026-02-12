@@ -6146,6 +6146,7 @@ dependencies = [
  "js-sys",
  "rand 0.8.5",
  "sha2",
+ "subtle",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

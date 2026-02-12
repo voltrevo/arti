@@ -40,6 +40,7 @@ pub mod trust_store;
 
 pub use error::{Result, TlsError};
 pub use stream::TlsStream;
+pub use trust_store::load_global_ca_bundle;
 
 // Re-export the wrapper for version-aware TLS
 // Note: TlsStreamWrapper is defined below after TlsConnector

@@ -118,11 +118,19 @@ impl RootCertificate {
 }
 
 /// Trust store with embedded and lazy-loaded certificates
+///
+/// Cheap to clone (Rc pointer bump). All clones share the same data,
+/// including dynamically-loaded extended roots.
+#[derive(Clone)]
 pub struct TrustStore {
+    inner: Rc<TrustStoreInner>,
+}
+
+struct TrustStoreInner {
     /// Embedded root certificates (Let's Encrypt for Tor infrastructure)
     embedded_roots: Vec<RootCertificate>,
     /// Lazy-loaded full CA bundle (fetched via Tor)
-    extended_roots: Rc<RefCell<Option<Vec<RootCertificate>>>>,
+    extended_roots: RefCell<Option<Vec<RootCertificate>>>,
     /// URL to fetch the full CA bundle from
     ca_bundle_url: String,
 }
@@ -143,26 +151,34 @@ impl TrustStore {
         );
 
         Ok(Self {
-            embedded_roots,
-            extended_roots: Rc::new(RefCell::new(None)),
-            ca_bundle_url: "https://curl.se/ca/cacert.pem".to_string(),
+            inner: Rc::new(TrustStoreInner {
+                embedded_roots,
+                extended_roots: RefCell::new(None),
+                ca_bundle_url: "https://curl.se/ca/cacert.pem".to_string(),
+            }),
         })
     }
 
     /// Create a trust store with a custom CA bundle URL
-    pub fn with_ca_bundle_url(mut self, url: &str) -> Self {
-        self.ca_bundle_url = url.to_string();
-        self
+    pub fn with_ca_bundle_url(self, url: &str) -> Self {
+        // Need to rebuild inner since Rc is shared
+        Self {
+            inner: Rc::new(TrustStoreInner {
+                embedded_roots: self.inner.embedded_roots.clone(),
+                extended_roots: RefCell::new(self.inner.extended_roots.borrow().clone()),
+                ca_bundle_url: url.to_string(),
+            }),
+        }
     }
 
     /// Check if we have the extended CA bundle loaded
     pub fn has_extended_roots(&self) -> bool {
-        self.extended_roots.borrow().is_some()
+        self.inner.extended_roots.borrow().is_some()
     }
 
     /// Get all available root certificates (embedded only for now)
     pub fn get_roots(&self) -> Vec<&RootCertificate> {
-        self.embedded_roots.iter().collect()
+        self.inner.embedded_roots.iter().collect()
     }
 
     /// Find a root certificate that matches the given issuer
@@ -175,14 +191,14 @@ impl TrustStore {
             let issuer_subject = issuer_cert.subject().to_string();
 
             // Check embedded roots first
-            for root in &self.embedded_roots {
+            for root in &self.inner.embedded_roots {
                 if root.subject == issuer_subject {
                     return Some(root.der.clone());
                 }
             }
 
             // Check extended roots
-            if let Some(ref extended) = *self.extended_roots.borrow() {
+            if let Some(ref extended) = *self.inner.extended_roots.borrow() {
                 for root in extended {
                     if root.subject == issuer_subject {
                         return Some(root.der.clone());
@@ -201,7 +217,7 @@ impl TrustStore {
         if let Ok((_, issuer_cert)) = X509Certificate::from_der(issuer_der) {
             let issuer_subject = issuer_cert.subject().to_string();
 
-            for root in &self.embedded_roots {
+            for root in &self.inner.embedded_roots {
                 if root.subject == issuer_subject {
                     return Some(root);
                 }
@@ -214,14 +230,14 @@ impl TrustStore {
     /// Check if a certificate is a trusted root
     pub fn is_trusted_root(&self, cert_der: &[u8]) -> bool {
         // Check embedded roots
-        for root in &self.embedded_roots {
+        for root in &self.inner.embedded_roots {
             if root.der == cert_der {
                 return true;
             }
         }
 
         // Check extended roots
-        if let Some(ref extended) = *self.extended_roots.borrow() {
+        if let Some(ref extended) = *self.inner.extended_roots.borrow() {
             for root in extended {
                 if root.der == cert_der {
                     return true;
@@ -232,29 +248,31 @@ impl TrustStore {
         false
     }
 
-    /// Check if a certificate was issued by a trusted root
-    pub fn is_issued_by_trusted_root(&self, cert_der: &[u8]) -> bool {
-        if let Ok((_, cert)) = X509Certificate::from_der(cert_der) {
-            let issuer = cert.issuer().to_string();
+    /// Find a trusted root that issued the given certificate (by issuer name match).
+    ///
+    /// Returns the DER-encoded root certificate if found. The caller MUST verify
+    /// the root's cryptographic signature on the certificate to prevent forgery.
+    pub fn find_issuing_trusted_root(&self, cert_der: &[u8]) -> Option<Vec<u8>> {
+        let (_, cert) = X509Certificate::from_der(cert_der).ok()?;
+        let issuer = cert.issuer().to_string();
 
-            // Check embedded roots
-            for root in &self.embedded_roots {
-                if root.subject == issuer {
-                    return true;
-                }
+        // Check embedded roots
+        for root in &self.inner.embedded_roots {
+            if root.subject == issuer {
+                return Some(root.der.clone());
             }
+        }
 
-            // Check extended roots
-            if let Some(ref extended) = *self.extended_roots.borrow() {
-                for root in extended {
-                    if root.subject == issuer {
-                        return true;
-                    }
+        // Check extended roots
+        if let Some(ref extended) = *self.inner.extended_roots.borrow() {
+            for root in extended {
+                if root.subject == issuer {
+                    return Some(root.der.clone());
                 }
             }
         }
 
-        false
+        None
     }
 
     /// Load the extended CA bundle from a PEM string
@@ -280,7 +298,7 @@ impl TrustStore {
         }
 
         let count = roots.len();
-        *self.extended_roots.borrow_mut() = Some(roots);
+        *self.inner.extended_roots.borrow_mut() = Some(roots);
 
         info!("Loaded {} extended root CAs", count);
         Ok(count)
@@ -288,7 +306,7 @@ impl TrustStore {
 
     /// Get the URL for fetching the full CA bundle
     pub fn ca_bundle_url(&self) -> &str {
-        &self.ca_bundle_url
+        &self.inner.ca_bundle_url
     }
 }
 
@@ -298,14 +316,39 @@ impl Default for TrustStore {
     }
 }
 
-// Global trust store instance
+// Global trust store instance (WASM is single-threaded, so thread_local is fine)
 thread_local! {
     static TRUST_STORE: RefCell<Option<TrustStore>> = const { RefCell::new(None) };
 }
 
-/// Get or initialize the global trust store
+/// Get or initialize the global trust store.
+///
+/// Returns a clone that shares the same extended_roots storage (via Rc).
+/// Loading extended roots on any clone makes them visible to all clones
+/// and to all future callers of this function.
 pub fn get_trust_store() -> Result<TrustStore> {
-    TrustStore::new()
+    TRUST_STORE.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if let Some(ref store) = *slot {
+            Ok(store.clone())
+        } else {
+            let store = TrustStore::new()?;
+            let cloned = store.clone();
+            *slot = Some(store);
+            Ok(cloned)
+        }
+    })
+}
+
+/// Load a CA bundle into the global trust store.
+///
+/// The PEM bundle is parsed and the roots are made available to all
+/// subsequent TLS connections that use certificate verification.
+/// This is typically called after bootstrapping Tor, using the embedded
+/// roots (Let's Encrypt) to fetch the full Mozilla CA bundle via Tor.
+pub fn load_global_ca_bundle(pem_bundle: &str) -> Result<usize> {
+    let store = get_trust_store()?;
+    store.load_extended_roots(pem_bundle)
 }
 
 /// Embedded root certificate count (for bundle size estimation)
@@ -321,7 +364,7 @@ mod tests {
     #[portable_test]
     fn test_parse_embedded_roots() {
         let store = TrustStore::new().unwrap();
-        assert_eq!(store.embedded_roots.len(), 3);
+        assert_eq!(store.inner.embedded_roots.len(), 3);
     }
 
     #[portable_test]

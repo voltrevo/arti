@@ -10,6 +10,7 @@
 
 use crate::crypto::{self, EcdhKeyPair, Hkdf, X25519KeyPair, get_subtle_crypto};
 use crate::error::{Result, TlsError};
+use subtle::ConstantTimeEq;
 use tracing::{debug, trace};
 
 // TLS 1.3 constants
@@ -571,7 +572,12 @@ impl HandshakeState {
     pub async fn verify_server_finished(&self, received_verify_data: &[u8]) -> Result<()> {
         let expected = self.compute_finished(false).await?;
 
-        if received_verify_data != expected {
+        // Use constant-time comparison to prevent timing side-channel attacks.
+        // The length check is not constant-time, but the length is always the
+        // hash output size (32 bytes for SHA-256) and is not secret.
+        if received_verify_data.len() != expected.len()
+            || received_verify_data.ct_eq(&expected).unwrap_u8() != 1
+        {
             return Err(TlsError::handshake("Server Finished verification failed"));
         }
 
