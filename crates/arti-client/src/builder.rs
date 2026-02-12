@@ -78,17 +78,17 @@ pub struct TorClientBuilder<R: Runtime> {
     /// Only available when `arti-client` is built with the `dirfilter` and `experimental-api` features.
     #[cfg(feature = "dirfilter")]
     dirfilter: tor_dirmgr::filter::FilterConfig,
-    /// Custom state manager.
+    /// State manager override.
     ///
     /// When set, this will be used instead of the default filesystem storage.
     /// On WASM, this is **required** since there is no filesystem.
-    custom_statemgr: Option<AnyStateMgr>,
-    /// Custom directory store.
+    statemgr: Option<AnyStateMgr>,
+    /// Directory store override.
     ///
     /// When set, this will be used instead of the default SQLite storage
     /// for directory cache (consensus, microdescriptors, authcerts).
     /// On WASM, this is **required** since SQLite is unavailable.
-    custom_dirstore: Option<BoxedDirStore>,
+    dirstore: Option<BoxedDirStore>,
 }
 
 /// Longest allowable duration to wait for local resources to be available
@@ -113,8 +113,8 @@ impl<R: Runtime> TorClientBuilder<R> {
             local_resource_timeout: None,
             #[cfg(feature = "dirfilter")]
             dirfilter: None,
-            custom_statemgr: None,
-            custom_dirstore: None,
+            statemgr: None,
+            dirstore: None,
         }
     }
 
@@ -180,22 +180,22 @@ impl<R: Runtime> TorClientBuilder<R> {
         self
     }
 
-    /// Set a custom state manager for persistent storage.
+    /// Set the state manager for persistent storage.
     ///
     /// When set, this will be used instead of the default filesystem storage.
     /// On WASM, this is **required** since there is no filesystem backend.
-    pub fn custom_state_mgr(mut self, statemgr: AnyStateMgr) -> Self {
-        self.custom_statemgr = Some(statemgr);
+    pub fn state_mgr(mut self, statemgr: AnyStateMgr) -> Self {
+        self.statemgr = Some(statemgr);
         self
     }
 
-    /// Set a custom directory store for directory cache.
+    /// Set the directory store for directory cache.
     ///
     /// When set, this will be used instead of the default SQLite storage
     /// for the directory cache (consensus, microdescriptors, authcerts).
     /// On WASM, this is **required** since SQLite is unavailable.
-    pub fn custom_dir_store(mut self, dirstore: BoxedDirStore) -> Self {
-        self.custom_dirstore = Some(dirstore);
+    pub fn dir_store(mut self, dirstore: BoxedDirStore) -> Self {
+        self.dirstore = Some(dirstore);
         self
     }
 
@@ -262,6 +262,26 @@ impl<R: Runtime> TorClientBuilder<R> {
         }
     }
 
+    /// Resolve the state manager: use the override if set, otherwise construct from config.
+    fn resolve_statemgr(&self) -> Result<AnyStateMgr> {
+        match self.statemgr.clone() {
+            Some(mgr) => Ok(mgr),
+            None => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let (state_dir, mistrust) = self.config.state_dir()
+                        .map_err(|e| crate::Error::from(e))?;
+                    Ok(AnyStateMgr::from_path_and_mistrust(&state_dir, mistrust)
+                        .map_err(|e| crate::Error::from(ErrorDetail::StateMgrSetup(e)))?)
+                }
+                #[cfg(target_arch = "wasm32")]
+                Err(tor_error::bad_api_usage!(
+                    "On WASM, a state manager must be provided via TorClientBuilder::state_mgr()"
+                ).into())
+            }
+        }
+    }
+
     /// Helper for create_bootstrapped and create_bootstrapped_async.
     ///
     /// Does not retry on `LocalResourceAlreadyInUse`; instead, returns a time that we should wait,
@@ -276,6 +296,11 @@ impl<R: Runtime> TorClientBuilder<R> {
     where
         F: FnOnce() -> Instant,
     {
+        let statemgr = match self.resolve_statemgr() {
+            Ok(mgr) => mgr,
+            Err(e) => return Ok(Err(e)),
+        };
+
         #[allow(unused_mut)]
         let mut dirmgr_extensions = tor_dirmgr::config::DirMgrExtensions::default();
         #[cfg(feature = "dirfilter")]
@@ -283,8 +308,7 @@ impl<R: Runtime> TorClientBuilder<R> {
             dirmgr_extensions.filter.clone_from(&self.dirfilter);
         }
 
-        let custom_statemgr = self.custom_statemgr.clone();
-        let custom_dirstore = self.custom_dirstore.clone();
+        let dirstore = self.dirstore.clone();
 
         let result: Result<TorClient<R>> = TorClient::create_inner(
             self.runtime.clone(),
@@ -292,8 +316,8 @@ impl<R: Runtime> TorClientBuilder<R> {
             self.bootstrap_behavior,
             self.dirmgr_builder.as_ref(),
             dirmgr_extensions,
-            custom_statemgr,
-            custom_dirstore,
+            statemgr,
+            dirstore,
         )
         .map_err(ErrorDetail::into);
 

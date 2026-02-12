@@ -368,8 +368,8 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
         let any_statemgr = tor_persist::AnyStateMgr::from_custom(js_statemgr);
         let boxed_dirstore = tor_dirmgr::BoxedDirStore::new(js_dirstore);
         builder = builder
-            .custom_state_mgr(any_statemgr)
-            .custom_dir_store(boxed_dirstore);
+            .state_mgr(any_statemgr)
+            .dir_store(boxed_dirstore);
         info!("Custom storage configured (state + directory cache)");
     } else {
         info!("Using default in-memory storage");

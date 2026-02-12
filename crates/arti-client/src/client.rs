@@ -880,8 +880,8 @@ impl<R: Runtime> TorClient<R> {
         autobootstrap: BootstrapBehavior,
         dirmgr_builder: &dyn crate::builder::DirProviderBuilder<R>,
         dirmgr_extensions: tor_dirmgr::config::DirMgrExtensions,
-        custom_statemgr: Option<AnyStateMgr>,
-        custom_dirstore: Option<tor_dirmgr::BoxedDirStore>,
+        statemgr: AnyStateMgr,
+        dirstore: Option<tor_dirmgr::BoxedDirStore>,
     ) -> StdResult<Self, ErrorDetail> {
         if crate::util::running_as_setuid() {
             return Err(tor_error::bad_api_usage!(
@@ -904,22 +904,6 @@ impl<R: Runtime> TorClient<R> {
             let mut c: tor_dirmgr::DirMgrConfig = config.dir_mgr_config()?;
             c.extensions = dirmgr_extensions;
             c
-        };
-        let statemgr: AnyStateMgr = match custom_statemgr {
-            Some(custom) => custom,
-            None => {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    AnyStateMgr::from_path_and_mistrust(&state_dir, mistrust)
-                        .map_err(ErrorDetail::StateMgrSetup)?
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    return Err(tor_error::bad_api_usage!(
-                        "On WASM, a custom state manager must be provided via TorClientBuilder::custom_state_mgr()"
-                    ).into());
-                }
-            }
         };
         // Try to take state ownership early, so we'll know if we have it.
         // Note that this `try_lock()` may return `Ok` even if we can't acquire the lock.
@@ -973,7 +957,7 @@ impl<R: Runtime> TorClient<R> {
 
         let timeout_cfg = config.stream_timeouts.clone();
 
-        let dirmgr_store = match custom_dirstore {
+        let dirmgr_store = match dirstore {
             Some(store) => DirMgrStore::from_custom_store(store),
             None => {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -984,7 +968,7 @@ impl<R: Runtime> TorClient<R> {
                 #[cfg(target_arch = "wasm32")]
                 {
                     return Err(tor_error::bad_api_usage!(
-                        "On WASM, a custom directory store must be provided via TorClientBuilder::custom_dir_store()"
+                        "On WASM, a directory store must be provided via TorClientBuilder::dir_store()"
                     ).into());
                 }
             }
