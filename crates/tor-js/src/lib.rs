@@ -380,6 +380,14 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
         .map_err(|e| JsTorError::bootstrap(format!("Bootstrap failed: {}", e)).into_js_value())?;
     info!("Bootstrap complete!");
 
+    // 6. Fetch the full Mozilla CA bundle through Tor.
+    // The embedded roots (Let's Encrypt) are sufficient for curl.se,
+    // and the full bundle enables HTTPS to arbitrary sites (Google, etc.)
+    if let Err(e) = fetch_ca_bundle(&tor_client).await {
+        // Non-fatal: embedded roots still work for Let's Encrypt-signed sites
+        tracing::warn!("Failed to fetch CA bundle: {}. Only embedded roots available.", e);
+    }
+
     Ok(TorClient {
         inner: Some(Arc::new(tor_client)),
     })
@@ -397,6 +405,74 @@ struct FetchInit {
     #[serde(skip)]
     body: Option<Vec<u8>>,
     // TODO: support AbortSignal-style cancellation via a `signal` option
+}
+
+/// Fetch the Mozilla CA bundle through Tor and load it into the global trust store.
+///
+/// Uses the embedded roots (Let's Encrypt) to TLS-connect to curl.se, which hosts
+/// the Mozilla-derived CA bundle. Once loaded, all subsequent TLS connections can
+/// verify certificates from any CA in the bundle.
+async fn fetch_ca_bundle(client: &ArtiTorClient<WasmRuntime>) -> Result<(), String> {
+    use subtle_tls::{TlsConfig, TlsConnector};
+
+    let ca_url = "https://curl.se/ca/cacert.pem";
+    let host = "curl.se";
+    let port = 443u16;
+
+    info!("Fetching Mozilla CA bundle from {} via Tor...", ca_url);
+
+    let stream = client
+        .connect((host, port))
+        .await
+        .map_err(|e| format!("connect to {}: {}", host, e))?;
+
+    let config = TlsConfig {
+        skip_verification: false,
+        alpn_protocols: vec!["http/1.1".to_string()],
+        ..Default::default()
+    };
+    let connector = TlsConnector::with_config(config);
+    let mut tls_stream = connector
+        .connect(stream, host)
+        .await
+        .map_err(|e| format!("TLS to {}: {}", host, e))?;
+
+    let request = format!(
+        "GET /ca/cacert.pem HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        host
+    );
+    use futures::io::{AsyncReadExt, AsyncWriteExt};
+    tls_stream
+        .write_all(request.as_bytes())
+        .await
+        .map_err(|e| format!("write: {}", e))?;
+
+    let mut response = Vec::new();
+    tls_stream
+        .read_to_end(&mut response)
+        .await
+        .map_err(|e| format!("read: {}", e))?;
+
+    // Parse HTTP response: find the body after \r\n\r\n
+    let response_str =
+        String::from_utf8(response).map_err(|e| format!("response not UTF-8: {}", e))?;
+    let body_start = response_str
+        .find("\r\n\r\n")
+        .ok_or_else(|| "no HTTP body delimiter found".to_string())?;
+    let pem_body = &response_str[body_start + 4..];
+
+    if !pem_body.contains("-----BEGIN CERTIFICATE-----") {
+        return Err(format!(
+            "response does not contain PEM certificates (first 100 bytes: {:?})",
+            &pem_body[..pem_body.len().min(100)]
+        ));
+    }
+
+    let count = subtle_tls::load_global_ca_bundle(pem_body)
+        .map_err(|e| format!("load CA bundle: {}", e))?;
+    info!("Loaded {} CA roots from Mozilla bundle", count);
+
+    Ok(())
 }
 
 /// Perform a fetch request
