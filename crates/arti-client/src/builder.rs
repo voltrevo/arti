@@ -199,6 +199,20 @@ impl<R: Runtime> TorClientBuilder<R> {
         self
     }
 
+    /// Set a unified storage backend for both state and directory cache.
+    ///
+    /// This is a convenience method that creates both a state manager and a
+    /// directory store from a single [`KeyValueStore`](crate::KeyValueStore)
+    /// implementation. This is equivalent to calling both
+    /// [`state_mgr()`](Self::state_mgr) and [`dir_store()`](Self::dir_store)
+    /// separately, but requires implementing only one trait.
+    pub fn storage<S: crate::storage::KeyValueStore + 'static>(mut self, store: S) -> Self {
+        let (statemgr, dirstore) = crate::storage::split_storage(store);
+        self.statemgr = Some(statemgr);
+        self.dirstore = Some(dirstore);
+        self
+    }
+
     /// Create a `TorClient` from this builder, without automatically launching
     /// the bootstrap process.
     ///
@@ -275,9 +289,9 @@ impl<R: Runtime> TorClientBuilder<R> {
                         .map_err(|e| crate::Error::from(ErrorDetail::StateMgrSetup(e)))?)
                 }
                 #[cfg(target_arch = "wasm32")]
-                Err(tor_error::bad_api_usage!(
+                Err(ErrorDetail::Bug(tor_error::bad_api_usage!(
                     "On WASM, a state manager must be provided via TorClientBuilder::state_mgr()"
-                ).into())
+                )).into())
             }
         }
     }

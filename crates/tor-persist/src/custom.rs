@@ -6,6 +6,7 @@
 
 use crate::err::{Action, Resource};
 use crate::{Error, ErrorSource, LockStatus, Result, StateMgr};
+#[cfg(not(target_arch = "wasm32"))]
 use futures::future::Either;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -42,7 +43,7 @@ use std::path::Path;
 ///     }
 ///
 ///     // ... implement other methods
-///     # fn can_store(&self) -> bool { true }
+///     # fn is_locked(&self) -> tor_persist::Result<bool> { Ok(true) }
 ///     # fn try_lock(&self) -> tor_persist::Result<LockStatus> { Ok(LockStatus::AlreadyHeld) }
 ///     # fn unlock(&self) -> tor_persist::Result<()> { Ok(()) }
 /// }
@@ -56,8 +57,14 @@ pub trait StringStore: Send + Sync {
     /// Store a JSON string value to storage.
     fn store_str(&self, key: &str, value: &str) -> Result<()>;
 
-    /// Return true if this storage is writable (lock is held).
-    fn can_store(&self) -> bool;
+    /// Return true if this storage currently holds the write lock.
+    /// TODO: Is this the right naming? What is the pre-existing
+    /// pattern in Arti if any? eg is_lock_held would be clearer
+    /// since we return false if it's locked by someone else.
+    /// can_store was also seen, but that obscures the locking
+    /// reason. Also: Should we use a unified enum instead as seen
+    /// elsewhere (see enum LockStatus).
+    fn is_locked(&self) -> Result<bool>;
 
     /// Try to acquire the lock for exclusive write access.
     fn try_lock(&self) -> Result<LockStatus>;
@@ -116,14 +123,25 @@ impl AnyStateMgr {
     ///
     /// For filesystem-backed managers, this waits for the lock file to be released.
     /// For custom backends, this resolves immediately.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn wait_for_unlock(
         &self,
     ) -> impl futures::Future<Output = ()> + Send + Sync + 'static {
         match self {
-            #[cfg(not(target_arch = "wasm32"))]
             Self::Fs(fs) => Either::Left(fs.wait_for_unlock()),
             Self::Custom(_) => Either::Right(futures::future::ready(())),
         }
+    }
+
+    /// Return a future that resolves when this manager is dropped/unlocked.
+    ///
+    /// On WASM, only custom backends are available, and they resolve immediately.
+    /// FIXME: Wrong. JS should do proper locking.
+    #[cfg(target_arch = "wasm32")]
+    pub fn wait_for_unlock(
+        &self,
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static {
+        futures::future::ready(())
     }
 
     /// Helper to create an error for a given key and action.
@@ -166,7 +184,7 @@ impl StateMgr for AnyStateMgr {
             #[cfg(not(target_arch = "wasm32"))]
             Self::Fs(fs) => fs.store(key, val),
             Self::Custom(s) => {
-                if !s.can_store() {
+                if !s.is_locked().unwrap_or(false) {
                     return Err(Self::make_error(ErrorSource::NoLock, Action::Storing, key));
                 }
 
@@ -183,7 +201,7 @@ impl StateMgr for AnyStateMgr {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
             Self::Fs(fs) => fs.can_store(),
-            Self::Custom(s) => s.can_store(),
+            Self::Custom(s) => s.is_locked().unwrap_or(false),
         }
     }
 
@@ -244,8 +262,8 @@ mod tests {
             Ok(())
         }
 
-        fn can_store(&self) -> bool {
-            *self.locked.read().unwrap()
+        fn is_locked(&self) -> Result<bool> {
+            Ok(*self.locked.read().unwrap())
         }
 
         fn try_lock(&self) -> Result<LockStatus> {

@@ -35,7 +35,7 @@ mod error;
 mod fetch;
 mod storage;
 
-pub use storage::{JsStorage, JsStorageInterface, JsStateMgr, JsDirStore};
+pub use storage::{JsStorage, JsStorageInterface, CachedJsStorage};
 
 use error::JsTorError;
 use fetch::HttpResponse;
@@ -350,26 +350,13 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
         info!("Initializing custom JS storage...");
         let js_storage = JsStorage::new(js_storage_interface);
 
-        // Create state manager for client state (guards, circuits)
-        let js_statemgr = JsStateMgr::new(js_storage.clone())
+        let cached_storage = CachedJsStorage::new(js_storage)
             .await
             .map_err(|e| {
-                JsTorError::internal(format!("Failed to initialize state storage: {:?}", e)).into_js_value()
+                JsTorError::internal(format!("Failed to initialize storage: {:?}", e)).into_js_value()
             })?;
 
-        // Create dir store for directory cache (consensus, microdescriptors, authcerts)
-        let js_dirstore = JsDirStore::new(js_storage, false)
-            .await
-            .map_err(|e| {
-                JsTorError::internal(format!("Failed to initialize directory storage: {:?}", e)).into_js_value()
-            })?;
-
-        // Wrap and set on builder
-        let any_statemgr = tor_persist::AnyStateMgr::from_custom(js_statemgr);
-        let boxed_dirstore = tor_dirmgr::BoxedDirStore::new(js_dirstore);
-        builder = builder
-            .state_mgr(any_statemgr)
-            .dir_store(boxed_dirstore);
+        builder = builder.storage(cached_storage);
         info!("Custom storage configured (state + directory cache)");
     } else {
         info!("Using default in-memory storage");
@@ -618,6 +605,13 @@ const TS_TYPES: &str = r#"
  *   async keys(prefix: string): Promise<string[]> {
  *     // List keys matching prefix
  *   }
+ *   async tryLock(): Promise<boolean> {
+ *     // Acquire exclusive write lock (e.g., Web Locks API)
+ *     return true;
+ *   }
+ *   async unlock(): Promise<void> {
+ *     // Release write lock
+ *   }
  * }
  *
  * const options = new TorClientOptions(url, fingerprint)
@@ -652,6 +646,18 @@ export interface TorStorage {
      * @returns Array of matching keys
      */
     keys(prefix: string): Promise<string[]>;
+
+    /**
+     * Try to acquire an exclusive write lock.
+     * @returns true if newly acquired, false if already held.
+     * Implement using Web Locks API (browser) or lock files (Node.js).
+     */
+    tryLock(): Promise<boolean>;
+
+    /**
+     * Release the write lock.
+     */
+    unlock(): Promise<void>;
 }
 
 export interface FetchInit {

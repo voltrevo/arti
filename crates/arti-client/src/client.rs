@@ -1308,6 +1308,7 @@ impl<R: Runtime> TorClient<R> {
         let timeout_cfg = &new_config.stream_timeouts;
 
         // Check that state_dir hasn't changed (only meaningful for filesystem-based state manager)
+        #[cfg(not(target_arch = "wasm32"))]
         if self.statemgr.path().is_some_and(|p| state_cfg != p) {
             how.cannot_change("storage.state_dir").map_err(wrap_err)?;
         }
@@ -2133,6 +2134,7 @@ impl<R: Runtime> TorClient<R> {
     /// Return a [`Future`] which resolves
     /// once this TorClient has stopped.
     #[cfg(feature = "experimental-api")]
+    #[cfg(not(target_arch = "wasm32"))]
     #[instrument(skip_all, level = "trace")]
     pub fn wait_for_stop(
         &self,
@@ -2143,6 +2145,19 @@ impl<R: Runtime> TorClient<R> {
         // dropped, which will happen when this TorClient is
         // dropped—which is what we want.
         self.statemgr.wait_for_unlock()
+    }
+
+    /// Return a [`Future`] which resolves
+    /// once this TorClient has stopped.
+    ///
+    /// On WASM, custom backends have no filesystem lock, so this resolves immediately.
+    /// FIXME: Wrong. JS needs proper locking.
+    #[cfg(feature = "experimental-api")]
+    #[cfg(target_arch = "wasm32")]
+    pub fn wait_for_stop(
+        &self,
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<R> {
+        futures::future::ready(())
     }
 
     /// Getter for keymgr.
