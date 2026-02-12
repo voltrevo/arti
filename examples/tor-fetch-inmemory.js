@@ -1,77 +1,37 @@
 #!/usr/bin/env node
 
-// Make an HTTP request through Tor with persistent filesystem storage
+// Make an HTTP request through Tor from Node.js using arti-client via tor-js
 //
 // Build:   scripts/tor-js/build.sh
-// Usage:   examples/tor-fetch-with-storage.js [url]
-// Example: examples/tor-fetch-with-storage.js https://check.torproject.org/api/ip
+// Usage:   examples/tor-fetch.js [url]
+// Example: examples/tor-fetch.js https://check.torproject.org/api/ip
 //
-// State is persisted to ~/.local/state/tor-js/
-// Subsequent runs will load cached state for faster bootstrap.
-
-import { readFile, writeFile, unlink, readdir, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Uses in-memory storage (state is lost when the process exits).
+// For persistent storage, see tor-fetch-with-storage.js.
 
 // ============================================================================
-// FilesystemStorage - TorStorage implementation using Node.js fs
+// MemoryStorage - TorStorage implementation using a Map
 // ============================================================================
 
-class FilesystemStorage {
-  constructor(baseDir) {
-    this.baseDir = baseDir;
-  }
-
-  async init() {
-    if (!existsSync(this.baseDir)) {
-      await mkdir(this.baseDir, { recursive: true });
-      console.log(`Created storage directory: ${this.baseDir}`);
-    }
-  }
-
-  // Encode key to be filesystem-safe
-  keyToPath(key) {
-    const encoded = encodeURIComponent(key);
-    return join(this.baseDir, encoded);
+class MemoryStorage {
+  constructor() {
+    this.data = new Map();
   }
 
   async get(key) {
-    const path = this.keyToPath(key);
-    try {
-      return await readFile(path, 'utf-8');
-    } catch (err) {
-      if (err.code === 'ENOENT') return null;
-      throw err;
-    }
+    return this.data.get(key) ?? null;
   }
 
   async set(key, value) {
-    const path = this.keyToPath(key);
-    await writeFile(path, value, 'utf-8');
+    this.data.set(key, value);
   }
 
   async delete(key) {
-    const path = this.keyToPath(key);
-    try {
-      await unlink(path);
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err;
-    }
+    this.data.delete(key);
   }
 
   async keys(prefix) {
-    try {
-      const files = await readdir(this.baseDir);
-      return files
-        .map(f => decodeURIComponent(f))
-        .filter(k => k.startsWith(prefix));
-    } catch (err) {
-      if (err.code === 'ENOENT') return [];
-      throw err;
-    }
+    return [...this.data.keys()].filter(k => k.startsWith(prefix));
   }
 }
 
@@ -83,22 +43,17 @@ async function main() {
   const { TorClient, TorClientOptions, init } = await setup();
 
   const url = process.argv[2] ?? 'https://check.torproject.org/api/ip';
-  const storageDir = join(homedir(), '.local', 'state', 'tor-js');
 
-  // Initialize filesystem storage
-  const storage = new FilesystemStorage(storageDir);
-  await storage.init();
-
-  console.log(`\nStorage: ${storageDir}`);
-  console.log(`Creating TorClient with persistent storage...\n`);
+  console.log(`\nCreating TorClient (arti-client based)...\n`);
 
   const startTime = performance.now();
 
-  // Create options with WebSocket Snowflake and filesystem storage
+  // Create options with WebSocket Snowflake and in-memory storage
+  // The pse.dev bridge accepts non-browser connections (Node.js)
   const options = new TorClientOptions(
     'wss://snowflake.pse.dev/',
-    '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194'
-  ).withStorage(storage);
+    '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194'  // pse.dev bridge fingerprint
+  ).withStorage(new MemoryStorage());
 
   // Create client (returns Promise)
   const client = await new TorClient(options);
@@ -130,8 +85,7 @@ async function setup() {
   let initWasm, init, TorClient, TorClientOptions;
   try {
     // Web target: default export is WASM initializer, named exports are the API
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const module = await import(join(__dirname, '../crates/tor-js/pkg/tor_js.js'));
+    const module = await import('../crates/tor-js/pkg/tor_js.js');
     initWasm = module.default;
     init = module.init;
     TorClient = module.TorClient;
@@ -145,6 +99,10 @@ async function setup() {
 
   // Initialize WASM module (required for web target)
   // In Node.js, read the WASM file directly since fetch may not work with file:// URLs
+  const { readFile } = await import('node:fs/promises');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const wasmPath = join(__dirname, '../crates/tor-js/pkg/tor_js_bg.wasm');
   const wasmBytes = await readFile(wasmPath);
