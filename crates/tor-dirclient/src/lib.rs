@@ -91,13 +91,6 @@ fn truncate_middle(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(format!("{}...{}", head, tail))
 }
 
-#[cfg(feature = "debug-dir-dump")]
-use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Debug counter for unique filenames
-#[cfg(feature = "debug-dir-dump")]
-static DEBUG_DUMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 pub use err::{Error, RequestError, RequestFailedError};
 pub use response::{DirResponse, SourceInfo};
 
@@ -306,12 +299,6 @@ where
         (_, Ok(()), _) => Ok(()),
     };
 
-    // Debug: dump directory data to /tmp/tor-dir-dbg/
-    #[cfg(feature = "debug-dir-dump")]
-    {
-        debug_dump_dir_data(req.uri().path(), &result, ok.is_ok());
-    }
-
     Ok(DirResponse::new(200, None, ok.err(), result, source))
 }
 
@@ -487,50 +474,6 @@ where
         &id, &error
     );
     circ_mgr.retire_circ(id);
-}
-
-/// Debug: dump downloaded directory data to /tmp/tor-dir-dbg/
-#[cfg(feature = "debug-dir-dump")]
-fn debug_dump_dir_data(path: &str, data: &[u8], complete: bool) {
-    use std::fs;
-    use std::io::Write;
-
-    let dir = "/tmp/tor-dir-dbg";
-    if let Err(e) = fs::create_dir_all(dir) {
-        warn!("Failed to create debug dir {}: {}", dir, e);
-        return;
-    }
-
-    // Create a filename from the path
-    let counter = DEBUG_DUMP_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let safe_path = path
-        .trim_start_matches('/')
-        .replace('/', "_")
-        .replace('?', "_")
-        .chars()
-        .take(100)
-        .collect::<String>();
-
-    let status = if complete { "complete" } else { "partial" };
-    let filename = format!("{}/{}_{:04}_{}.bin", dir, status, counter, safe_path);
-
-    match fs::File::create(&filename) {
-        Ok(mut file) => {
-            if let Err(e) = file.write_all(data) {
-                warn!("Failed to write debug dump {}: {}", filename, e);
-            } else {
-                info!(
-                    "DEBUG: Dumped {} bytes to {} ({})",
-                    data.len(),
-                    filename,
-                    status
-                );
-            }
-        }
-        Err(e) => {
-            warn!("Failed to create debug dump {}: {}", filename, e);
-        }
-    }
 }
 
 /// As AsyncBufReadExt::read_until, but stops after reading `max` bytes.

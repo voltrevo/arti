@@ -23,9 +23,6 @@ xz = ["async-compression/xz"]
 zstd = ["async-compression/zstd"]
 # Enable support for router descriptor downloads.
 routerdesc = []
-# Debug: dump downloaded directory data to /tmp/tor-dir-dbg/
-debug-dir-dump = []
-
 full = [
     "hs-client",
     "hs-service",
