@@ -5,6 +5,39 @@
 // Build:   scripts/tor-js/build.sh
 // Usage:   examples/tor-fetch.js [url]
 // Example: examples/tor-fetch.js https://check.torproject.org/api/ip
+//
+// Uses in-memory storage (state is lost when the process exits).
+// For persistent storage, see tor-fetch-with-storage.js.
+
+// ============================================================================
+// MemoryStorage - TorStorage implementation using a Map
+// ============================================================================
+
+class MemoryStorage {
+  constructor() {
+    this.data = new Map();
+  }
+
+  async get(key) {
+    return this.data.get(key) ?? null;
+  }
+
+  async set(key, value) {
+    this.data.set(key, value);
+  }
+
+  async delete(key) {
+    this.data.delete(key);
+  }
+
+  async keys(prefix) {
+    return [...this.data.keys()].filter(k => k.startsWith(prefix));
+  }
+}
+
+// ============================================================================
+// Main
+// ============================================================================
 
 async function main() {
   const { TorClient, TorClientOptions, init } = await setup();
@@ -15,12 +48,12 @@ async function main() {
 
   const startTime = performance.now();
 
-  // Create options with WebSocket Snowflake
+  // Create options with WebSocket Snowflake and in-memory storage
   // The pse.dev bridge accepts non-browser connections (Node.js)
   const options = new TorClientOptions(
     'wss://snowflake.pse.dev/',
     '664A92FF3EF71E03A2F09B1DAABA2DDF920D5194'  // pse.dev bridge fingerprint
-  );
+  ).withStorage(new MemoryStorage());
 
   // Create client (returns Promise)
   const client = await new TorClient(options);

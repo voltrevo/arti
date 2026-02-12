@@ -493,6 +493,68 @@
 
         // Constants
         const MAX_LOG_ENTRIES = 500;
+        const IDB_NAME = 'tor-js-storage';
+        const IDB_STORE = 'kv';
+
+        // ====================================================================
+        // IndexedDbStorage - TorStorage implementation using IndexedDB
+        // ====================================================================
+
+        class IndexedDbStorage {
+            constructor() {
+                this._db = null;
+            }
+
+            async _open() {
+                if (this._db) return this._db;
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(IDB_NAME, 1);
+                    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+                    req.onsuccess = () => { this._db = req.result; resolve(this._db); };
+                    req.onerror = () => reject(req.error);
+                });
+            }
+
+            async get(key) {
+                const db = await this._open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_STORE, 'readonly');
+                    const req = tx.objectStore(IDB_STORE).get(key);
+                    req.onsuccess = () => resolve(req.result ?? null);
+                    req.onerror = () => reject(req.error);
+                });
+            }
+
+            async set(key, value) {
+                const db = await this._open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    tx.objectStore(IDB_STORE).put(value, key);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+
+            async delete(key) {
+                const db = await this._open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    tx.objectStore(IDB_STORE).delete(key);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+
+            async keys(prefix) {
+                const db = await this._open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(IDB_STORE, 'readonly');
+                    const req = tx.objectStore(IDB_STORE).getAllKeys();
+                    req.onsuccess = () => resolve(req.result.filter(k => typeof k === 'string' && k.startsWith(prefix)));
+                    req.onerror = () => reject(req.error);
+                });
+            }
+        }
 
         // URL validation
         function validateUrl(url) {
@@ -657,7 +719,8 @@
 
                     try {
                         const startTime = performance.now();
-                        const options = new TorClientOptions(bridgeUrl, fingerprint);
+                        const options = new TorClientOptions(bridgeUrl, fingerprint)
+                            .withStorage(new IndexedDbStorage());
                         torClient = await new TorClient(options);
 
                         const connectTime = ((performance.now() - startTime) / 1000).toFixed(1);

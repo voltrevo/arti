@@ -8,8 +8,11 @@
 //! The types in this module are re-exported from `arti-client`: any changes
 //! here must be reflected in the version of `arti-client`.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::storage::DynStore;
+
 use tor_dircommon::{
     authority::AuthorityContacts,
     config::{DirTolerance, DownloadScheduleConfig, NetworkConfig},
@@ -93,24 +96,17 @@ impl DirMgrConfig {
     /// Note that each time this is called, a new store object will be
     /// created: you probably only want to call this once.
     ///
-    /// When the `sqlite` feature is enabled (default), this creates a
-    /// persistent SQLite-backed store. Otherwise, it creates an in-memory
-    /// store that does not persist across restarts.
+    /// This creates a persistent SQLite-backed store.
+    /// On WASM, callers must provide a custom store via `DirMgrStore::from_custom_store()`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn open_store(&self, readonly: bool) -> Result<DynStore> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            return Ok(Box::new(
-                crate::storage::SqliteStore::from_path_and_mistrust(
-                    &self.cache_dir,
-                    &self.cache_trust,
-                    readonly,
-                )?,
-            ))
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            return Ok(Box::new(crate::storage::InMemoryStore::new(readonly)))
-        }
+        Ok(Box::new(
+            crate::storage::SqliteStore::from_path_and_mistrust(
+                &self.cache_dir,
+                &self.cache_trust,
+                readonly,
+            )?,
+        ))
     }
 
     /// Return a slice of the configured authorities

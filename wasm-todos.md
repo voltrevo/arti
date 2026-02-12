@@ -7,7 +7,8 @@
 - [x] fix pre-existing tests (`cargo test`)
 - [ ] automated testing
 - [ ] check/clean ai code
-- [ ] improve js storage handling (remove inmemory.rs?)
+- [ ] improve js storage handling
+  - [x] remove rust inmemory storage
 - [ ] make tor-js API same/similar to https://www.npmjs.com/package/tor-js
   - agree on API
   - websocket?

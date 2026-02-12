@@ -132,7 +132,10 @@ pub struct DirMgrStore<R: Runtime> {
 }
 
 impl<R: Runtime> DirMgrStore<R> {
-    /// Open the storage, according to the specified configuration
+    /// Open the storage, according to the specified configuration.
+    ///
+    /// On WASM, use [`DirMgrStore::from_custom_store()`] instead.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(config: &DirMgrConfig, runtime: R, offline: bool) -> Result<Self> {
         let store = Arc::new(Mutex::new(config.open_store(offline)?));
         drop(runtime);
@@ -378,6 +381,7 @@ impl<R: Runtime> DirMgr<R> {
     /// In general, you shouldn't use this function in a long-running
     /// program; it's only suitable for command-line or batch tools.
     // TODO: I wish this function didn't have to be async or take a runtime.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_once(runtime: R, config: DirMgrConfig) -> Result<Arc<NetDir>> {
         let store = DirMgrStore::new(&config, runtime.clone(), true)?;
         let dirmgr = Arc::new(Self::from_config(config, runtime, store, None, true)?);

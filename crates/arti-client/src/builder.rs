@@ -185,29 +185,20 @@ impl<R: Runtime> TorClientBuilder<R> {
         self
     }
 
-    /// Set a custom state manager for persistent storage.
+    /// Set the state manager for persistent storage.
     ///
-    /// Only available on WASM. When set, this will be used instead of the
-    /// default in-memory storage, allowing state to persist across sessions
-    /// (e.g., using IndexedDB from JavaScript).
-    ///
-    /// If not set, the default in-memory storage will be used, which means
-    /// all state is lost when the page reloads.
+    /// Only available on WASM. This is **required** — building a `TorClient`
+    /// on WASM without calling this method will result in an error.
     #[cfg(target_arch = "wasm32")]
     pub fn custom_state_mgr(mut self, statemgr: BoxedStateMgr) -> Self {
         self.custom_statemgr = Some(statemgr);
         self
     }
 
-    /// Set a custom directory store for persistent directory cache.
+    /// Set the directory store for directory cache.
     ///
-    /// Only available on WASM. When set, this will be used instead of the
-    /// default in-memory storage for directory data (consensus, microdescriptors,
-    /// authority certificates), allowing the directory cache to persist across
-    /// sessions.
-    ///
-    /// If not set, the default in-memory storage will be used, which means
-    /// the directory cache must be re-downloaded on each page reload.
+    /// Only available on WASM. This is **required** — building a `TorClient`
+    /// on WASM without calling this method will result in an error.
     #[cfg(target_arch = "wasm32")]
     pub fn custom_dir_store(mut self, dirstore: BoxedDirStore) -> Self {
         self.custom_dirstore = Some(dirstore);
