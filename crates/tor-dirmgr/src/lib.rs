@@ -105,7 +105,6 @@ pub use docid::DocId;
 pub use err::Error;
 pub use event::{DirBlockage, DirBootstrapEvents, DirBootstrapStatus};
 pub use storage::DocumentText;
-#[cfg(target_arch = "wasm32")]
 pub use storage::{BoxedDirStore, CustomDirStore};
 pub use tor_dircommon::fallback::{FallbackDir, FallbackDirBuilder};
 pub use tor_netdir::Timeliness;
@@ -134,7 +133,7 @@ pub struct DirMgrStore<R: Runtime> {
 impl<R: Runtime> DirMgrStore<R> {
     /// Open the storage, according to the specified configuration.
     ///
-    /// On WASM, use [`DirMgrStore::from_custom_store()`] instead.
+    /// Uses SQLite on native. For custom backends, use [`DirMgrStore::from_custom_store()`].
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(config: &DirMgrConfig, runtime: R, offline: bool) -> Result<Self> {
         let store = Arc::new(Mutex::new(config.open_store(offline)?));
@@ -145,9 +144,8 @@ impl<R: Runtime> DirMgrStore<R> {
 
     /// Create a `DirMgrStore` from a custom storage implementation.
     ///
-    /// This allows external code to provide custom storage backends for
-    /// environments where SQLite is unavailable (e.g., WASM with IndexedDB).
-    #[cfg(target_arch = "wasm32")]
+    /// This allows external code to provide custom storage backends
+    /// (e.g., IndexedDB on WASM, or any custom backend on native).
     pub fn from_custom_store(store: storage::BoxedDirStore) -> Self {
         DirMgrStore {
             store: Arc::new(Mutex::new(Box::new(store))),

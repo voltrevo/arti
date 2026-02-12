@@ -30,13 +30,11 @@ use time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod sqlite;
-#[cfg(target_arch = "wasm32")]
 pub(crate) mod custom;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use sqlite::SqliteStore;
 
-#[cfg(target_arch = "wasm32")]
 pub use custom::{BoxedDirStore, CustomDirStore};
 
 /// Convenient Sized & dynamic [`Store`]

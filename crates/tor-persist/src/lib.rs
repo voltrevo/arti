@@ -69,7 +69,7 @@ use std::sync::Arc;
 /// Wrapper type for Results returned from this crate.
 pub type Result<T> = std::result::Result<T, crate::Error>;
 
-pub use custom::{BoxedStateMgr, CustomStateMgr};
+pub use custom::{AnyStateMgr, StringStore};
 pub use err::{Error, ErrorSource};
 #[cfg(not(target_arch = "wasm32"))]
 pub use fs::FsStateMgr;

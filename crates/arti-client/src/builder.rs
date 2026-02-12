@@ -12,10 +12,8 @@ use std::{
 };
 use tor_dirmgr::{DirMgrConfig, DirMgrStore};
 use tor_error::{ErrorKind, HasKind as _};
-#[cfg(target_arch = "wasm32")]
 use tor_dirmgr::BoxedDirStore;
-#[cfg(target_arch = "wasm32")]
-use tor_persist::BoxedStateMgr;
+use tor_persist::AnyStateMgr;
 use tor_rtcompat::Runtime;
 use tor_time::Instant;
 use tracing::instrument;
@@ -80,17 +78,16 @@ pub struct TorClientBuilder<R: Runtime> {
     /// Only available when `arti-client` is built with the `dirfilter` and `experimental-api` features.
     #[cfg(feature = "dirfilter")]
     dirfilter: tor_dirmgr::filter::FilterConfig,
-    /// Custom state manager for WASM environments.
+    /// Custom state manager.
     ///
-    /// When set, this will be used instead of the default in-memory storage.
-    /// This allows JavaScript code to provide persistent storage (e.g., IndexedDB).
-    #[cfg(target_arch = "wasm32")]
-    custom_statemgr: Option<BoxedStateMgr>,
-    /// Custom directory store for WASM environments.
+    /// When set, this will be used instead of the default filesystem storage.
+    /// On WASM, this is **required** since there is no filesystem.
+    custom_statemgr: Option<AnyStateMgr>,
+    /// Custom directory store.
     ///
-    /// When set, this will be used instead of the default in-memory storage
+    /// When set, this will be used instead of the default SQLite storage
     /// for directory cache (consensus, microdescriptors, authcerts).
-    #[cfg(target_arch = "wasm32")]
+    /// On WASM, this is **required** since SQLite is unavailable.
     custom_dirstore: Option<BoxedDirStore>,
 }
 
@@ -116,9 +113,7 @@ impl<R: Runtime> TorClientBuilder<R> {
             local_resource_timeout: None,
             #[cfg(feature = "dirfilter")]
             dirfilter: None,
-            #[cfg(target_arch = "wasm32")]
             custom_statemgr: None,
-            #[cfg(target_arch = "wasm32")]
             custom_dirstore: None,
         }
     }
@@ -185,21 +180,20 @@ impl<R: Runtime> TorClientBuilder<R> {
         self
     }
 
-    /// Set the state manager for persistent storage.
+    /// Set a custom state manager for persistent storage.
     ///
-    /// Only available on WASM. This is **required** — building a `TorClient`
-    /// on WASM without calling this method will result in an error.
-    #[cfg(target_arch = "wasm32")]
-    pub fn custom_state_mgr(mut self, statemgr: BoxedStateMgr) -> Self {
+    /// When set, this will be used instead of the default filesystem storage.
+    /// On WASM, this is **required** since there is no filesystem backend.
+    pub fn custom_state_mgr(mut self, statemgr: AnyStateMgr) -> Self {
         self.custom_statemgr = Some(statemgr);
         self
     }
 
-    /// Set the directory store for directory cache.
+    /// Set a custom directory store for directory cache.
     ///
-    /// Only available on WASM. This is **required** — building a `TorClient`
-    /// on WASM without calling this method will result in an error.
-    #[cfg(target_arch = "wasm32")]
+    /// When set, this will be used instead of the default SQLite storage
+    /// for the directory cache (consensus, microdescriptors, authcerts).
+    /// On WASM, this is **required** since SQLite is unavailable.
     pub fn custom_dir_store(mut self, dirstore: BoxedDirStore) -> Self {
         self.custom_dirstore = Some(dirstore);
         self
@@ -289,9 +283,7 @@ impl<R: Runtime> TorClientBuilder<R> {
             dirmgr_extensions.filter.clone_from(&self.dirfilter);
         }
 
-        #[cfg(target_arch = "wasm32")]
         let custom_statemgr = self.custom_statemgr.clone();
-        #[cfg(target_arch = "wasm32")]
         let custom_dirstore = self.custom_dirstore.clone();
 
         let result: Result<TorClient<R>> = TorClient::create_inner(
@@ -300,9 +292,7 @@ impl<R: Runtime> TorClientBuilder<R> {
             self.bootstrap_behavior,
             self.dirmgr_builder.as_ref(),
             dirmgr_extensions,
-            #[cfg(target_arch = "wasm32")]
             custom_statemgr,
-            #[cfg(target_arch = "wasm32")]
             custom_dirstore,
         )
         .map_err(ErrorDetail::into);

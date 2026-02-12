@@ -8,7 +8,9 @@
 //! delegating to a boxed [`CustomDirStore`], handling serialization internally.
 
 use crate::docmeta::{AuthCertMeta, ConsensusMeta};
-use crate::storage::{CachedBridgeDescriptor, ExpirationConfig, InputString, Store};
+#[cfg(feature = "bridge-client")]
+use crate::storage::CachedBridgeDescriptor;
+use crate::storage::{ExpirationConfig, InputString, Store};
 use crate::{Error, Result};
 
 use serde::{Deserialize, Serialize};

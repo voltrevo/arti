@@ -128,11 +128,11 @@ impl JsStorage {
 // JsStateMgr - StateMgr implementation backed by JS storage
 // ============================================================================
 
-use tor_persist::{CustomStateMgr, ErrorSource, LockStatus};
+use tor_persist::{StringStore, ErrorSource, LockStatus};
 
 /// State manager backed by JavaScript storage.
 ///
-/// This implements the `CustomStateMgr` trait using a JS storage backend.
+/// This implements the `StringStore` trait using a JS storage backend.
 /// It uses a pre-load + cache pattern to handle the async-to-sync bridge.
 #[derive(Clone)]
 pub struct JsStateMgr {
@@ -204,8 +204,8 @@ impl JsStateMgr {
 
 }
 
-impl CustomStateMgr for JsStateMgr {
-    fn load_json(&self, key: &str) -> tor_persist::Result<Option<String>> {
+impl StringStore for JsStateMgr {
+    fn load_str(&self, key: &str) -> tor_persist::Result<Option<String>> {
         let full_key = self.full_key(key);
         let cache = self
             .cache
@@ -215,7 +215,7 @@ impl CustomStateMgr for JsStateMgr {
         Ok(cache.get(&full_key).cloned())
     }
 
-    fn store_json(&self, key: &str, value: &str) -> tor_persist::Result<()> {
+    fn store_str(&self, key: &str, value: &str) -> tor_persist::Result<()> {
         if !self.can_store() {
             return Err(tor_persist::Error::store_error(key, ErrorSource::NoLock));
         }

@@ -30,10 +30,7 @@ use tor_memquota::MemoryQuotaTracker;
 use tor_netdir::{NetDirProvider, params::NetParameters};
 #[cfg(feature = "onion-service-service")]
 use tor_persist::state_dir::StateDirectory;
-#[cfg(not(target_arch = "wasm32"))]
-use tor_persist::FsStateMgr;
-#[cfg(target_arch = "wasm32")]
-use tor_persist::BoxedStateMgr;
+use tor_persist::AnyStateMgr;
 use tor_persist::StateMgr;
 use tor_proto::client::stream::{DataStream, IpVersionPreference, StreamParameters};
 #[cfg(all(
@@ -170,12 +167,8 @@ pub struct TorClient<R: Runtime> {
     /// to subsystems like `dirmgr`, `keymgr`, and `statemgr` during `TorClient` creation.
     #[cfg(feature = "onion-service-service")]
     state_directory: StateDirectory,
-    /// Location on disk where we store persistent data (cooked state manager).
-    #[cfg(not(target_arch = "wasm32"))]
-    statemgr: FsStateMgr,
-    /// State manager for WASM (custom storage backend).
-    #[cfg(target_arch = "wasm32")]
-    statemgr: BoxedStateMgr,
+    /// Stores persistent data (cooked state manager).
+    statemgr: AnyStateMgr,
     /// Client address configuration
     addrcfg: Arc<MutCfg<ClientAddrConfig>>,
     /// Client DNS configuration
@@ -887,8 +880,8 @@ impl<R: Runtime> TorClient<R> {
         autobootstrap: BootstrapBehavior,
         dirmgr_builder: &dyn crate::builder::DirProviderBuilder<R>,
         dirmgr_extensions: tor_dirmgr::config::DirMgrExtensions,
-        #[cfg(target_arch = "wasm32")] custom_statemgr: Option<BoxedStateMgr>,
-        #[cfg(target_arch = "wasm32")] custom_dirstore: Option<tor_dirmgr::BoxedDirStore>,
+        custom_statemgr: Option<AnyStateMgr>,
+        custom_dirstore: Option<tor_dirmgr::BoxedDirStore>,
     ) -> StdResult<Self, ErrorDetail> {
         if crate::util::running_as_setuid() {
             return Err(tor_error::bad_api_usage!(
@@ -912,15 +905,22 @@ impl<R: Runtime> TorClient<R> {
             c.extensions = dirmgr_extensions;
             c
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        let statemgr = FsStateMgr::from_path_and_mistrust(&state_dir, mistrust)
-            .map_err(ErrorDetail::StateMgrSetup)?;
-        #[cfg(target_arch = "wasm32")]
-        let statemgr = custom_statemgr.ok_or_else(|| {
-            tor_error::bad_api_usage!(
-                "On WASM, a custom state manager must be provided via TorClientBuilder::custom_state_mgr()"
-            )
-        })?;
+        let statemgr: AnyStateMgr = match custom_statemgr {
+            Some(custom) => custom,
+            None => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    AnyStateMgr::from_path_and_mistrust(&state_dir, mistrust)
+                        .map_err(ErrorDetail::StateMgrSetup)?
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    return Err(tor_error::bad_api_usage!(
+                        "On WASM, a custom state manager must be provided via TorClientBuilder::custom_state_mgr()"
+                    ).into());
+                }
+            }
+        };
         // Try to take state ownership early, so we'll know if we have it.
         // Note that this `try_lock()` may return `Ok` even if we can't acquire the lock.
         // (At this point we don't yet care if we have it.)
@@ -973,18 +973,22 @@ impl<R: Runtime> TorClient<R> {
 
         let timeout_cfg = config.stream_timeouts.clone();
 
-        #[cfg(target_arch = "wasm32")]
-        let dirmgr_store = {
-            let store = custom_dirstore.ok_or_else(|| {
-                tor_error::bad_api_usage!(
-                    "On WASM, a custom directory store must be provided via TorClientBuilder::custom_dir_store()"
-                )
-            })?;
-            DirMgrStore::from_custom_store(store)
+        let dirmgr_store = match custom_dirstore {
+            Some(store) => DirMgrStore::from_custom_store(store),
+            None => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    DirMgrStore::new(&dir_cfg, runtime.clone(), false)
+                        .map_err(ErrorDetail::DirMgrSetup)?
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    return Err(tor_error::bad_api_usage!(
+                        "On WASM, a custom directory store must be provided via TorClientBuilder::custom_dir_store()"
+                    ).into());
+                }
+            }
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        let dirmgr_store =
-            DirMgrStore::new(&dir_cfg, runtime.clone(), false).map_err(ErrorDetail::DirMgrSetup)?;
         let dirmgr = dirmgr_builder
             .build(
                 runtime.clone(),
@@ -1320,8 +1324,7 @@ impl<R: Runtime> TorClient<R> {
         let timeout_cfg = &new_config.stream_timeouts;
 
         // Check that state_dir hasn't changed (only meaningful for filesystem-based state manager)
-        #[cfg(not(target_arch = "wasm32"))]
-        if state_cfg != self.statemgr.path() {
+        if self.statemgr.path().is_some_and(|p| state_cfg != p) {
             how.cannot_change("storage.state_dir").map_err(wrap_err)?;
         }
 
@@ -2155,10 +2158,7 @@ impl<R: Runtime> TorClient<R> {
         // The statemgr won't actually be unlocked until it is finally
         // dropped, which will happen when this TorClient is
         // dropped—which is what we want.
-        #[cfg(not(target_arch = "wasm32"))]
-        { self.statemgr.wait_for_unlock() }
-        #[cfg(target_arch = "wasm32")]
-        { futures::future::ready(()) }
+        self.statemgr.wait_for_unlock()
     }
 
     /// Getter for keymgr.
