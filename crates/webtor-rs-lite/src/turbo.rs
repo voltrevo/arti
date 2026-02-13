@@ -53,7 +53,7 @@ impl TurboFrame {
 
     /// Encode frame to bytes with variable-length header
     /// Format matches encapsulation.go from snowflake
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         let len = self.data.len();
         let data_flag: u8 = if self.is_padding { 0x00 } else { 0x80 }; // Bit 7: 1 = real data
 
@@ -83,11 +83,14 @@ impl TurboFrame {
             result.push(byte1);
             result.push(byte2);
         } else {
-            panic!("Frame too large: {} bytes (max {})", len, MAX_FRAME_SIZE);
+            return Err(TorError::Protocol(format!(
+                "Frame too large: {} bytes (max {})",
+                len, MAX_FRAME_SIZE
+            )));
         }
 
         result.extend_from_slice(&self.data);
-        result
+        Ok(result)
     }
 
     /// Decode frame from bytes, returns (frame, bytes_consumed)
@@ -214,7 +217,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TurboStream<S> {
         }
 
         let frame = TurboFrame::new(data.to_vec());
-        let encoded = frame.encode();
+        let encoded = frame.encode()?;
 
         self.inner
             .write_all(&encoded)
@@ -329,7 +332,9 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for TurboStream<S> {
         // 2. Proper partial-write buffering would add significant complexity
         // 3. On WriteZero error, the connection is corrupted - callers must reconnect, not retry
         let frame = TurboFrame::new(buf.to_vec());
-        let encoded = frame.encode();
+        let encoded = frame
+            .encode()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
         tracing::trace!(
             "Turbo poll_write: {} bytes data -> {} byte frame",
             buf.len(),
@@ -374,7 +379,7 @@ mod tests {
     fn test_frame_encode_decode_small() {
         let data = b"Hello, World!";
         let frame = TurboFrame::new(data.to_vec());
-        let encoded = frame.encode();
+        let encoded = frame.encode().unwrap();
 
         // Should be 1-byte header for small data (13 bytes < 64)
         assert_eq!(encoded[0] & 0x40, 0); // No continuation (bit 6)
@@ -390,7 +395,7 @@ mod tests {
     fn test_frame_encode_decode_medium() {
         let data = vec![0u8; 100]; // > 63 bytes, needs 2-byte header
         let frame = TurboFrame::new(data.clone());
-        let encoded = frame.encode();
+        let encoded = frame.encode().unwrap();
 
         // Should be 2-byte header
         assert_eq!(encoded[0] & 0x40, 0x40); // Has continuation (bit 6)
@@ -406,7 +411,7 @@ mod tests {
     fn test_frame_encode_decode_large() {
         let data = vec![0u8; 10000]; // > 8191 bytes, needs 3-byte header
         let frame = TurboFrame::new(data.clone());
-        let encoded = frame.encode();
+        let encoded = frame.encode().unwrap();
 
         // Should be 3-byte header
         assert_eq!(encoded[0] & 0x40, 0x40); // Has continuation (bit 6)
@@ -423,7 +428,7 @@ mod tests {
     fn test_padding_frame() {
         let data = b"padding data";
         let frame = TurboFrame::padding(data.to_vec());
-        let encoded = frame.encode();
+        let encoded = frame.encode().unwrap();
 
         assert_eq!(encoded[0] & 0x80, 0); // Is padding (bit 7 = 0)
 
@@ -435,7 +440,7 @@ mod tests {
     fn test_partial_decode() {
         let data = b"Hello";
         let frame = TurboFrame::new(data.to_vec());
-        let encoded = frame.encode();
+        let encoded = frame.encode().unwrap();
 
         // Give only part of the frame
         let partial = &encoded[..2];
@@ -466,7 +471,7 @@ mod tests {
                 TurboFrame::new(data.clone())
             };
 
-            let encoded = frame.encode();
+            let encoded = frame.encode().unwrap();
             let (decoded, consumed) = TurboFrame::decode(&encoded).unwrap().unwrap();
 
             assert_eq!(decoded.data, data);
@@ -482,7 +487,7 @@ mod tests {
         for len in boundary_lengths {
             let data = vec![0u8; len];
             let frame = TurboFrame::new(data);
-            let encoded = frame.encode();
+            let encoded = frame.encode().unwrap();
 
             let header_size = encoded.len() - len;
 
@@ -513,7 +518,7 @@ mod tests {
             } else {
                 TurboFrame::new(data)
             };
-            let encoded = frame.encode();
+            let encoded = frame.encode().unwrap();
 
             for split in 0..encoded.len() {
                 let prefix = &encoded[..split];

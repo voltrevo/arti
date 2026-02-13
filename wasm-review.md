@@ -42,7 +42,7 @@ This branch adds WebAssembly support to the Arti Tor client. Major new crates: `
 ### 4. Panic on oversized Turbo frame
 `crates/webtor-rs-lite/src/turbo.rs:86` — `panic!("Frame too large")` instead of returning a `Result`. Any oversized frame will crash the entire WASM application. Must return an error instead.
 
-> **TODO.** Not yet addressed.
+> **Fixed.** `encode()` now returns `Result<Vec<u8>>` and the panic is replaced with `Err(TorError::Protocol(...))`.
 
 ---
 
