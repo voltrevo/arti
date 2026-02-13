@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use tor_chanmgr::factory::{AbstractPtError, AbstractPtMgr, BootstrapReporter, ChannelFactory};
 use tor_error::{ErrorKind, HasKind, HasRetryTime, RetryTime};
-use tor_linkspec::{HasRelayIds, IntoOwnedChanTarget, OwnedChanTarget, OwnedChanTargetBuilder, PtTransportName};
+use tor_linkspec::{HasChanMethod, HasRelayIds, IntoOwnedChanTarget, OwnedChanTarget, OwnedChanTargetBuilder, PtTransportName};
 use tor_llcrypto::pk::rsa::RsaIdentity;
 use tor_proto::channel::Channel;
 use tor_proto::memquota::ChannelAccount;
@@ -87,7 +87,7 @@ impl SnowflakeChannelFactory {
         &self,
         url: &str,
         fingerprint: Option<&str>,
-        _target: &OwnedChanTarget,
+        target: &OwnedChanTarget,
         memquota: ChannelAccount,
     ) -> tor_chanmgr::Result<Arc<Channel>> {
         info!("Building Snowflake channel via WebSocket: {}", url);
@@ -115,7 +115,7 @@ impl SnowflakeChannelFactory {
         });
 
         // Build channel from the stream
-        self.create_channel_from_stream(stream, rsa_id, memquota)
+        self.create_channel_from_stream(stream, rsa_id, target, memquota)
             .await
     }
 
@@ -124,7 +124,7 @@ impl SnowflakeChannelFactory {
         &self,
         broker_url: &str,
         fingerprint: Option<&str>,
-        _target: &OwnedChanTarget,
+        target: &OwnedChanTarget,
         memquota: ChannelAccount,
     ) -> tor_chanmgr::Result<Arc<Channel>> {
         info!(
@@ -154,7 +154,7 @@ impl SnowflakeChannelFactory {
         });
 
         // Build channel from the stream
-        self.create_channel_from_stream(stream, rsa_id, memquota)
+        self.create_channel_from_stream(stream, rsa_id, target, memquota)
             .await
     }
 
@@ -165,6 +165,7 @@ impl SnowflakeChannelFactory {
         &self,
         stream: S,
         rsa_id: Option<RsaIdentity>,
+        target: &OwnedChanTarget,
         chan_account: ChannelAccount,
     ) -> tor_chanmgr::Result<Arc<Channel>>
     where
@@ -199,7 +200,8 @@ impl SnowflakeChannelFactory {
         debug!("Got peer certificate: {} bytes", peer_cert.len());
 
         // Launch Tor channel handshake
-        let builder = ChannelBuilder::new();
+        let mut builder = ChannelBuilder::new();
+        builder.set_declared_method(target.chan_method());
         debug!("Launching Tor channel client handshake...");
         let handshake = builder.launch_client(stream, runtime, chan_account);
 
