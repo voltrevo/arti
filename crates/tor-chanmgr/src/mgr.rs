@@ -12,7 +12,7 @@ use std::result::Result as StdResult;
 use std::sync::Arc;
 use std::time::Duration;
 use tor_error::{error_report, internal};
-use tor_linkspec::HasRelayIds;
+use tor_linkspec::{HasAddrs, HasRelayIds};
 use tor_netdir::params::NetParameters;
 use tor_proto::channel::kist::KistParams;
 use tor_proto::channel::params::ChannelPaddingInstructionsUpdates;
@@ -29,6 +29,10 @@ mod state;
 /// [`Channel`](tor_proto::channel::Channel) as `AbstractChanMgr`
 /// needs to use.
 pub(crate) trait AbstractChannel: HasRelayIds {
+    /// Return true iff this channel is considered canonical by us.
+    fn is_canonical(&self) -> bool;
+    /// Return true if we think the peer considers this channel as canonical.
+    fn is_canonical_to_peer(&self) -> bool;
     /// Return true if this channel is usable.
     ///
     /// A channel might be unusable because it is closed, because it has
@@ -72,7 +76,7 @@ pub(crate) trait AbstractChannelFactory {
     /// The type of channel that this factory can build.
     type Channel: AbstractChannel;
     /// Type that explains how to build an outgoing channel.
-    type BuildSpec: HasRelayIds;
+    type BuildSpec: HasRelayIds + HasAddrs;
     /// The type of byte stream that's required to build channels for incoming connections.
     type Stream;
 
@@ -202,12 +206,12 @@ impl<CF: AbstractChannelFactory + Clone> AbstractChanMgr<CF> {
     ) -> Result<Arc<CF::Channel>> {
         let chan_builder = self.channels.builder();
         let memquota = ChannelAccount::new(&self.memquota)?;
-        let _outcome = chan_builder
+        let channel = chan_builder
             .build_channel_using_incoming(src, my_addrs, stream, memquota)
             .await?;
-
-        // TODO RELAY: we need to do something with the channel here now that we've created it
-        todo!();
+        // Add it to our list.
+        self.channels.add_open(channel.clone())?;
+        Ok(channel)
     }
 
     /// Get a channel corresponding to the identities of `target`.
@@ -499,6 +503,7 @@ mod test {
     use crate::Error;
 
     use futures::join;
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
@@ -508,6 +513,9 @@ mod test {
 
     use crate::ChannelUsage as CU;
     use tor_rtcompat::{Runtime, task::yield_now, test_with_one_runtime};
+
+    // Address we can use in tests.
+    const ADDR_A: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(1, 1, 1, 1), 443));
 
     #[derive(Clone)]
     struct FakeChannelFactory<RT> {
@@ -530,6 +538,12 @@ mod test {
     }
 
     impl AbstractChannel for FakeChannel {
+        fn is_canonical(&self) -> bool {
+            unimplemented!()
+        }
+        fn is_canonical_to_peer(&self) -> bool {
+            unimplemented!()
+        }
         fn is_usable(&self) -> bool {
             !self.closing.load(Ordering::SeqCst)
         }
@@ -586,7 +600,7 @@ mod test {
     }
 
     #[derive(Clone, Debug)]
-    struct FakeBuildSpec(u32, char, Ed25519Identity);
+    struct FakeBuildSpec(u32, char, Ed25519Identity, SocketAddr);
 
     impl HasRelayIds for FakeBuildSpec {
         fn identity(
@@ -597,6 +611,12 @@ mod test {
                 tor_linkspec::RelayIdType::Ed25519 => Some((&self.2).into()),
                 _ => None,
             }
+        }
+    }
+
+    impl HasAddrs for FakeBuildSpec {
+        fn addrs(&self) -> impl Iterator<Item = std::net::SocketAddr> {
+            std::iter::once(self.3.clone())
         }
     }
 
@@ -620,7 +640,7 @@ mod test {
             _memquota: ChannelAccount,
         ) -> Result<Arc<FakeChannel>> {
             yield_now().await;
-            let FakeBuildSpec(ident, mood, id) = *target;
+            let FakeBuildSpec(ident, mood, id, _addr) = *target;
             let ed_ident = u32_to_ed(ident);
             assert_eq!(ed_ident, id);
             match mood {
@@ -657,7 +677,7 @@ mod test {
     fn connect_one_ok() {
         test_with_one_runtime!(|runtime| async {
             let mgr = new_test_abstract_chanmgr(runtime);
-            let target = FakeBuildSpec(413, '!', u32_to_ed(413));
+            let target = FakeBuildSpec(413, '!', u32_to_ed(413), ADDR_A);
             let chan1 = mgr
                 .get_or_launch(target.clone(), CU::UserTraffic)
                 .await
@@ -676,7 +696,7 @@ mod test {
             let mgr = new_test_abstract_chanmgr(runtime);
 
             // This is set up to always fail.
-            let target = FakeBuildSpec(999, '❌', u32_to_ed(999));
+            let target = FakeBuildSpec(999, '❌', u32_to_ed(999), ADDR_A);
             let res1 = mgr.get_or_launch(target, CU::UserTraffic).await;
             assert!(matches!(res1, Err(Error::UnusableTarget(_))));
 
@@ -689,16 +709,18 @@ mod test {
         test_with_one_runtime!(|runtime| async {
             let mgr = new_test_abstract_chanmgr(runtime);
 
+            let usage = CU::UserTraffic;
+
             // TODO(nickm): figure out how to make these actually run
             // concurrently. Right now it seems that they don't actually
             // interact.
             let (ch3a, ch3b, ch44a, ch44b, ch86a, ch86b) = join!(
-                mgr.get_or_launch(FakeBuildSpec(3, 'a', u32_to_ed(3)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(3, 'b', u32_to_ed(3)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(44, 'a', u32_to_ed(44)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(44, 'b', u32_to_ed(44)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(86, '❌', u32_to_ed(86)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(86, '🔥', u32_to_ed(86)), CU::UserTraffic),
+                mgr.get_or_launch(FakeBuildSpec(3, 'a', u32_to_ed(3), ADDR_A), usage),
+                mgr.get_or_launch(FakeBuildSpec(3, 'b', u32_to_ed(3), ADDR_A), usage),
+                mgr.get_or_launch(FakeBuildSpec(44, 'a', u32_to_ed(44), ADDR_A), usage),
+                mgr.get_or_launch(FakeBuildSpec(44, 'b', u32_to_ed(44), ADDR_A), usage),
+                mgr.get_or_launch(FakeBuildSpec(86, '❌', u32_to_ed(86), ADDR_A), usage),
+                mgr.get_or_launch(FakeBuildSpec(86, '🔥', u32_to_ed(86), ADDR_A), usage),
             );
             let ch3a = ch3a.unwrap();
             let ch3b = ch3b.unwrap();
@@ -722,9 +744,9 @@ mod test {
             let mgr = new_test_abstract_chanmgr(runtime);
 
             let (ch3, ch4, ch5) = join!(
-                mgr.get_or_launch(FakeBuildSpec(3, 'a', u32_to_ed(3)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(4, 'a', u32_to_ed(4)), CU::UserTraffic),
-                mgr.get_or_launch(FakeBuildSpec(5, 'a', u32_to_ed(5)), CU::UserTraffic),
+                mgr.get_or_launch(FakeBuildSpec(3, 'a', u32_to_ed(3), ADDR_A), CU::UserTraffic),
+                mgr.get_or_launch(FakeBuildSpec(4, 'a', u32_to_ed(4), ADDR_A), CU::UserTraffic),
+                mgr.get_or_launch(FakeBuildSpec(5, 'a', u32_to_ed(5), ADDR_A), CU::UserTraffic),
             );
 
             let ch3 = ch3.unwrap().0;
@@ -735,7 +757,7 @@ mod test {
             ch5.start_closing();
 
             let ch3_new = mgr
-                .get_or_launch(FakeBuildSpec(3, 'b', u32_to_ed(3)), CU::UserTraffic)
+                .get_or_launch(FakeBuildSpec(3, 'b', u32_to_ed(3), ADDR_A), CU::UserTraffic)
                 .await
                 .unwrap()
                 .0;

@@ -77,12 +77,13 @@ use cfg_if::cfg_if;
 use reactor::BoxedChannelStreamOps;
 use safelog::sensitive as sv;
 use std::future::{Future, IntoFuture};
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use tor_cell::chancell::ChanMsg;
 use tor_cell::chancell::msg::AnyChanMsg;
-use tor_cell::chancell::{AnyChanCell, CircId, msg::PaddingNegotiate};
+use tor_cell::chancell::{AnyChanCell, CircId, msg::Netinfo, msg::PaddingNegotiate};
 use tor_error::internal;
 use tor_linkspec::{HasRelayIds, OwnedChanTarget};
 use tor_memquota::mq_queue::{self, ChannelSpec as _, MpscSpec};
@@ -91,6 +92,9 @@ use tor_time::{AtomicOptTimestamp, CoarseInstant, CoarseTimeProvider};
 
 #[cfg(feature = "circ-padding")]
 use tor_async_utils::counting_streams::{self, CountingSink, CountingStream};
+
+#[cfg(feature = "relay")]
+use crate::circuit::CircuitRxReceiver;
 
 /// Imports that are re-exported pub if feature `testing` is enabled
 ///
@@ -187,6 +191,51 @@ where
     framed
 }
 
+/// Canonical state between this channel and its peer. This is inferred from the [`Netinfo`]
+/// received during the channel handshake.
+///
+/// A connection is "canonical" if the TCP connection's peer IP address matches an address
+/// that the relay itself claims in its [`Netinfo`] cell.
+#[derive(Debug)]
+pub(crate) struct Canonicity {
+    /// The peer has proven this connection is canonical for its address: at least one NETINFO "my
+    /// address" matches the observed TCP peer address.
+    pub(crate) peer_is_canonical: bool,
+    /// We appear canonical from the peer's perspective: its NETINFO "other address" matches our
+    /// advertised relay address.
+    pub(crate) canonical_to_peer: bool,
+}
+
+impl Canonicity {
+    /// Using a [`Netinfo`], build the canonicity object with the given addresses.
+    ///
+    /// The `my_addrs` are the advertised address of this relay or empty if a client/bridge as they
+    /// do not advertise or expose a reachable address.
+    ///
+    /// The `peer_addr` is the IP address we believe the peer has. In other words, it is either the
+    /// IP we used to connect to or the address we see in the accept() phase of the connection.
+    pub(crate) fn from_netinfo(netinfo: &Netinfo, my_addrs: &[IpAddr], peer_addr: IpAddr) -> Self {
+        Self {
+            // The "other addr" (our address as seen by the peer) matches the one we advertised.
+            canonical_to_peer: netinfo
+                .their_addr()
+                .is_some_and(|a: &IpAddr| my_addrs.contains(a)),
+            // The "my addresses" (the peer addresses that it claims to have) matches the one we
+            // see on the connection or that we attempted to connect to.
+            peer_is_canonical: netinfo.my_addrs().contains(&peer_addr),
+        }
+    }
+
+    /// Construct a fully canonical object.
+    #[cfg(any(test, feature = "testing"))]
+    pub(crate) fn new_canonical() -> Self {
+        Self {
+            peer_is_canonical: true,
+            canonical_to_peer: true,
+        }
+    }
+}
+
 /// An open client channel, ready to send and receive Tor cells.
 ///
 /// A channel is a direct connection to a Tor relay, implemented using TLS.
@@ -246,9 +295,10 @@ pub struct Channel {
     opened_at: CoarseInstant,
     /// Mutable state used by the `Channel.
     mutable: Mutex<MutableDetails>,
-
     /// Information shared with the reactor
     details: Arc<ChannelDetails>,
+    /// Canonicity of this channel.
+    canonicity: Canonicity,
 }
 
 /// This is information shared between the reactor and the frontend (`Channel` object).
@@ -550,6 +600,7 @@ impl Channel {
         clock_skew: ClockSkew,
         sleep_prov: S,
         memquota: ChannelAccount,
+        canonicity: Canonicity,
     ) -> Result<(Arc<Self>, reactor::Reactor<S>)>
     where
         S: CoarseTimeProvider + SleepProvider,
@@ -595,6 +646,7 @@ impl Channel {
             opened_at: CoarseInstant::now(),
             mutable: Mutex::new(mutable),
             details: Arc::clone(&details),
+            canonicity,
         });
 
         // We start disabled; the channel manager will `reconfigure` us soon after creation.
@@ -775,6 +827,16 @@ impl Channel {
         self.reactor_closed_rx.is_ready()
     }
 
+    /// Return true iff this channel is considered canonical by us.
+    pub fn is_canonical(&self) -> bool {
+        self.canonicity.peer_is_canonical
+    }
+
+    /// Return true if we think the peer considers this channel as canonical.
+    pub fn is_canonical_to_peer(&self) -> bool {
+        self.canonicity.canonical_to_peer
+    }
+
     /// If the channel is not in use, return the amount of time
     /// it has had with no circuits.
     ///
@@ -843,6 +905,50 @@ impl Channel {
             padding_stream,
             timeouts,
         ))
+    }
+
+    /// Return a newly allocated outbound relay circuit with.
+    ///
+    /// A circuit ID is allocated, but no messages are sent, and no cryptography is done.
+    ///
+    // TODO(relay): this duplicates much of new_tunnel above, but I expect
+    // the implementations to diverge once we introduce a new CtrlMsg for
+    // allocating relay circuits.
+    #[cfg(feature = "relay")]
+    pub(crate) async fn new_outbound_circ(
+        self: &Arc<Self>,
+    ) -> Result<(CircId, CircuitRxReceiver, oneshot::Receiver<CreateResponse>)> {
+        if self.is_closing() {
+            return Err(ChannelClosed.into());
+        }
+
+        let time_prov = self.time_provider().clone();
+        let memquota = CircuitAccount::new(&self.details.memquota)?;
+
+        // TODO: blocking is risky, but so is unbounded.
+        let (sender, receiver) =
+            MpscSpec::new(128).new_mq(time_prov.clone(), memquota.as_raw_account())?;
+        let (createdsender, createdreceiver) = oneshot::channel::<CreateResponse>();
+
+        let (tx, rx) = oneshot::channel();
+
+        self.send_control(CtrlMsg::AllocateCircuit {
+            created_sender: createdsender,
+            sender,
+            tx,
+        })?;
+
+        // TODO(relay): I don't think we need circuit-level padding on this side of the circuit.
+        // This just drops the padding controller and corresponding event stream,
+        // but maybe it would be better to just not set it up in the first place?
+        // This suggests we might need a different control command for allocating
+        // the outbound relay circuits...
+        let (id, circ_unique_id, _padding_ctrl, _padding_stream) =
+            rx.await.map_err(|_| ChannelClosed)??;
+
+        trace!("{}: Allocated CircId {}", circ_unique_id, id);
+
+        Ok((id, receiver, createdreceiver))
     }
 
     /// Shut down this channel immediately, along with all circuits that
@@ -955,6 +1061,7 @@ impl Channel {
             opened_at: CoarseInstant::now(),
             mutable: Default::default(),
             details,
+            canonicity: Canonicity::new_canonical(),
         };
         (channel, control_recv)
     }
@@ -1082,6 +1189,7 @@ pub(crate) mod test {
             opened_at: CoarseInstant::now(),
             mutable: Default::default(),
             details: fake_channel_details(),
+            canonicity: Canonicity::new_canonical(),
         }
     }
 

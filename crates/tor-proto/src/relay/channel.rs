@@ -7,6 +7,8 @@ pub(crate) mod handshake;
 pub(crate) mod initiator;
 pub(crate) mod responder;
 
+pub use responder::MaybeVerifiableRelayResponderChannel;
+
 use digest::Digest;
 use futures::{AsyncRead, AsyncWrite};
 use rand::Rng;
@@ -14,8 +16,10 @@ use safelog::Sensitive;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
+use tor_linkspec::OwnedChanTarget;
 
 use tor_cell::chancell::msg;
+use tor_cert::x509::TlsKeyAndCert;
 use tor_cert::{Ed25519Cert, rsa::RsaCrosscert};
 use tor_error::internal;
 use tor_llcrypto as ll;
@@ -87,9 +91,16 @@ impl RelayIdentities {
             cert_id_rsa,
         }
     }
-}
 
-impl RelayIdentities {
+    /// Return the TLS key and certificate to use for the underlying TLS provider.
+    ///
+    /// This is used by the TLS acceptor that acts as the TLS server provider.
+    pub fn tls_key_and_cert(&self) -> TlsKeyAndCert {
+        // TODO(relay) Hold the TlsKeyAndCert in the struct as it is created by arti-relay at
+        // startup.
+        todo!()
+    }
+
     /// Return our Ed identity key (KP_relayid_ed) as bytes.
     pub(crate) fn ed_id_bytes(&self) -> [u8; 32] {
         self.ed_id.into()
@@ -124,13 +135,14 @@ impl RelayChannelBuilder {
         sleep_prov: S,
         identities: Arc<RelayIdentities>,
         my_addrs: Vec<IpAddr>,
+        peer: &OwnedChanTarget,
         memquota: ChannelAccount,
     ) -> RelayInitiatorHandshake<T, S>
     where
         T: AsyncRead + AsyncWrite + CertifiedConn + StreamOps + Send + Unpin + 'static,
         S: CoarseTimeProvider + SleepProvider,
     {
-        RelayInitiatorHandshake::new(tls, sleep_prov, identities, my_addrs, memquota)
+        RelayInitiatorHandshake::new(tls, sleep_prov, identities, my_addrs, peer, memquota)
     }
 
     /// Accept a new handshake over a TLS stream.

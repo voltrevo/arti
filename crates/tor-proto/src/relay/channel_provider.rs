@@ -23,7 +23,7 @@ pub type ChannelResult = Result<Arc<Channel>>;
 // by the [`ChannelProvider`].
 #[allow(unreachable_pub)] // TODO(#1447)
 #[allow(unused)]
-pub struct OutboundChanSender(mpsc::UnboundedSender<ChannelResult>);
+pub struct OutboundChanSender(pub(crate) mpsc::UnboundedSender<ChannelResult>);
 
 impl OutboundChanSender {
     /// Create a new [`OutboundChanSender`] from an [`mpsc`] sender.
@@ -60,7 +60,7 @@ pub trait ChannelProvider {
     /// specified `reactor_id` which should only be used for logging purposes.
     ///
     /// Returns the requested channel via the specified [`OutboundChanSender`].
-    async fn get_or_launch(
+    fn get_or_launch(
         self: Arc<Self>,
         reactor_id: UniqId,
         target: Self::BuildSpec,

@@ -753,7 +753,7 @@ impl<S: SleepProvider + CoarseTimeProvider> Reactor<S> {
 pub(crate) mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use crate::channel::{ChannelType, ClosedUnexpectedly, UniqId};
+    use crate::channel::{Canonicity, ChannelType, ClosedUnexpectedly, UniqId};
     use crate::client::circuit::CircParameters;
     use crate::client::circuit::padding::new_padding;
     use crate::fake_mpsc;
@@ -803,6 +803,7 @@ pub(crate) mod test {
             crate::ClockSkew::None,
             runtime,
             fake_mq(),
+            Canonicity::new_canonical(),
         )
         .expect("channel create failed");
         (chan, reactor, recv1, send2)
