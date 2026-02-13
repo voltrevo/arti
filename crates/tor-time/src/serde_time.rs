@@ -37,7 +37,7 @@ where
         let s = if nanos == 0 {
             format!("{}s", secs)
         } else {
-            format!("{}.{}s", secs, nanos)
+            format!("{}.{:09}s", secs, nanos)
         };
         s.serialize(serializer)
     }
@@ -77,7 +77,15 @@ where
         let s = s.trim_end_matches('s');
         if let Some((secs_str, nanos_str)) = s.split_once('.') {
             let secs: u64 = secs_str.parse().map_err(D::Error::custom)?;
-            let nanos: u32 = nanos_str.parse().map_err(D::Error::custom)?;
+            // Right-pad with zeros to 9 digits so e.g. "1.1s" means 100_000_000 nanos,
+            // and "1.000000100s" means 100 nanos. This matches the standard convention
+            // for fractional seconds and ensures round-tripping works correctly.
+            let padded = if nanos_str.len() < 9 {
+                format!("{:0<9}", nanos_str)
+            } else {
+                nanos_str[..9].to_string()
+            };
+            let nanos: u32 = padded.parse().map_err(D::Error::custom)?;
             Ok(SystemTime::UNIX_EPOCH + Duration::new(secs, nanos))
         } else {
             let secs: u64 = s.parse().map_err(D::Error::custom)?;

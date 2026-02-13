@@ -92,9 +92,9 @@ This branch adds WebAssembly support to the Arti Tor client. Major new crates: `
 ## MEDIUM Issues
 
 ### 11. Duration serde round-trip bug
-`crates/tor-rtcompat/src/serde_time.rs:37-40` — Nanoseconds serialized as `format!("{}.{}s", secs, nanos)` produces e.g. `"1.100s"` for 1s+100ns, which deserializes to 100ns instead of the intended value. The fractional part needs zero-padding to 9 digits for correct round-tripping.
+`crates/tor-time/src/serde_time.rs:37-40` — Nanoseconds serialized as `format!("{}.{}s", secs, nanos)` produces e.g. `"1.100s"` for 1s+100ns, which deserializes to 100ns instead of the intended value. The fractional part needs zero-padding to 9 digits for correct round-tripping.
 
-> **TODO.** Not yet addressed.
+> **Fixed.** Serialization now uses `{:09}` to zero-pad nanos to 9 digits. Deserialization right-pads the fractional part to 9 digits before parsing, so both new and legacy formats round-trip correctly.
 
 ### 12. Misleading comment in wallclock()
 `crates/tor-rtcompat/src/wasm.rs:129` — Comment says "Use Performance.now()" but code uses `js_sys::Date::now()`. These are completely different APIs (monotonic vs wall clock).
