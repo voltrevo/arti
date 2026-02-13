@@ -2138,7 +2138,7 @@ impl<R: Runtime> TorClient<R> {
     #[instrument(skip_all, level = "trace")]
     pub fn wait_for_stop(
         &self,
-    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<R> {
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<'_, R> {
         // We defer to the "wait for unlock" handle on our statemgr.
         //
         // The statemgr won't actually be unlocked until it is finally
