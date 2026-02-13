@@ -34,13 +34,15 @@ pub mod cert;
 pub mod crypto;
 pub mod error;
 pub mod handshake;
+pub mod ready_signal;
 pub mod record;
 pub mod stream;
 pub mod trust_store;
 
 pub use error::{Result, TlsError};
+pub use ready_signal::ReadySignal;
 pub use stream::TlsStream;
-pub use trust_store::load_global_ca_bundle;
+pub use trust_store::{get_trust_store, load_global_ca_bundle};
 
 // Re-export the wrapper for version-aware TLS
 // Note: TlsStreamWrapper is defined below after TlsConnector
@@ -97,7 +99,7 @@ impl TlsConnector {
     where
         S: futures::io::AsyncRead + futures::io::AsyncWrite + Unpin,
     {
-        TlsStream::connect(stream, server_name, self.config.clone()).await
+        TlsStream::connect(stream, server_name, self.config.clone(), None).await
     }
 }
 

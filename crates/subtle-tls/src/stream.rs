@@ -11,9 +11,11 @@ use crate::handshake::{
     HANDSHAKE_CERTIFICATE_VERIFY, HANDSHAKE_ENCRYPTED_EXTENSIONS, HANDSHAKE_FINISHED,
     HANDSHAKE_SERVER_HELLO, TLS_VERSION_1_2,
 };
+use crate::ready_signal::ReadySignal;
 use crate::record::RecordLayer;
 use crate::TlsConfig;
 use futures::io::{AsyncRead, AsyncWrite};
+use std::rc::Rc;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -71,7 +73,16 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     /// Perform TLS handshake and return encrypted stream
-    pub async fn connect(mut stream: S, server_name: &str, config: TlsConfig) -> Result<Self> {
+    ///
+    /// `ca_bundle_wait` is an optional signal that cert verification will await
+    /// before rejecting an untrusted root, giving a background CA bundle fetch
+    /// time to complete.
+    pub async fn connect(
+        mut stream: S,
+        server_name: &str,
+        config: TlsConfig,
+        ca_bundle_wait: Option<Rc<ReadySignal>>,
+    ) -> Result<Self> {
         info!("Starting TLS 1.3 handshake with {}", server_name);
 
         let mut handshake = HandshakeState::new(server_name).await?;
@@ -126,6 +137,7 @@ where
             &mut record_layer,
             &mut handshake,
             &config,
+            ca_bundle_wait,
         )
         .await
         {
@@ -247,6 +259,7 @@ where
         record_layer: &mut RecordLayer,
         handshake: &mut HandshakeState,
         config: &TlsConfig,
+        ca_bundle_wait: Option<Rc<ReadySignal>>,
     ) -> Result<Option<Vec<u8>>> {
         let mut got_encrypted_extensions = false;
         let mut got_certificate = false;
@@ -411,7 +424,10 @@ where
             }
 
             // Verify certificate chain against trust store (WebPKI validation)
-            let verifier = CertificateVerifier::new(&handshake.server_name, false);
+            let mut verifier = CertificateVerifier::new(&handshake.server_name, false);
+            if let Some(signal) = ca_bundle_wait {
+                verifier = verifier.with_ca_bundle_wait(signal);
+            }
             verifier.verify_chain(&cert_chain).await?;
         }
 

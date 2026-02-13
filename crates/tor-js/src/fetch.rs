@@ -320,6 +320,7 @@ pub async fn fetch<S>(
     body: Option<Vec<u8>>,
     is_https: bool,
     host: &str,
+    ca_bundle_wait: Option<std::rc::Rc<subtle_tls::ReadySignal>>,
 ) -> Result<HttpResponse, JsTorError>
 where
     S: futures::io::AsyncRead + futures::io::AsyncWrite + Unpin + Send + 'static,
@@ -328,19 +329,19 @@ where
     debug!("Sending {} bytes of HTTP request", request_bytes.len());
 
     let response_bytes = if is_https {
-        // Use subtle-tls for HTTPS
-        use subtle_tls::{TlsConfig, TlsConnector};
+        use subtle_tls::{TlsConfig, TlsStream};
 
         let config = TlsConfig {
             skip_verification: false,
             alpn_protocols: vec!["http/1.1".to_string()],
             ..Default::default()
         };
-        let connector = TlsConnector::with_config(config);
 
-        let mut tls_stream = connector.connect(stream, host).await.map_err(|e| {
-            JsTorError::tls(format!("TLS handshake failed with {}: {}", host, e))
-        })?;
+        let mut tls_stream = TlsStream::connect(stream, host, config, ca_bundle_wait)
+            .await
+            .map_err(|e| {
+                JsTorError::tls(format!("TLS handshake failed with {}: {}", host, e))
+            })?;
         info!("TLS 1.3 connection established with {} (WASM/SubtleCrypto)", host);
 
         execute_http_request(&mut tls_stream, &request_bytes).await?

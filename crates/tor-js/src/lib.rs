@@ -42,6 +42,7 @@ use fetch::HttpResponse;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use arti_client::config::{BridgeConfigBuilder, CfgPath, pt::TransportConfigBuilder};
@@ -237,6 +238,10 @@ impl TorClientOptions {
 #[wasm_bindgen]
 pub struct TorClient {
     inner: Option<Arc<ArtiTorClient<WasmRuntime>>>,
+    /// Signal that fires when the background CA bundle fetch completes.
+    /// Passed to TLS cert verification so it can wait for extended roots
+    /// before rejecting an untrusted root CA.
+    ca_bundle_ready: Rc<subtle_tls::ReadySignal>,
 }
 
 #[wasm_bindgen]
@@ -272,8 +277,9 @@ impl TorClient {
             }
         };
 
+        let ca_ready = Rc::clone(&self.ca_bundle_ready);
         wasm_bindgen_futures::future_to_promise(async move {
-            let response = fetch_impl(&client, &url, init).await?;
+            let response = fetch_impl(&client, &url, init, Some(ca_ready)).await?;
             Ok(JsValue::from(response))
         })
     }
@@ -380,18 +386,26 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
         .map_err(|e| JsTorError::bootstrap(format!("Bootstrap failed: {}", e)).into_js_value())?;
     info!("Bootstrap complete!");
 
-    // 6. Fetch the full Mozilla CA bundle through Tor.
-    // The embedded roots (Let's Encrypt) are sufficient for curl.se,
-    // and the full bundle enables HTTPS to arbitrary sites (Google, etc.)
-    if let Err(e) = fetch_ca_bundle(&tor_client).await {
-        // Non-fatal: embedded roots still work for Let's Encrypt-signed sites
-        tracing::warn!("Failed to fetch CA bundle: {}. Only embedded roots available.", e);
-    } else {
-        tracing::info!("Fetched CA bundle");
-    }
+    // 6. Fetch the full Mozilla CA bundle through Tor in the background.
+    // The embedded roots (Let's Encrypt) are sufficient for bootstrap;
+    // the full bundle enables HTTPS to arbitrary sites (Google, etc.).
+    // The signal is passed to TLS cert verification via fetch_impl, so it can
+    // wait for extended roots before rejecting an untrusted root CA.
+    let ca_ready = subtle_tls::ReadySignal::new();
+    let ca_signal = Rc::clone(&ca_ready);
+    let client_for_ca = tor_client.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = fetch_ca_bundle(&client_for_ca).await {
+            tracing::warn!("Failed to fetch CA bundle: {}. Only embedded roots available.", e);
+        } else {
+            tracing::info!("Fetched CA bundle");
+        }
+        ca_signal.set();
+    });
 
     Ok(TorClient {
         inner: Some(Arc::new(tor_client)),
+        ca_bundle_ready: ca_ready,
     })
 }
 
@@ -482,6 +496,7 @@ async fn fetch_impl(
     client: &ArtiTorClient<WasmRuntime>,
     url_str: &str,
     init: JsValue,
+    ca_bundle_wait: Option<Rc<subtle_tls::ReadySignal>>,
 ) -> Result<JsHttpResponse, JsValue> {
     // Parse URL
     let url = url::Url::parse(url_str)
@@ -544,7 +559,7 @@ async fn fetch_impl(
     debug!("Connected, making HTTP request...");
 
     // Perform the HTTP request
-    let response = fetch::fetch(stream, &url, method, headers, body, is_https, host)
+    let response = fetch::fetch(stream, &url, method, headers, body, is_https, host, ca_bundle_wait)
         .await
         .map_err(|e| e.into_js_value())?;
 

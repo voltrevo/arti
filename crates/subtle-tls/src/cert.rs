@@ -5,8 +5,10 @@
 
 use crate::crypto::get_subtle_crypto;
 use crate::error::{Result, TlsError};
+use crate::ready_signal::ReadySignal;
 use crate::trust_store::{TrustStore, get_trust_store};
 use js_sys::{Array, Object, Reflect, Uint8Array};
+use std::rc::Rc;
 use tracing::{debug, info, trace, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -21,6 +23,8 @@ pub struct CertificateVerifier {
     skip_verification: bool,
     /// Trust store with root CAs
     trust_store: Option<TrustStore>,
+    /// Optional signal to await before rejecting an untrusted root.
+    ca_bundle_wait: Option<Rc<ReadySignal>>,
 }
 
 impl CertificateVerifier {
@@ -38,6 +42,7 @@ impl CertificateVerifier {
             server_name: server_name.to_string(),
             skip_verification,
             trust_store,
+            ca_bundle_wait: None,
         }
     }
 
@@ -47,7 +52,16 @@ impl CertificateVerifier {
             server_name: server_name.to_string(),
             skip_verification: false,
             trust_store: Some(trust_store),
+            ca_bundle_wait: None,
         }
+    }
+
+    /// Set a signal to await before rejecting an untrusted root.
+    /// When the root isn't found in current roots, the verifier waits for
+    /// this signal (e.g. CA bundle loading) then re-checks.
+    pub fn with_ca_bundle_wait(mut self, signal: Rc<ReadySignal>) -> Self {
+        self.ca_bundle_wait = Some(signal);
+        self
     }
 
     /// Verify a certificate chain
@@ -258,7 +272,40 @@ impl CertificateVerifier {
                 return Ok(());
             }
 
-            // Not in trust store and not issued by a trusted root -- reject
+            // Not in embedded roots — wait for CA bundle if it's still loading
+            if let Some(ref signal) = self.ca_bundle_wait {
+                if !trust_store.has_extended_roots() {
+                    info!("Root not in embedded CAs, waiting for CA bundle...");
+                    signal.wait().await;
+
+                    // Re-check with the (now hopefully loaded) extended roots
+                    if trust_store.is_trusted_root(last_cert_der) {
+                        info!(
+                            "Certificate chain terminates at extended root: {}",
+                            last_cert.subject()
+                        );
+                        return Ok(());
+                    }
+                    if let Some(root_der) =
+                        trust_store.find_issuing_trusted_root(last_cert_der)
+                    {
+                        let (_, root_cert) =
+                            X509Certificate::from_der(&root_der).map_err(|e| {
+                                TlsError::certificate(format!(
+                                    "Failed to parse trusted root: {}",
+                                    e
+                                ))
+                            })?;
+                        self.verify_signature(&last_cert, &root_cert).await?;
+                        info!(
+                            "Certificate chain verified: issued by extended root (issuer: {})",
+                            last_cert.issuer()
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
             return Err(TlsError::certificate(format!(
                 "Certificate chain does not terminate at a trusted root. \
                  Last cert subject: {}, issuer: {}",
