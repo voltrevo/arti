@@ -956,6 +956,35 @@ where
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // Complete any in-flight async encryption first
+        if let Some(ref mut pending) = self.pending_encrypt {
+            match Pin::new(&mut pending.future).poll(cx) {
+                Poll::Ready(Ok(ciphertext)) => {
+                    let original_len = pending.original_len;
+                    let _ = original_len;
+                    self.pending_encrypt = None;
+
+                    // Build the TLS record from the ciphertext
+                    let mut record = Vec::with_capacity(5 + ciphertext.len());
+                    record.push(CONTENT_TYPE_APPLICATION_DATA);
+                    record.push((TLS_VERSION_1_2 >> 8) as u8);
+                    record.push(TLS_VERSION_1_2 as u8);
+                    record.push((ciphertext.len() >> 8) as u8);
+                    record.push(ciphertext.len() as u8);
+                    record.extend_from_slice(&ciphertext);
+                    self.record_write_buffer.extend_from_slice(&record);
+                }
+                Poll::Ready(Err(e)) => {
+                    self.pending_encrypt = None;
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Async encryption failed during flush: {}", e),
+                    )));
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
         // Flush pending write buffer
         while !self.record_write_buffer.is_empty() {
             // Use mem::take to avoid clone while satisfying borrow checker
@@ -1049,8 +1078,16 @@ where
     }
 
     /// Flush the stream
+    ///
+    /// Drains any pending TLS record data in `record_write_buffer` to the
+    /// inner transport, then flushes the transport itself.
     pub async fn flush(&mut self) -> io::Result<()> {
         use futures::io::AsyncWriteExt;
+        // Flush any pending TLS record data to the inner stream
+        if !self.record_write_buffer.is_empty() {
+            let data = std::mem::take(&mut self.record_write_buffer);
+            self.inner.write_all(&data).await?;
+        }
         self.inner.flush().await
     }
 }

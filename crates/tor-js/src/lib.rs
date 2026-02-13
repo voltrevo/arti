@@ -462,6 +462,10 @@ async fn fetch_ca_bundle(client: &ArtiTorClient<WasmRuntime>) -> Result<(), Stri
         .write_all(request.as_bytes())
         .await
         .map_err(|e| format!("write: {}", e))?;
+    tls_stream
+        .flush()
+        .await
+        .map_err(|e| format!("flush: {}", e))?;
 
     let mut response = Vec::new();
     tls_stream
