@@ -126,7 +126,7 @@ impl SleepProvider for WasmRuntime {
     fn wallclock(&self) -> SystemTime {
         #[cfg(target_arch = "wasm32")]
         {
-            // Use Performance.now() for WASM
+            // Use Date.now() for WASM wall-clock time
             let millis = js_sys::Date::now();
             UNIX_EPOCH + Duration::from_millis(millis as u64)
         }

@@ -99,7 +99,7 @@ This branch adds WebAssembly support to the Arti Tor client. Major new crates: `
 ### 12. Misleading comment in wallclock()
 `crates/tor-rtcompat/src/wasm.rs:129` — Comment says "Use Performance.now()" but code uses `js_sys::Date::now()`. These are completely different APIs (monotonic vs wall clock).
 
-> **TODO.** Not yet addressed. Trivial fix.
+> **Fixed.** Comment updated to say "Date.now()" instead of "Performance.now()".
 
 ### 13. Aggressive SMUX keepalive
 `crates/webtor-rs-lite/src/smux.rs:240` — `KEEPALIVE_INTERVAL_MS = 500ms` sends NOP every 500ms. Official Snowflake clients typically use 5-30 second intervals. This wastes bandwidth over Tor.
