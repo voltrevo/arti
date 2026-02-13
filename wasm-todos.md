@@ -19,6 +19,7 @@
 - [ ] try fix suspected timing bugs (downloads unblocked by ping loop) (related to faster bootstrap)
 - sync with arti main branch
   - [x] 206e629
+  - [x] 9306eec
   - [ ] (probably needed again later)
 - [ ] fix tor-fetch\[-with-storage\].js slow exit (prints response and hangs for a long time)
 - [ ] fix TODO/FIXMEs added
