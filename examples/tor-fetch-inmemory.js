@@ -33,6 +33,11 @@ class MemoryStorage {
   async keys(prefix) {
     return [...this.data.keys()].filter(k => k.startsWith(prefix));
   }
+
+  // FIXME: Stub — single-process in-memory store doesn't need real locking.
+  // For cross-tab/process use, implement with Web Locks API or file locks.
+  async tryLock() { return true; }
+  async unlock() {}
 }
 
 // ============================================================================

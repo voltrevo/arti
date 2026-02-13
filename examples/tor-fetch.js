@@ -73,6 +73,11 @@ class FilesystemStorage {
       throw err;
     }
   }
+
+  // FIXME: Stub — use a lock file (e.g. proper-lockfile) for real
+  // cross-process locking on the filesystem storage directory.
+  async tryLock() { return true; }
+  async unlock() {}
 }
 
 // ============================================================================

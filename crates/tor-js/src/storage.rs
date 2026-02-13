@@ -161,7 +161,20 @@ impl JsStorage {
 ///
 /// - **Reads** hit the cache directly (sync)
 /// - **Writes** update the cache and schedule async persistence via `spawn_local()`
-/// - **Lock/unlock** delegates to JavaScript's `tryLock()`/`unlock()` methods
+/// - **Locking**: the JS-side lock is acquired once during construction and
+///   held for the client's lifetime. The sync `try_lock()`/`unlock()` methods
+///   only manage local state for arti's internal protocol.
+///
+/// # Locking limitations
+///
+/// Because [`KeyValueStore`] lock methods are sync but JS locking is async,
+/// we can't cycle locks at runtime. The JS lock is acquired once in [`new()`]
+/// and never released (until the tab/worker closes).
+///
+/// TODO: Consider making the lock trait methods async to enable true cross-tab
+/// lock cycling, or specialize on cache-only storage where locking isn't
+/// needed — just serve whatever cached data is available without requiring
+/// exclusive write access.
 pub struct CachedJsStorage {
     /// The underlying JS storage (for async write-back).
     js_storage: JsStorage,
@@ -180,14 +193,40 @@ unsafe impl Sync for CachedJsStorage {}
 impl CachedJsStorage {
     /// Create a new CachedJsStorage, preloading all data from JS storage.
     ///
-    /// This loads all `"state:"` and `"dir:"` prefixed keys from JS storage
-    /// into the in-memory cache. This is necessary because the [`KeyValueStore`]
-    /// trait is synchronous, but JS storage APIs are async.
+    /// Acquires the JS-side lock and holds it for the client's lifetime.
+    /// This validates that `tryLock()` and `unlock()` exist on the JS object,
+    /// then preloads all `"state:"` and `"dir:"` prefixed keys into the
+    /// in-memory cache (necessary because [`KeyValueStore`] is sync but JS
+    /// storage APIs are async).
     pub async fn new(js_storage: JsStorage) -> Result<Self, JsValue> {
+        // Acquire the JS-side lock. This is held for the client's lifetime.
+        // Also validates that tryLock() exists on the JS object.
+        js_storage.try_lock().await.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Storage must implement tryLock(): {:?}",
+                e
+            ))
+        })?;
+
+        // Validate that unlock() exists (we'll need it for shutdown).
+        // Call it, then re-acquire immediately.
+        js_storage.unlock().await.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Storage must implement unlock(): {:?}",
+                e
+            ))
+        })?;
+        js_storage.try_lock().await.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Storage.tryLock() failed on re-acquire: {:?}",
+                e
+            ))
+        })?;
+
         let storage = Self {
             js_storage,
             cache: Arc::new(RwLock::new(HashMap::new())),
-            locked: Arc::new(RwLock::new(false)),
+            locked: Arc::new(RwLock::new(true)),
         };
 
         storage.preload_all().await?;
@@ -295,8 +334,13 @@ impl KeyValueStore for CachedJsStorage {
     }
 
     fn try_lock(&self) -> Result<bool, StorageError> {
-        // On WASM, we can't synchronously call the async JS tryLock().
-        // Use the local lock state and schedule the JS lock call asynchronously.
+        // The JS-side lock is acquired once in CachedJsStorage::new() and held
+        // for the client's lifetime. These sync methods only track local state
+        // for arti's internal lock protocol — no JS calls are made here.
+        //
+        // TODO: Consider option B (async lock trait methods) to enable true
+        // cross-tab lock cycling, or specialize on cache-only storage where
+        // locking isn't needed — just serve whatever data is available.
         let mut locked = self
             .locked
             .write()
@@ -305,15 +349,6 @@ impl KeyValueStore for CachedJsStorage {
             return Ok(false);
         }
         *locked = true;
-
-        // Schedule the async JS lock call
-        let js_storage = self.js_storage.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            if let Err(e) = js_storage.try_lock().await {
-                tracing::warn!("CachedJsStorage: JS tryLock() failed: {:?}", e);
-            }
-        });
-
         Ok(true)
     }
 
@@ -322,20 +357,13 @@ impl KeyValueStore for CachedJsStorage {
     }
 
     fn unlock(&self) -> Result<(), StorageError> {
+        // Local-only: doesn't release the JS-side lock.
+        // The JS lock is held for the client's lifetime.
         let mut locked = self
             .locked
             .write()
             .map_err(|_| -> StorageError { "lock state poisoned".into() })?;
         *locked = false;
-
-        // Schedule the async JS unlock call
-        let js_storage = self.js_storage.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            if let Err(e) = js_storage.unlock().await {
-                tracing::warn!("CachedJsStorage: JS unlock() failed: {:?}", e);
-            }
-        });
-
         Ok(())
     }
 }

@@ -136,7 +136,10 @@ impl AnyStateMgr {
     /// Return a future that resolves when this manager is dropped/unlocked.
     ///
     /// On WASM, only custom backends are available, and they resolve immediately.
-    /// FIXME: Wrong. JS should do proper locking.
+    /// TODO: The JS-side lock is acquired once at construction and held for the
+    /// client's lifetime, so wait_for_unlock is a no-op. To support true
+    /// cross-tab lock cycling, the lock trait methods would need to be async,
+    /// or we could specialize on cache-only storage that doesn't need locking.
     #[cfg(target_arch = "wasm32")]
     pub fn wait_for_unlock(
         &self,

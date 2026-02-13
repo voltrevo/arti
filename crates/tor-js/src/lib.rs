@@ -386,6 +386,8 @@ async fn create_client(options: TorClientOptions) -> Result<TorClient, JsValue> 
     if let Err(e) = fetch_ca_bundle(&tor_client).await {
         // Non-fatal: embedded roots still work for Let's Encrypt-signed sites
         tracing::warn!("Failed to fetch CA bundle: {}. Only embedded roots available.", e);
+    } else {
+        tracing::info!("Fetched CA bundle");
     }
 
     Ok(TorClient {
@@ -681,12 +683,13 @@ const TS_TYPES: &str = r#"
  *   async keys(prefix: string): Promise<string[]> {
  *     // List keys matching prefix
  *   }
+ *   // FIXME: Use the Web Locks API for real cross-tab locking:
+ *   //   await navigator.locks.request('tor-storage', {ifAvailable: true}, ...)
+ *   // These stubs always succeed, which is fine for single-tab use.
  *   async tryLock(): Promise<boolean> {
- *     // Acquire exclusive write lock (e.g., Web Locks API)
  *     return true;
  *   }
  *   async unlock(): Promise<void> {
- *     // Release write lock
  *   }
  * }
  *

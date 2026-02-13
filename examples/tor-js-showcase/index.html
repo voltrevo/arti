@@ -554,6 +554,11 @@
                     req.onerror = () => reject(req.error);
                 });
             }
+
+            // FIXME: Stub — use the Web Locks API for real cross-tab locking:
+            //   await navigator.locks.request('tor-storage', {ifAvailable: true}, ...)
+            async tryLock() { return true; }
+            async unlock() {}
         }
 
         // URL validation
