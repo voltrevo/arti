@@ -114,7 +114,7 @@ This branch adds WebAssembly support to the Arti Tor client. Major new crates: `
 ### 15. Possible string slicing panic
 `crates/tor-js/src/lib.rs:144-145` — `self.message[1..self.message.len()-1]` slicing after checking for `starts_with('"')` could panic on non-ASCII boundaries. Use `trim_matches('"')` instead.
 
-> **TODO.** Not yet addressed.
+> **Done.** The original description was technically wrong — since `"` is ASCII, the byte indices `1` and `len()-1` are always valid UTF-8 boundaries, so this couldn't actually panic. Still, replaced with `trim_matches('"')` for clarity and robustness.
 
 ### 16. Duplicate trait definitions in tor-persist
 `crates/tor-persist/src/custom.rs:48-91` — `CustomStateMgr` trait is defined twice (once for WASM, once for native) with identical definitions. Should be unified.

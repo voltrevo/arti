@@ -142,9 +142,7 @@ impl tracing::field::Visit for MessageVisitor {
         if field.name() == "message" {
             self.message = format!("{:?}", value);
             // Remove surrounding quotes if present
-            if self.message.starts_with('"') && self.message.ends_with('"') {
-                self.message = self.message[1..self.message.len()-1].to_string();
-            }
+            self.message = self.message.trim_matches('"').to_string();
         } else if self.message.is_empty() {
             self.message = format!("{} = {:?}", field.name(), value);
         } else {
