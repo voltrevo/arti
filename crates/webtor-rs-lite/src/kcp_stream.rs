@@ -8,6 +8,13 @@
 //! Data flow:
 //! - send() -> snd_queue -> update() -> flush() -> output -> transport
 //! - transport -> input() -> rcv_buf -> recv() -> application
+//!
+//! # Mutex poisoning
+//! `OutputBuffer` uses `Arc<Mutex<Vec<u8>>>` so it can implement `Clone + Write`
+//! for the KCP output callback. The mutex is never actually contended (this is
+//! single-threaded async code), but we recover from poisoning rather than
+//! panicking for correctness on native targets. A poisoned buffer might contain
+//! a partial write, but KCP's own checksumming and retransmission handle that.
 
 use crate::error::{Result, TorError};
 use crate::time::Instant;
@@ -34,19 +41,19 @@ impl OutputBuffer {
     }
 
     fn take(&self) -> Vec<u8> {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.data.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *data)
     }
 
     #[allow(dead_code)]
     fn is_empty(&self) -> bool {
-        self.data.lock().unwrap().is_empty()
+        self.data.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
     }
 }
 
 impl Write for OutputBuffer {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.data.lock().unwrap().extend_from_slice(buf);
+        self.data.lock().unwrap_or_else(|e| e.into_inner()).extend_from_slice(buf);
         Ok(buf.len())
     }
 

@@ -72,9 +72,9 @@ This branch adds WebAssembly support to the Arti Tor client. Major new crates: `
 ### 8. Mutex poisoning panics in KCP
 `crates/webtor-rs-lite/src/kcp_stream.rs:37,43,49` — `.lock().unwrap()` on mutex will panic if the lock is poisoned. Should handle `PoisonError` or use `parking_lot::Mutex`.
 
-> **TODO.** Not yet addressed. Note: in single-threaded WASM, mutex poisoning
-> is effectively impossible since panics unwind the single thread. Still worth
-> fixing for correctness on native targets.
+> **Done.** Replaced `.lock().unwrap()` with `.lock().unwrap_or_else(|e| e.into_inner())`
+> to recover from poisoned mutexes instead of panicking. Safe because the
+> protected data is just a `Vec<u8>` with no invariants.
 
 ### 9. No bootstrap timeout
 `crates/tor-js/src/lib.rs:389-393` — `tor_client.bootstrap().await` can hang indefinitely if the Snowflake bridge is unresponsive. In a browser, this blocks the single-threaded event loop. Should wrap with a timeout.
