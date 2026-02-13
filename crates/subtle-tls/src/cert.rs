@@ -257,8 +257,6 @@ impl CertificateVerifier {
 
             // Check if the last cert was issued by a trusted root
             if let Some(root_der) = trust_store.find_issuing_trusted_root(last_cert_der) {
-                // Parse the root certificate and cryptographically verify its signature
-                // on the last chain certificate (not just name matching)
                 let (_, root_cert) = X509Certificate::from_der(&root_der).map_err(|e| {
                     TlsError::certificate(format!("Failed to parse trusted root: {}", e))
                 })?;
@@ -270,6 +268,16 @@ impl CertificateVerifier {
                     last_cert.issuer()
                 );
                 return Ok(());
+            }
+
+            // Check for cross-signed root: the server sent a cross-signed version
+            // of a root we trust (same subject, different DER bytes). Verify the
+            // penultimate cert against the self-signed version from our trust store.
+            if let Some(result) = self
+                .try_cross_signed_root(trust_store, cert_chain, &last_cert)
+                .await
+            {
+                return result;
             }
 
             // Not in embedded roots — wait for CA bundle if it's still loading
@@ -303,6 +311,14 @@ impl CertificateVerifier {
                         );
                         return Ok(());
                     }
+
+                    // Re-check cross-signed root with extended roots
+                    if let Some(result) = self
+                        .try_cross_signed_root(trust_store, cert_chain, &last_cert)
+                        .await
+                    {
+                        return result;
+                    }
                 }
             }
 
@@ -317,6 +333,62 @@ impl CertificateVerifier {
             return Err(TlsError::certificate(
                 "Certificate verification required but no trust store is available",
             ));
+        }
+    }
+
+    /// Check if the last cert is a cross-signed version of a trusted root.
+    ///
+    /// Servers sometimes send a cross-signed root (e.g., GTS Root R1 signed by
+    /// GlobalSign) whose DER bytes differ from the self-signed version in our
+    /// trust store. If the last cert's subject matches a trusted root, verify
+    /// the penultimate cert's signature against the self-signed root.
+    ///
+    /// Returns `Some(Ok(()))` if anchored, `Some(Err(..))` on signature failure,
+    /// or `None` if no cross-signed match was found.
+    async fn try_cross_signed_root(
+        &self,
+        trust_store: &TrustStore,
+        cert_chain: &[Vec<u8>],
+        last_cert: &X509Certificate<'_>,
+    ) -> Option<Result<()>> {
+        if cert_chain.len() < 2 {
+            return None;
+        }
+
+        let last_subject = last_cert.subject().to_string();
+        let root_der = trust_store.find_root_by_subject(&last_subject)?;
+
+        let (_, root_cert) = match X509Certificate::from_der(&root_der) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                return Some(Err(TlsError::certificate(format!(
+                    "Failed to parse trusted root: {}",
+                    e
+                ))));
+            }
+        };
+
+        let penultimate_der = &cert_chain[cert_chain.len() - 2];
+        let (_, penultimate_cert) = match X509Certificate::from_der(penultimate_der) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                return Some(Err(TlsError::certificate(format!(
+                    "Failed to parse penultimate certificate: {}",
+                    e
+                ))));
+            }
+        };
+
+        match self.verify_signature(&penultimate_cert, &root_cert).await {
+            Ok(()) => {
+                info!(
+                    "Certificate chain verified via cross-signed root: {} \
+                     (self-signed version in trust store)",
+                    last_subject
+                );
+                Some(Ok(()))
+            }
+            Err(e) => Some(Err(e)),
         }
     }
 

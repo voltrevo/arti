@@ -248,6 +248,29 @@ impl TrustStore {
         false
     }
 
+    /// Find a trusted root with the given subject name.
+    ///
+    /// Used to resolve cross-signed certificates: the server may send a
+    /// cross-signed root whose DER bytes differ from the self-signed version
+    /// in our trust store, but the subject name is the same.
+    pub fn find_root_by_subject(&self, subject: &str) -> Option<Vec<u8>> {
+        for root in &self.inner.embedded_roots {
+            if root.subject == subject {
+                return Some(root.der.clone());
+            }
+        }
+
+        if let Some(ref extended) = *self.inner.extended_roots.borrow() {
+            for root in extended {
+                if root.subject == subject {
+                    return Some(root.der.clone());
+                }
+            }
+        }
+
+        None
+    }
+
     /// Find a trusted root that issued the given certificate (by issuer name match).
     ///
     /// Returns the DER-encoded root certificate if found. The caller MUST verify
