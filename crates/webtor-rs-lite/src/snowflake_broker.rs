@@ -185,6 +185,8 @@ impl BrokerClient {
                     );
 
                     if !response.error.is_empty() {
+                        // String matching is unavoidable here: the broker protocol
+                        // returns errors as plain strings with no structured error codes.
                         let is_retryable_error = response.error.contains("timed out")
                             || response.error.contains("no proxies")
                             || response.error.contains("match");

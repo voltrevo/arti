@@ -77,17 +77,19 @@ impl JsTorError {
 
 impl From<arti_client::Error> for JsTorError {
     fn from(e: arti_client::Error) -> Self {
+        use arti_client::{ErrorKind, HasKind};
+
         let message = e.to_string();
 
-        // Map arti-client errors to our error codes
-        if message.contains("bootstrap") {
-            Self::bootstrap(message)
-        } else if message.contains("connect") || message.contains("connection") {
-            Self::connection(message)
-        } else if message.contains("config") {
-            Self::config(message)
-        } else {
-            Self::internal(message)
+        // Map arti-client errors to our error codes using structured ErrorKind
+        // instead of fragile string matching on error messages.
+        match e.kind() {
+            ErrorKind::BootstrapRequired => Self::bootstrap(message),
+            ErrorKind::InvalidConfig | ErrorKind::InvalidConfigTransition => Self::config(message),
+            ErrorKind::TorAccessFailed
+            | ErrorKind::RemoteNetworkTimeout
+            | ErrorKind::DirectoryExpired => Self::connection(message),
+            _ => Self::internal(message),
         }
     }
 }

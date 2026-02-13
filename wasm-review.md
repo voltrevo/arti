@@ -109,7 +109,7 @@ This branch adds WebAssembly support to the Arti Tor client. Major new crates: `
 ### 14. Fragile error classification via string matching
 `crates/tor-js/src/error.rs:78-92` and `crates/webtor-rs-lite/src/snowflake_broker.rs:144-145` — Error codes are assigned by matching on `.to_string()` content (e.g. `message.contains("bootstrap")`). Fragile and could misclassify errors.
 
-> **TODO.** Not yet addressed.
+> **Done.** `tor-js/src/error.rs`: replaced string matching with structured `ErrorKind` matching via `arti_client::HasKind`. `snowflake_broker.rs`: string matching is unavoidable since the broker protocol returns errors as plain strings; added comment documenting this.
 
 ### 15. Possible string slicing panic
 `crates/tor-js/src/lib.rs:144-145` — `self.message[1..self.message.len()-1]` slicing after checking for `starts_with('"')` could panic on non-ASCII boundaries. Use `trim_matches('"')` instead.
