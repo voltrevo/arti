@@ -21,7 +21,7 @@ tor-dirmgr = { path = "../tor-dirmgr", default-features = false, features = ["zs
 tor-llcrypto = { path = "../tor-llcrypto" }
 tor-netdoc = { path = "../tor-netdoc" }
 tor-checkable = { path = "../tor-checkable" }
-tor-async-utils = { path = "../tor-async-utils", version = "0.42.0" }
+tor-async-utils = { path = "../tor-async-utils", version = "0.43.0" }
 digest = "0.10"
 
 # TLS for HTTPS over DataStream (rustls with pure-Rust crypto for WASM)
