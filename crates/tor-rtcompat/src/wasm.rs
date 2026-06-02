@@ -44,6 +44,7 @@ use std::time::Duration;
 use web_time_compat::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tor_general_addr::unix;
+use crate::network::{TcpListenOptions, UnixListenOptions};
 
 /// A runtime for WASM environments.
 ///
@@ -507,6 +508,7 @@ impl NetStreamListener<unix::SocketAddr> for StubListener {
 impl NetStreamProvider<SocketAddr> for WasmRuntime {
     type Stream = JsProxyStream;
     type Listener = StubListener;
+    type ListenOptions = TcpListenOptions;
 
     async fn connect(&self, addr: &SocketAddr) -> IoResult<Self::Stream> {
         #[cfg(target_arch = "wasm32")]
@@ -547,7 +549,11 @@ impl NetStreamProvider<SocketAddr> for WasmRuntime {
         }
     }
 
-    async fn listen(&self, _addr: &SocketAddr) -> IoResult<Self::Listener> {
+    async fn listen(
+        &self,
+        _addr: &SocketAddr,
+        _options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "WasmRuntime does not support listening on TCP sockets",
@@ -559,6 +565,7 @@ impl NetStreamProvider<SocketAddr> for WasmRuntime {
 impl NetStreamProvider<unix::SocketAddr> for WasmRuntime {
     type Stream = JsProxyStream;
     type Listener = StubListener;
+    type ListenOptions = UnixListenOptions;
 
     async fn connect(&self, _addr: &unix::SocketAddr) -> IoResult<Self::Stream> {
         Err(io::Error::new(
@@ -567,7 +574,11 @@ impl NetStreamProvider<unix::SocketAddr> for WasmRuntime {
         ))
     }
 
-    async fn listen(&self, _addr: &unix::SocketAddr) -> IoResult<Self::Listener> {
+    async fn listen(
+        &self,
+        _addr: &unix::SocketAddr,
+        _options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "WasmRuntime does not support Unix sockets",

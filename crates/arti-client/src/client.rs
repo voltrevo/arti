@@ -2229,7 +2229,7 @@ impl<R: Runtime> TorClient<R> {
     pub fn wait_for_stop(
         &self,
     ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<'_, R> {
-        self.statemgr.wait_for_unlock()
+        self.client.statemgr.wait_for_unlock()
     }
 
     /// Getter for keymgr.
@@ -2431,8 +2431,12 @@ impl<R: Runtime> ClientShared<R> {
         // we can change this to comply with it.
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
-            if state_cfg != self.statemgr.path() {
-                how.cannot_change("storage.state_dir").map_err(wrap_err)?;
+            // `path()` is `None` for custom (non-filesystem) storage backends,
+            // for which `storage.state_dir` does not apply.
+            if let Some(cur_path) = self.statemgr.path() {
+                if state_cfg != cur_path {
+                    how.cannot_change("storage.state_dir").map_err(wrap_err)?;
+                }
             }
         }
 
