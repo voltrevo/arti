@@ -67,8 +67,6 @@ mod timer;
 mod traits;
 pub mod unimpl;
 pub mod unix;
-#[cfg(target_arch = "wasm32")]
-pub mod wasm;
 
 #[cfg(all(any(feature = "async-std", feature = "tokio", feature = "smol"), not(target_arch = "wasm32")))]
 use std::io;

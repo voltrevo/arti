@@ -18,28 +18,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Build WASM + TS wrapper
-        run: scripts/tor-js/build.sh --release
-
-      - name: Assemble showcase site
+      - name: Assemble redirect site
         run: |
           mkdir -p _site
-          cp examples/tor-js/showcase/index.html _site/
-          cp examples/tor-js/showcase/tor.svg _site/
-          cp -a crates/tor-js/ts-wrapper/dist _site/dist
+          cat > _site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>Redirecting…</title>
+            <meta http-equiv="refresh" content="0; url=https://privacy-ethereum.github.io/tor-js/">
+            <link rel="canonical" href="https://privacy-ethereum.github.io/tor-js/">
+          </head>
+          <body>
+            <p>The showcase has moved to
+            <a href="https://privacy-ethereum.github.io/tor-js/">https://privacy-ethereum.github.io/tor-js/</a>.</p>
+          </body>
+          </html>
+          EOF
 
       - uses: actions/upload-pages-artifact@v3
 

@@ -80,8 +80,6 @@ members = [
 
     "crates/arti-rpc-client-core",
 
-    "crates/tor-js",
-
     "maint/fixup-features",
     "maint/keygen-client-auth-test",
     "maint/keygen-openssh-test",

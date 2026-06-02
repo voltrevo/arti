@@ -1,6 +1,6 @@
 # Diff Analysis: Changes from upstream (`zydou/main`)
 
-Changes in `crates/`, excluding `crates/tor-js/`. For non-crate changes
+Changes in `crates/`. For non-crate changes
 (scripts, examples, CI, root config), see `non-crate-changes.md`.
 
 Upstream's `web-time-compat` crate and its codebase-wide migration
@@ -10,41 +10,26 @@ of that baseline.
 
 ---
 
-## tor-js (+6,100 lines Rust, not analyzed here)
-
-New crate (~6,100 lines Rust + TypeScript wrapper). WASM bindings for
-arti-client exposing a `fetch()`-like API to JavaScript. Includes:
-
-- **Rust** (`src/`): `TorClient` exposed via `wasm-bindgen`, HTTP/1.1
-  fetch over Tor circuits with rustls TLS, `CachedJsStorage` bridging
-  async JS storage to sync Rust reads, fast bootstrap from pre-packaged
-  consensus ZIP, structured error types.
-- **TypeScript** (`ts-wrapper/`): `TorClient`, `ArtiSocketProvider`
-  (direct TCP / WebRTC / WebSocket strategies with fallback), storage
-  adapters (IndexedDB, filesystem, memory, locking), logging, WASM
-  loader with CDN/base64/file entry points.
-
-See `wasm-notes/review.md` for a detailed code review of this crate.
-
----
-
-## tor-rtcompat (+1,089 -46)
+## tor-rtcompat (+199 -46)
 
 Arti is runtime-agnostic — it works with Tokio, async-std, or anything
 implementing its `Runtime` trait. This crate provides those
-implementations. On WASM, we add a new one: `WasmRuntime`.
+implementations.
 
-Non-Send JS types are wrapped in `SendWrapper` at the boundary, so
-all futures are genuinely `Send` and standard `async_trait` works
-without any conditional Send/Sync shims.
+The WASM runtime itself (`WasmRuntime` + its JS socket/TLS plumbing,
+formerly `src/wasm.rs`) now lives in the separate **tor-js** repository.
+What remains here are the changes that make `tor-rtcompat` *compile* for
+`wasm32` — feature gating, time shims, and a WASM spawn path — so the
+external crate can build against it.
 
 ### `src/lib.rs`
 **What:**
-- New `pub mod wasm;` (WASM-only).
 - All PreferredRuntime-related `#[cfg]` blocks gain `not(target_arch = "wasm32")`.
 - Various feature gate combinations updated.
 
-**Why:** Core WASM support — PreferredRuntime doesn't exist on WASM.
+**Why:** WASM support — PreferredRuntime doesn't exist on WASM, so the
+native backends (tokio/async-std/smol) and their TLS providers are all
+gated out of the `wasm32` build.
 
 ### `src/traits.rs`
 **What:**
@@ -52,19 +37,7 @@ without any conditional Send/Sync shims.
   instead of `spawn_obj` (cfg-gated implementation).
 
 **Why:** WASM has no multi-threaded executor; `spawn_local` is the only
-option. `Send` bounds are satisfied because all JS types use `SendWrapper`.
-
-### New file: `src/wasm.rs`
-**What:** ~870-line WASM runtime implementation including:
-- `WasmRuntime` struct implementing `SleepProvider`, `CoarseTimeProvider`,
-  `Spawn`, `Blocking` (panics), `NetStreamProvider` (JS callback),
-  `UdpProvider` (stub), `TlsProvider` (rustls + rustls-rustcrypto).
-- `WasmSleepFuture` using `gloo_timers`.
-- `JsProxyStream` wrapping JS socket objects via `SendWrapper`.
-- `unsafe impl Send` only where `SendWrapper` doesn't cover the type
-  (e.g., composed futures containing gloo timer internals).
-
-**Why:** Core WASM runtime.
+option.
 
 ### `src/coarse_time.rs`
 **What:** WASM fallback added — `CoarseInstant` wraps
@@ -107,7 +80,7 @@ the same store is shared by two consumers:
 `Arc` and passes the same Arc to both `AnyStateMgr` and `BoxedDirStore`.
 They share the lock.
 
-### arti-client (+518 -37)
+### arti-client (+510 -17)
 
 #### `src/storage.rs`
 **What:** Re-exports `KeyValueStore` and `StorageError` from `tor-persist`.
@@ -135,7 +108,7 @@ that calls `split_storage`). Builder passes these through to
 - `reconfigure()`: state directory comparison gated behind `not(wasm32)`.
 - `wait_for_stop()`: split into native/WASM versions.
 
-### tor-persist (+391 -1)
+### tor-persist (+394 -1)
 
 #### New file: `src/custom.rs`
 **What:** `KeyValueStore` trait and `AnyStateMgr` enum dispatching
@@ -144,7 +117,7 @@ between `Fs(FsStateMgr)` and `Custom(Arc<dyn KeyValueStore>)`.
 #### `src/err.rs`
 **What:** New `Resource::Memory` variant and public error constructors.
 
-### tor-dirmgr (+696 -8)
+### tor-dirmgr (+695 -8)
 
 #### `src/lib.rs`
 **What:** `DirMgrStore::from_custom_store()` method. Re-exports `BoxedDirStore`.
