@@ -2,8 +2,10 @@
 
 use std::fmt::Write;
 
+use crate::body::{EncodedRequest, RequestBody};
+
 /// Encode an HTTP request in a quick and dirty HTTP 1.0 format.
-pub(crate) fn encode_request(req: &http::Request<String>) -> String {
+pub(crate) fn encode_request(req: &http::Request<RequestBody>) -> EncodedRequest {
     let mut s = format!("{} {} HTTP/1.0\r\n", req.method(), req.uri());
 
     for (key, val) in req.headers().iter() {
@@ -23,9 +25,23 @@ pub(crate) fn encode_request(req: &http::Request<String>) -> String {
     }
 
     s.push_str("\r\n");
-    s.push_str(req.body());
 
-    s
+    let mut body = EncodedRequest::from_header(s);
+    body.set_body(req.body().clone());
+
+    body
+}
+
+/// Testing helper: convert a request to a String.
+///
+/// # Panics
+///
+/// Panics if the request's body is not valid UTF-8
+#[cfg(test)]
+pub(crate) fn request_to_string(req: &http::Request<RequestBody>) -> String {
+    let body = encode_request(req);
+    let bytes: Vec<u8> = body.to_owned();
+    String::from_utf8(bytes).expect("Body was not UTF-8")
 }
 
 #[cfg(test)]
@@ -43,14 +59,18 @@ mod test {
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+    use std::sync::Arc;
+
     use super::*;
 
-    fn build_request(body: String, headers: &[(&str, &str)]) -> http::Request<String> {
+    fn build_request(body: String, headers: &[(&str, &str)]) -> http::Request<RequestBody> {
         let mut builder = http::Request::builder().method("GET").uri("/index.html");
 
         for (name, value) in headers {
             builder = builder.header(*name, *value);
         }
+
+        let body = RequestBody::from(Arc::<str>::from(body));
 
         builder.body(body).unwrap()
     }
@@ -61,13 +81,13 @@ mod test {
             let req = build_request(body.to_string(), &[]);
 
             assert_eq!(
-                encode_request(&req),
+                request_to_string(&req),
                 format!("GET /index.html HTTP/1.0\r\n{content_length_expected}\r\n{body}")
             );
 
             let req = build_request(body.to_string(), &[("X-Marsupial", "Opossum")]);
             assert_eq!(
-                encode_request(&req),
+                request_to_string(&req),
                 format!(
                     "GET /index.html HTTP/1.0\r\nx-marsupial: Opossum\r\n{content_length_expected}\r\n{body}",
                 )

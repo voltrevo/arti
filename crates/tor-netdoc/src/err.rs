@@ -323,6 +323,20 @@ pub(crate) enum NetdocErrorSource {
     Bug(#[from] tor_error::Bug),
 }
 
+/// Error parsing what was supposed to be a fixed, constant, string
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("expected fixed string {expected:?}, got {got:?}")]
+// This is unlikely to change - and our macro expansion wants to be able to construct i.
+// Making it exhaustive seems better than the bureaucracy of a constructor.
+#[allow(clippy::exhaustive_structs)]
+pub struct ExpectedConstantString {
+    /// The fixed, constant string we expected
+    pub expected: &'static str,
+
+    /// The actual value we encountered
+    pub got: String,
+}
+
 impl NetdocErrorKind {
     /// Construct a new Error with this kind.
     #[must_use]

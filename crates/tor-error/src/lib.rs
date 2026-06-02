@@ -441,13 +441,13 @@ pub enum ErrorKind {
     #[display("tor operation timed out")]
     TorNetworkTimeout,
 
-    /// We tried but failed to download a piece of directory information.
+    /// We tried but failed to download or upload a piece of directory information.
     ///
     /// This is a lower-level kind of error; in general it should be retried
     /// before the user can see it.   In the future it is likely to be split
     /// into several other kinds.
     // TODO ^
-    #[display("directory fetch attempt failed")]
+    #[display("directory fetch or upload attempt failed")]
     TorDirectoryError,
 
     /// An operation finished because a remote stream was closed successfully.
@@ -717,6 +717,18 @@ pub enum ErrorKind {
     /// caching documents for far too long, or something like that.
     #[display("possible clock skew detected")]
     ClockSkew,
+
+    /// A directory told us that some document we were trying to upload
+    /// is not acceptable.
+    ///
+    /// This could be our fault (if we have a bug, if we're misconfigured,
+    /// if we are running very old software, etc),
+    /// or it could be the fault of the remote host
+    /// (if it is running very old software).
+    ///
+    /// In the case of an upload over unencrypted HTTP, this error
+    /// could also be the result of a MITM attacker impersonating the directory.
+    TorDocumentRejected,
 
     /// Internal error (bug) in Arti.
     ///

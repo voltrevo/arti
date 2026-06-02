@@ -17,11 +17,17 @@ pub mod version;
 
 pub use embedded_cert::*;
 
+pub use misc::{Ed25519FamilyCert, Ed25519IdentityCert};
+
 pub use misc::KeywordOrString;
 pub use misc::RetainedOrderVec;
-pub use misc::{ContactInfo, InvalidNickname, Nickname, NotPresent, NumericBoolean, Unknown};
+pub use misc::{
+    ContactInfo, InvalidNickname, Nickname, NoMoreArguments, NotPresent, NumericBoolean, Unknown,
+};
 pub use misc::{Hostname, InternetHost, InvalidHostname, InvalidInternetHost};
 
+pub use misc::InvalidContactInfo;
+pub use misc::NotPresentEachValue;
 pub use misc::RsaSha1Signature;
 pub use misc::{B16, B16U, B64, FixedB16U, FixedB64};
 pub use misc::{Base64Fingerprint, Fingerprint, Ignored, IgnoredItemOrObjectValue, SpFingerprint};

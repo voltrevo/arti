@@ -128,7 +128,7 @@ use crate::time_core::MockTimeCore;
 ///    let rt1 = fake_internet.builder().add_address(addr1).runtime(rt.clone());
 ///    // ...and one that pretends we're listening at the second address.
 ///    let rt2 = fake_internet.builder().add_address(addr2).runtime(rt);
-///    let listener = rt2.listen(&sockaddr).await.unwrap();
+///    let listener = rt2.listen(&sockaddr, &Default::default()).await.unwrap();
 ///    let mut incoming_stream = listener.incoming();
 ///
 ///    // Now we can test our function!

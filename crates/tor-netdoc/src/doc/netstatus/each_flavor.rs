@@ -39,7 +39,7 @@ pub struct Consensus {
     /// to be relied on, since we may want to even abolish RSA at some point!
     pub relays: Vec<RouterStatus>,
     /// Footer for the consensus object.
-    pub footer: Footer,
+    pub footer: ConsensusFooterFields,
 }
 
 impl Consensus {
@@ -56,7 +56,7 @@ impl Consensus {
     /// Return a mapping from keywords to integers representing how
     /// to weight different kinds of relays in different path positions.
     pub fn bandwidth_weights(&self) -> &NetParams<i32> {
-        &self.footer.weights
+        &self.footer.bandwidth_weights
     }
 
     /// Return the map of network parameters that this consensus advertises.
@@ -67,13 +67,13 @@ impl Consensus {
     /// Return the latest shared random value, if the consensus
     /// contains one.
     pub fn shared_rand_cur(&self) -> Option<&SharedRandStatus> {
-        self.preamble.shared_rand_current_value.as_ref()
+        self.preamble.shared_rand.shared_rand_current_value.as_ref()
     }
 
     /// Return the previous shared random value, if the consensus
     /// contains one.
     pub fn shared_rand_prev(&self) -> Option<&SharedRandStatus> {
-        self.preamble.shared_rand_previous_value.as_ref()
+        self.preamble.shared_rand.shared_rand_previous_value.as_ref()
     }
 
     /// Return a [`ProtoStatus`] that lists the network's current requirements and
@@ -146,11 +146,11 @@ impl Consensus {
     }
 
     /// Extract the footer (but not signatures) from the reader.
-    fn take_footer(r: &mut NetDocReader<'_, NetstatusKwd>) -> Result<Footer> {
+    fn take_footer(r: &mut NetDocReader<'_, NetstatusKwd>) -> Result<ConsensusFooterFields> {
         use NetstatusKwd::*;
         let mut p = r.pause_at(|i| i.is_ok_with_kwd_in(&[DIRECTORY_SIGNATURE]));
         let footer_sec = NS_FOOTER_RULES.parse(&mut p)?;
-        let footer = Footer::from_section(&footer_sec)?;
+        let footer = ConsensusFooterFields::from_section(&footer_sec)?;
         Ok(footer)
     }
 
@@ -281,9 +281,14 @@ impl Consensus {
                 None,
             ),
         };
-        let siggroup = SignatureGroup {
+        let hashes = DirectorySignaturesHashesAccu {
             sha256,
             sha1,
+            // TODO #2530 This is wrong.  There isn't one hash, there's two.
+            sha1_unnamed: sha1,
+        };
+        let siggroup = SignatureGroup {
+            hashes,
             signatures,
         };
 
@@ -401,6 +406,12 @@ impl Preamble {
             None
         };
 
+        let shared_rand = SharedRandStatuses {
+            shared_rand_previous_value,
+            shared_rand_current_value,
+            __non_exhaustive: (),
+        };
+
         let preamble = Preamble {
             lifetime,
             client_versions,
@@ -412,8 +423,7 @@ impl Preamble {
             published: NotPresent,
             consensus_methods: NotPresent,
             known_flags: DocRelayFlags::new_empty_unknown_discarded(),
-            shared_rand_previous_value,
-            shared_rand_current_value,
+            shared_rand,
             __non_exhaustive: (),
         };
 

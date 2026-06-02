@@ -86,7 +86,7 @@ impl PublicKey {
 }
 impl Keypair {
     /// Generate a new random ed25519 keypair.
-    pub fn generate<R: rand_core::RngCore + rand_core::CryptoRng>(csprng: &mut R) -> Self {
+    pub fn generate<R: rand_core::Rng + rand_core::CryptoRng>(csprng: &mut R) -> Self {
         Self(ed25519_dalek::SigningKey::generate(&mut RngCompat::new(
             csprng,
         )))

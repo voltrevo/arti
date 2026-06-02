@@ -7,10 +7,9 @@ use tor_persist::slug::BadSlug;
 
 use std::error::Error as StdError;
 use std::fmt;
-use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::raw::RawKeystoreEntry;
+use crate::raw::RawEntryId;
 use crate::{KeyPath, KeyPathError, KeystoreId};
 
 /// An Error type for this crate.
@@ -163,14 +162,22 @@ impl UnrecognizedEntryError {
 }
 
 /// The opaque identifier of an unrecognized key inside a [`Keystore`](crate::Keystore).
-#[derive(Debug, Clone, PartialEq, derive_more::From, derive_more::Into)]
-pub struct UnrecognizedEntry(RawKeystoreEntry);
+#[derive(Debug, Clone, PartialEq, amplify::Getters)]
+pub struct UnrecognizedEntry {
+    /// The [`RawEntryId`] of the key, an identifier used in `arti raw` operations.
+    #[cfg_attr(not(feature = "onion-service-cli-extra"), getter(skip))]
+    raw_id: RawEntryId,
+    /// The [`KeystoreId`] of the keystore where the entry was found.
+    keystore_id: KeystoreId,
+}
 
-#[cfg(feature = "onion-service-cli-extra")]
-impl Deref for UnrecognizedEntry {
-    type Target = RawKeystoreEntry;
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl UnrecognizedEntry {
+    /// Create a new [`UnrecognizedEntry`] from a raw identifier.
+    pub(crate) fn new(raw_id: RawEntryId, keystore_id: KeystoreId) -> Self {
+        Self {
+            raw_id,
+            keystore_id,
+        }
     }
 }
 

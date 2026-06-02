@@ -31,6 +31,7 @@ use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 
 use crate::Error;
 use crate::circuit::celltypes::derive_deftly_template_RestrictedChanMsgSet;
+use crate::circuit::circhop::ReactorStreamComponents;
 use crate::circuit::reactor::CircReactorHandle;
 use crate::circuit::reactor::{CtrlCmd, forward};
 use crate::congestion::sendme::StreamRecvWindow;
@@ -242,10 +243,13 @@ impl RelayCirc {
                 req,
                 stream_id,
                 hop,
-                receiver,
-                msg_tx,
-                rate_limit_stream,
-                drain_rate_request_stream,
+                stream_components:
+                    ReactorStreamComponents {
+                        stream_inbound_rx,
+                        stream_outbound_tx,
+                        rate_limit_rx,
+                        drain_rate_request_rx,
+                    },
                 memquota,
                 relay_cell_format,
             } = req_ctx;
@@ -255,20 +259,20 @@ impl RelayCirc {
 
             let target = StreamTarget {
                 tunnel: Tunnel::Relay(Arc::clone(&tunnel)),
-                tx: msg_tx,
+                tx: stream_outbound_tx,
                 hop: None,
                 stream_id,
                 relay_cell_format,
-                rate_limit_stream,
+                rate_limit_stream: rate_limit_rx,
             };
 
             // can be used to build a reader that supports XON/XOFF flow control
             let xon_xoff_reader_ctrl =
-                XonXoffReaderCtrl::new(drain_rate_request_stream, target.clone());
+                XonXoffReaderCtrl::new(drain_rate_request_rx, target.clone());
 
             let reader = StreamReceiver {
                 target: target.clone(),
-                receiver,
+                receiver: stream_inbound_rx,
                 recv_window: StreamRecvWindow::new(RECV_WINDOW_INIT),
                 ended: false,
             };

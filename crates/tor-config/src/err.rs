@@ -65,6 +65,12 @@ impl From<derive_builder::SubfieldBuildError<ConfigBuildError>> for ConfigBuildE
     }
 }
 
+impl From<void::Void> for ConfigBuildError {
+    fn from(value: void::Void) -> Self {
+        void::unreachable(value)
+    }
+}
+
 impl ConfigBuildError {
     /// Return a new ConfigBuildError that prefixes its field name with
     /// `prefix` and a dot.
@@ -163,6 +169,15 @@ pub enum ConfigError {
         #[source]
         err: std::sync::Arc<std::io::Error>,
     },
+}
+
+/// An error that occurred while trying to look up a configuration value.
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ConfigGetValueError {
+    /// Some internal error occurred.
+    #[error("Internal error")]
+    Bug(#[from] tor_error::Bug),
 }
 
 /// Wrapper for our an error type from our underlying configuration library.

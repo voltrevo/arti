@@ -6,9 +6,10 @@ use crate::keystore::ctor::CTorKeystore;
 use crate::keystore::ctor::err::{CTorKeystoreError, MalformedServiceKeyError};
 use crate::keystore::fs_utils::{FilesystemAction, FilesystemError, checked_op};
 use crate::keystore::{EncodableItem, ErasedKey, KeySpecifier, Keystore, KeystoreId};
-use crate::raw::{RawEntryId, RawKeystoreEntry};
+use crate::raw::RawEntryId;
 use crate::{
-    CTorPath, KeyPath, KeystoreEntry, KeystoreEntryResult, Result, UnrecognizedEntryError,
+    CTorPath, KeyPath, KeystoreEntry, KeystoreEntryResult, Result, UnrecognizedEntry,
+    UnrecognizedEntryError,
 };
 
 use fs_mistrust::Mistrust;
@@ -326,7 +327,7 @@ impl Keystore for CTorServiceKeystore {
                     )),
                     None => {
                         let raw_id = RawEntryId::Path(path.into());
-                        let entry = RawKeystoreEntry::new(raw_id, self.id().clone()).into();
+                        let entry = UnrecognizedEntry::new(raw_id, self.id().clone());
                         Err(UnrecognizedEntryError::new(
                             entry,
                             Arc::new(CTorKeystoreError::MalformedKey {

@@ -12,8 +12,10 @@ pub(crate) mod vote;
 
 use super::{ConsensusFlavor, ConsensusMethods, consensus_methods_comma_separated};
 use crate::doc::netstatus::NetstatusKwd;
-use crate::doc::netstatus::{IgnoredPublicationTimeSp, Protocols, RelayWeight};
+use crate::doc::netstatus::{IgnoredPublicationTimeSp, Protocols, RelayWeight, RelayWeightsItem};
+use crate::encode::ItemEncoder;
 use crate::parse::parser::Section;
+use crate::parse2::ItemArgumentParseable;
 use crate::types::misc::*;
 use crate::types::relay_flags::{self, DocRelayFlags, RelayFlag, RelayFlags};
 use crate::types::version::TorVersion;
@@ -23,7 +25,7 @@ use itertools::chain;
 use std::sync::Arc;
 use std::{net, time};
 use tor_basic_utils::intern::InternCache;
-use tor_error::internal;
+use tor_error::{Bug, internal};
 use tor_llcrypto::pk::rsa::RsaIdentity;
 
 /// A version as presented in a router status.
@@ -61,8 +63,9 @@ static OTHER_VERSION_CACHE: InternCache<str> = InternCache::new();
 ///    must sort it.
 ///  * These non-invariants apply both within one instance of this struct,
 ///    and across multiple instances of it within a `RouterStatus`.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deftly)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Deftly)]
 #[derive_deftly(ItemValueParseable)]
+#[cfg_attr(feature = "incomplete", derive_deftly(ItemValueEncodable))] // untested
 #[non_exhaustive]
 pub struct RouterStatusMdDigestsVote {
     /// The methods for which this document is applicable.

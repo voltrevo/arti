@@ -20,7 +20,8 @@ use tor_chanmgr::{ChannelConfig, ChannelConfigBuilder};
 use tor_circmgr::{CircuitTiming, PathConfig, PreemptiveCircuitConfig};
 use tor_config::derive::prelude::*;
 use tor_config::{
-    ConfigBuildError, ExplicitOrAuto, extend_builder::extend_with_replace, mistrust::BuilderExt,
+    ConfigBuildError, ExplicitOrAuto, MetricsConfig, MetricsConfigBuilder,
+    extend_builder::extend_with_replace, mistrust::BuilderExt,
 };
 use tor_config_path::{CfgPath, CfgPathError, CfgPathResolver};
 use tor_dircommon::config::{NetworkConfig, NetworkConfigBuilder};
@@ -135,6 +136,10 @@ pub(crate) struct TorRelayConfig {
     /// Logging configuration
     #[deftly(tor_config(sub_builder))]
     pub(crate) logging: LoggingConfig,
+
+    /// Metrics configuration
+    #[deftly(tor_config(sub_builder))]
+    pub(crate) metrics: MetricsConfig,
 
     /// Directories for storing information on disk
     #[deftly(tor_config(sub_builder))]

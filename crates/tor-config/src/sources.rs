@@ -508,7 +508,7 @@ friends = 4242
         let td = tempdir().unwrap();
         let dflt = td.path().join("a_file");
         let files = vec![(dflt, MustRead::TolerateAbsence)];
-        load_nodefaults(&files, Default::default()).unwrap();
+        let _ignore_tree = load_nodefaults(&files, Default::default()).unwrap();
     }
 
     static EX2_TOML: &str = "

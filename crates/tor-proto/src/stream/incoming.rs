@@ -3,9 +3,7 @@
 use bitvec::prelude::*;
 use derive_deftly::Deftly;
 use oneshot_fused_workaround as oneshot;
-use postage::watch;
 
-use tor_cell::relaycell::msg::AnyRelayMsg;
 use tor_cell::relaycell::{RelayCellFormat, RelayCmd, StreamId, UnparsedRelayMsg, msg};
 use tor_cell::restricted_msg;
 use tor_error::internal;
@@ -14,6 +12,7 @@ use tor_memquota::mq_queue::{self, MpscSpec};
 use tor_rtcompat::DynTimeProvider;
 
 use crate::circuit::CircHopSyncView;
+use crate::circuit::circhop::ReactorStreamComponents;
 use crate::stream::cmdcheck::{AnyCmdChecker, CmdChecker, StreamStatus};
 use crate::stream::{CloseStreamBehavior, StreamComponents};
 use crate::{Error, Result};
@@ -22,14 +21,7 @@ use crate::{Error, Result};
 use crate::client::stream::DataStream;
 
 use crate::memquota::StreamAccount;
-use crate::stream::StreamMpscSender;
-use crate::stream::flow_ctrl::state::StreamRateLimit;
-use crate::stream::flow_ctrl::xon_xoff::reader::DrainRateRequest;
-use crate::stream::queue::StreamQueueReceiver;
-use crate::util::notify::NotifyReceiver;
 use crate::{HopLocation, HopNum};
-
-use std::mem::size_of;
 
 /// A `CmdChecker` that enforces invariants for inbound data streams.
 #[derive(Debug, Default)]
@@ -307,21 +299,8 @@ pub(crate) struct StreamReqInfo {
     /// The format which must be used with this stream to encode messages.
     #[deftly(has_memory_cost(indirect_size = "0"))]
     pub(crate) relay_cell_format: RelayCellFormat,
-    /// A channel for receiving messages from this stream.
-    #[deftly(has_memory_cost(indirect_size = "0"))] // estimate
-    pub(crate) receiver: StreamQueueReceiver,
-    /// A channel for sending messages to be sent on this stream.
-    #[deftly(has_memory_cost(indirect_size = "size_of::<AnyRelayMsg>()"))] // estimate
-    pub(crate) msg_tx: StreamMpscSender<AnyRelayMsg>,
-    /// A [`Stream`](futures::Stream) that provides updates to the rate limit for sending data.
-    // TODO(arti#2068): we should consider making this an `Option`
-    // the `watch::Sender` owns the indirect data
-    #[deftly(has_memory_cost(indirect_size = "0"))]
-    pub(crate) rate_limit_stream: watch::Receiver<StreamRateLimit>,
-    /// A [`Stream`](futures::Stream) that provides notifications when a new drain rate is
-    /// requested.
-    #[deftly(has_memory_cost(indirect_size = "0"))]
-    pub(crate) drain_rate_request_stream: NotifyReceiver<DrainRateRequest>,
+    /// A collection of queues/channels that can be used to interact with this stream.
+    pub(crate) stream_components: ReactorStreamComponents,
     /// The memory quota account to be used for this stream
     #[deftly(has_memory_cost(indirect_size = "0"))] // estimate (it contains an Arc)
     pub(crate) memquota: StreamAccount,

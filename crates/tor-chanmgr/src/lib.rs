@@ -55,7 +55,6 @@ mod mgr;
 #[cfg(test)]
 mod testing;
 pub mod transport;
-pub(crate) mod util;
 
 use futures::StreamExt;
 use futures::select_biased;
@@ -83,7 +82,7 @@ use {
 
 pub use err::Error;
 
-pub use config::{ChannelConfig, ChannelConfigBuilder};
+pub use config::{ChannelConfig, ChannelConfigBuilder, ProxyProtocol};
 pub use mgr::ChanMgrConfig;
 
 use tor_rtcompat::Runtime;

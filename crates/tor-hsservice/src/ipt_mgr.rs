@@ -5,6 +5,8 @@
 //!
 //! See [`IptManager::run_once`] for discussion of the implementation approach.
 
+use rand::RngExt;
+
 use crate::{internal_prelude::*, replay::OpenReplayLogError};
 
 use IptStatusStatus as ISS;

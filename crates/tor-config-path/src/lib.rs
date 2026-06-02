@@ -473,18 +473,16 @@ mod test_serde {
     use std::ffi::OsString;
     use std::fmt::Debug;
 
-    use derive_builder::Builder;
+    use derive_deftly::Deftly;
     use tor_config::load::TopLevel;
-    use tor_config::{ConfigBuildError, impl_standard_builder};
 
-    #[derive(Serialize, Deserialize, Builder, Eq, PartialEq, Debug)]
-    #[builder(derive(Serialize, Deserialize, Debug))]
-    #[builder(build_fn(error = "ConfigBuildError"))]
+    #[derive(Serialize, Deserialize, Deftly, Eq, PartialEq, Debug)]
+    #[derive_deftly(tor_config::derive::TorConfig)]
+    #[deftly(tor_config(no_default_trait))]
     struct TestConfigFile {
+        #[deftly(tor_config(no_default))]
         p: CfgPath,
     }
-
-    impl_standard_builder! { TestConfigFile: !Default }
 
     impl TopLevel for TestConfigFile {
         type Builder = TestConfigFileBuilder;

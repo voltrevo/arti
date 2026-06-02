@@ -220,6 +220,8 @@ where
 
     type Listener = TcpR::Listener;
 
+    type ListenOptions = TcpR::ListenOptions;
+
     #[inline]
     #[instrument(skip_all, level = "trace")]
     async fn connect(&self, addr: &net::SocketAddr) -> IoResult<Self::Stream> {
@@ -227,8 +229,12 @@ where
     }
 
     #[inline]
-    async fn listen(&self, addr: &net::SocketAddr) -> IoResult<Self::Listener> {
-        self.inner.tcp.listen(addr).await
+    async fn listen(
+        &self,
+        addr: &net::SocketAddr,
+        options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
+        self.inner.tcp.listen(addr, options).await
     }
 }
 
@@ -249,6 +255,8 @@ where
 
     type Listener = UnixR::Listener;
 
+    type ListenOptions = UnixR::ListenOptions;
+
     #[inline]
     #[instrument(skip_all, level = "trace")]
     async fn connect(&self, addr: &unix::SocketAddr) -> IoResult<Self::Stream> {
@@ -256,8 +264,12 @@ where
     }
 
     #[inline]
-    async fn listen(&self, addr: &unix::SocketAddr) -> IoResult<Self::Listener> {
-        self.inner.unix.listen(addr).await
+    async fn listen(
+        &self,
+        addr: &unix::SocketAddr,
+        options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
+        self.inner.unix.listen(addr, options).await
     }
 }
 

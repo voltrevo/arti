@@ -385,7 +385,7 @@ mod test {
 
     use super::*;
     use crate::test::mk_state_instance;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
     use test_temp_dir::{TestTempDir, TestTempDirGuard, test_temp_dir};
 
     struct TestReplayLogType;

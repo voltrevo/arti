@@ -6,7 +6,7 @@ use crate::pow::v1::{
     types::Solution,
 };
 use equix::{EquiXBuilder, HashError, RuntimeOption, SolverMemory};
-use rand::{CryptoRng, Rng, RngCore};
+use rand::{CryptoRng, Rng, RngExt};
 
 /// All inputs necessary to run the [`Solver`]
 #[derive(Debug, Clone)]
@@ -41,7 +41,7 @@ impl SolverInput {
     ///
     /// Generates a new random [`Nonce`] using the provided [`Rng`].
     /// May be parallelized if desired, by cloning the [`SolverInput`] first.
-    pub fn solve<R: RngCore + CryptoRng>(self, rng: &mut R) -> Solver {
+    pub fn solve<R: Rng + CryptoRng>(self, rng: &mut R) -> Solver {
         self.solve_with_nonce(&rng.random::<[u8; NONCE_LEN]>().into())
     }
 

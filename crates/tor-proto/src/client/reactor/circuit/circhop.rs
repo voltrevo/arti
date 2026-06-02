@@ -1,24 +1,21 @@
 //! Module exposing structures relating to the reactor's view of a circuit's hops.
 
 use super::{CircuitCmd, CloseStreamBehavior};
-use crate::circuit::circhop::{CircHopInbound, CircHopOutbound, HopSettings, SendRelayCell};
+use crate::circuit::circhop::{
+    CircHopInbound, CircHopOutbound, HopSettings, ReactorStreamComponents, SendRelayCell,
+};
 use crate::client::reactor::circuit::path::PathEntry;
 use crate::congestion::CongestionControl;
 use crate::crypto::cell::HopNum;
-use crate::stream::StreamMpscReceiver;
+use crate::memquota::StreamAccount;
 use crate::stream::cmdcheck::AnyCmdChecker;
-use crate::stream::flow_ctrl::state::StreamRateLimit;
-use crate::stream::flow_ctrl::xon_xoff::reader::DrainRateRequest;
-use crate::stream::queue::StreamQueueSender;
 use crate::streammap::{self, StreamEntMut, StreamMap};
 use crate::tunnel::TunnelScopedCircId;
-use crate::util::notify::NotifySender;
 use crate::util::tunnel_activity::TunnelActivity;
 use crate::{Error, Result};
 
 use futures::Stream;
 use futures::stream::FuturesUnordered;
-use postage::watch;
 use smallvec::SmallVec;
 use tor_cell::chancell::BoxedCellBody;
 use tor_cell::relaycell::flow_ctrl::{Xoff, Xon, XonKbpsEwma};
@@ -27,6 +24,7 @@ use tor_cell::relaycell::{
     AnyRelayMsgOuter, RelayCellDecoder, RelayCellDecoderResult, RelayCellFormat, StreamId,
     UnparsedRelayMsg,
 };
+use tor_rtcompat::DynTimeProvider;
 use web_time_compat::Instant;
 
 use safelog::sensitive as sv;
@@ -257,20 +255,16 @@ impl CircHop {
     pub(crate) fn begin_stream(
         &mut self,
         message: AnyRelayMsg,
-        sender: StreamQueueSender,
-        rx: StreamMpscReceiver<AnyRelayMsg>,
-        rate_limit_updater: watch::Sender<StreamRateLimit>,
-        drain_rate_requester: NotifySender<DrainRateRequest>,
+        time_prov: &DynTimeProvider,
         cmd_checker: AnyCmdChecker,
-    ) -> Result<(SendRelayCell, StreamId)> {
+        memquota: &StreamAccount,
+    ) -> Result<(SendRelayCell, StreamId, ReactorStreamComponents)> {
         self.outbound.begin_stream(
             Some(self.hop_num),
             message,
-            sender,
-            rx,
-            rate_limit_updater,
-            drain_rate_requester,
+            time_prov,
             cmd_checker,
+            memquota,
         )
     }
 
@@ -345,21 +339,13 @@ impl CircHop {
     #[cfg(feature = "hs-service")]
     pub(crate) fn add_ent_with_id(
         &self,
-        sink: StreamQueueSender,
-        rx: StreamMpscReceiver<AnyRelayMsg>,
-        rate_limit_updater: watch::Sender<StreamRateLimit>,
-        drain_rate_requester: NotifySender<DrainRateRequest>,
+        time_prov: &DynTimeProvider,
         stream_id: StreamId,
         cmd_checker: AnyCmdChecker,
-    ) -> Result<()> {
-        self.outbound.add_ent_with_id(
-            sink,
-            rx,
-            rate_limit_updater,
-            drain_rate_requester,
-            stream_id,
-            cmd_checker,
-        )
+        memquota: &StreamAccount,
+    ) -> Result<ReactorStreamComponents> {
+        self.outbound
+            .add_ent_with_id(time_prov, stream_id, cmd_checker, memquota)
     }
 
     /// Note that we received an END message (or other message indicating the end of

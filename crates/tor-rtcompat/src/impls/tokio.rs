@@ -199,6 +199,9 @@ pub(crate) mod net {
 
 // ==============================
 
+use crate::network::TcpListenOptions;
+#[cfg(unix)]
+use crate::network::UnixListenOptions;
 use crate::traits::*;
 use async_trait::async_trait;
 use futures::Future;
@@ -219,15 +222,20 @@ impl SleepProvider for TokioRuntimeHandle {
 impl crate::traits::NetStreamProvider for TokioRuntimeHandle {
     type Stream = net::TcpStream;
     type Listener = net::TcpListener;
+    type ListenOptions = TcpListenOptions;
 
     #[instrument(skip_all, level = "trace")]
     async fn connect(&self, addr: &std::net::SocketAddr) -> IoResult<Self::Stream> {
         let s = net::TokioTcpStream::connect(addr).await?;
         Ok(s.into())
     }
-    async fn listen(&self, addr: &std::net::SocketAddr) -> IoResult<Self::Listener> {
+    async fn listen(
+        &self,
+        addr: &std::net::SocketAddr,
+        options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
         // Use an implementation that's the same across all runtimes.
-        let lis = net::TokioTcpListener::from_std(super::tcp_listen(addr)?)?;
+        let lis = net::TokioTcpListener::from_std(super::tcp_listen(addr, options)?)?;
 
         Ok(net::TcpListener { lis })
     }
@@ -238,6 +246,7 @@ impl crate::traits::NetStreamProvider for TokioRuntimeHandle {
 impl crate::traits::NetStreamProvider<unix::SocketAddr> for TokioRuntimeHandle {
     type Stream = net::UnixStream;
     type Listener = net::UnixListener;
+    type ListenOptions = UnixListenOptions;
 
     #[instrument(skip_all, level = "trace")]
     async fn connect(&self, addr: &unix::SocketAddr) -> IoResult<Self::Stream> {
@@ -247,7 +256,14 @@ impl crate::traits::NetStreamProvider<unix::SocketAddr> for TokioRuntimeHandle {
         let s = net::TokioUnixStream::connect(path).await?;
         Ok(s.into())
     }
-    async fn listen(&self, addr: &unix::SocketAddr) -> IoResult<Self::Listener> {
+    async fn listen(
+        &self,
+        addr: &unix::SocketAddr,
+        options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
+        // Will fail to compile if we add options without handling them here.
+        let UnixListenOptions {} = options;
+
         let path = addr
             .as_pathname()
             .ok_or(crate::unix::UnsupportedAfUnixAddressType)?;

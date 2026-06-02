@@ -39,6 +39,9 @@
 use super::*;
 use crate::types::RetainedOrderVec;
 
+#[cfg(doc)]
+use crate::encode;
+
 /// Helper type that allows us to select an impl of `ItemSetMethods` etc.
 ///
 /// **For use by macros**.
@@ -95,6 +98,10 @@ struct DebugHelper(
 // When implementing this, update the documentation in the `NetdocParseable` derive.
 pub trait ItemSetMethods: Copy + Sized {
     /// The value for each Item.
+    ///
+    /// Should match the corresponding
+    /// [`encode::MultiplicityMethods::Each`].
+    /// (See docs there for rationale.)
     type Each: Sized;
 
     /// The output type: the type of the field in the netdoc struct.
@@ -330,6 +337,10 @@ impl<T> ItemSetMethods for &'_ MultiplicitySelector<T> {
 // When implementing this, update the documentation in the `ItemValueParseable` derive.
 pub trait ArgumentSetMethods: Copy + Sized {
     /// The value for each Item.
+    ///
+    /// Should match the corresponding
+    /// [`encode::MultiplicityMethods::Each`].
+    /// (See docs there for rationale.)
     type Each: Sized;
 
     /// The output type: the type of the field in the Item struct.
@@ -462,6 +473,10 @@ impl<T> ArgumentSetMethods for &MultiplicitySelector<T> {
 /// ```
 pub trait ObjectSetMethods: Copy + Sized {
     /// The value for each Item.
+    ///
+    /// Should match the corresponding
+    /// [`encode::OptionalityMethods::Each`].
+    /// (See [`encode::MultiplicityMethods::Each`] for rationale.)
     type Each: Sized;
 
     /// The output type: the type of the field in the Item struct.

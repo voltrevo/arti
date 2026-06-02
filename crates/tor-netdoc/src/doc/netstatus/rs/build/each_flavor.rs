@@ -145,6 +145,10 @@ impl RouterStatusBuilder {
             .ok_or(Error::CannotBuild("Missing protocols"))?
             .clone();
         let weight = self.weight.unwrap_or(RelayWeight::Unmeasured(0));
+        let weight = RelayWeightsItem {
+            effective: weight,
+            params: Unknown::new_discard(),
+        };
         let version = self.version.as_deref().map(str::parse).transpose()?;
 
         let mut ip = None;
@@ -171,16 +175,17 @@ impl RouterStatusBuilder {
             compile_error!("no builder for votes");
         ) };
 
+        #[allow(clippy::useless_conversion)] // sometimes doc_digest needs into
         Ok(RouterStatus {
             r: RouterStatusIntroItem {
                 nickname,
                 identity: Base64Fingerprint(identity),
-                doc_digest: r_doc_digest,
+                doc_digest: r_doc_digest.into(),
                 publication: IgnoredPublicationTimeSp,
                 ip: *ip.ip(),
                 or_port: ip.port(),
             },
-            m: m_doc_digest,
+            m: m_doc_digest.into(),
             a,
             version,
             protos,

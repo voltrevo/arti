@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
-use rand::Rng;
+use rand::RngExt;
 use rpc::InvalidRpcIdentifier;
 use tor_rpcbase as rpc;
 use tracing::warn;

@@ -231,7 +231,7 @@ pub(crate) mod test {
     use tor_rtcompat::{DynTimeProvider, Runtime};
     use tor_rtmock::MockRuntime;
 
-    use chanmsg::{AnyChanMsg, DestroyReason, HandshakeType};
+    use chanmsg::{AnyChanMsg, Destroy, DestroyReason, HandshakeType};
     use relaymsg::SendmeTag;
 
     use std::net::IpAddr;
@@ -379,6 +379,11 @@ pub(crate) mod test {
                 .unwrap();
         }
 
+        /// Simulate the sending of a forward channel message through our relay.
+        async fn send_fwd_cmsg(&mut self, msg: chanmsg::AnyChanMsg) {
+            self.circmsg_send.send(msg).await.unwrap();
+        }
+
         /// Whether the reactor opened an outbound channel
         /// (i.e. a channel to the next relay in the circuit).
         fn outbound_chan_launched(&self) -> bool {
@@ -407,7 +412,7 @@ pub(crate) mod test {
             &mut self,
             rt: &MockRuntime,
             expected_hs_type: HandshakeType,
-        ) {
+        ) -> Option<CircId> {
             // First, check that the reactor actually sent a CREATE2 to the next hop...
             let (circid, msg) = self.read_outbound().into_circid_and_msg();
             let _create2 = match msg {
@@ -419,11 +424,31 @@ pub(crate) mod test {
             };
 
             let handshake = vec![];
-            let created2 = chanmsg::Created2::new(handshake);
+            let created2 = chanmsg::Created2::new(handshake.clone());
             // ...and then finalize the handshake by pretending to be
             // the responding relay
             self.write_outbound(circid, chanmsg::AnyChanMsg::Created2(created2));
             rt.advance_until_stalled().await;
+
+            // Make sure we actually did send an EXTENDED2 towards the client
+            let msg = self.read_inbound();
+            let rmsg = match msg.msg() {
+                chanmsg::AnyChanMsg::Relay(r) => AnyRelayMsgOuter::decode_singleton(
+                    RelayCellFormat::V0,
+                    r.clone().into_relay_body(),
+                )
+                .unwrap(),
+                _ => panic!("unexpected forwarded {msg:?}"),
+            };
+
+            match rmsg.msg() {
+                relaymsg::AnyRelayMsg::Extended2(e) => {
+                    assert_eq!(e.clone().into_body(), handshake);
+                }
+                _ => panic!("unexpected relay message {rmsg:?}"),
+            }
+
+            circid
         }
 
         /// Whether the circuit is closing (e.g. due to a proto violation).
@@ -475,22 +500,35 @@ pub(crate) mod test {
         ]
     }
 
-    /// Assert that the relay circuit is shutting down.
+    /// Assert that we have sent a DESTROY cell with the specified `reason`
+    /// both towards the "client" and towards the "next hop", if there is one,
+    /// and that the relay circuit is shutting down.
     ///
-    /// Also asserts that the next cell on the inbound channel
-    /// is a DESTROY with the specified `reason`.
     /// The test is expected to drain the inbound Tor "channel"
     /// of any non-ending cells it might be expecting before calling this function.
-    fn assert_circuit_destroyed(ctrl: &mut ReactorTestCtrl, reason: DestroyReason) {
+    fn assert_destroy_sent(ctrl: &mut ReactorTestCtrl, reason: DestroyReason) {
         assert!(ctrl.is_closing());
 
-        let cell = ctrl.read_inbound();
+        macro_rules! assert_cell_is_destroy {
+            ($cell:expr) => {{
+                match $cell.msg() {
+                    chanmsg::AnyChanMsg::Destroy(d) => {
+                        assert_eq!(d.reason(), reason);
+                    }
+                    _ => panic!("unexpected ending {:?}", $cell),
+                }
+            }};
+        }
 
-        match cell.msg() {
-            chanmsg::AnyChanMsg::Destroy(d) => {
-                assert_eq!(d.reason(), reason);
-            }
-            _ => panic!("unexpected ending {cell:?}"),
+        // We *always* send a DESTROY towards the client
+        // when killing the circuit
+        let cell = ctrl.read_inbound();
+        assert_cell_is_destroy!(cell);
+
+        // If there's an outbound channel, ensure we sent a DESTROY over it too.
+        if ctrl.outbound_chan_launched() {
+            let cell = ctrl.read_outbound();
+            assert_cell_is_destroy!(cell);
         }
     }
 
@@ -508,7 +546,7 @@ pub(crate) mod test {
 
             assert!(logs_contain("got EXTEND2 in a RELAY cell?!"));
             assert!(!ctrl.outbound_chan_launched());
-            assert_circuit_destroyed(&mut ctrl, DestroyReason::NONE);
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
         });
     }
 
@@ -577,7 +615,7 @@ pub(crate) mod test {
             assert!(ctrl.outbound_chan_launched());
             assert!(!ctrl.is_closing());
 
-            ctrl.do_create2_handshake(&rt, handshake_type).await;
+            let _circid = ctrl.do_create2_handshake(&rt, handshake_type).await;
             assert!(logs_contain("Got CREATED2 response from next hop"));
             assert!(logs_contain("Extended circuit to the next hop"));
 
@@ -638,7 +676,7 @@ pub(crate) mod test {
             assert!(logs_contain(
                 "Asked to forward cell before the circuit was extended?!"
             ));
-            assert_circuit_destroyed(&mut ctrl, DestroyReason::NONE);
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
         });
     }
 
@@ -663,7 +701,86 @@ pub(crate) mod test {
             assert!(logs_contain(
                 "Invalid stream ID [scrubbed] for relay command BEGIN"
             ));
-            assert_circuit_destroyed(&mut ctrl, DestroyReason::NONE);
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+        });
+    }
+
+    #[traced_test]
+    #[test]
+    fn destroy_from_client() {
+        tor_rtmock::MockRuntime::test_with_various(|rt| async move {
+            let mut ctrl = ReactorTestCtrl::spawn_reactor(&rt);
+            rt.advance_until_stalled().await;
+
+            // Simulate the client sending us a DESTROY cell
+            let destroy = Destroy::new(DestroyReason::PROTOCOL);
+            ctrl.send_fwd_cmsg(destroy.into()).await;
+            rt.advance_until_stalled().await;
+
+            assert!(logs_contain(
+                "Received outbound DESTROY, circuit shutting down"
+            ));
+
+            // Ensure the destroy reason (PROTOCOL) is not propagated
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+        });
+    }
+
+    #[traced_test]
+    #[test]
+    fn destroy_from_next_hop() {
+        tor_rtmock::MockRuntime::test_with_various(|rt| async move {
+            let mut ctrl = ReactorTestCtrl::spawn_reactor(&rt);
+            rt.advance_until_stalled().await;
+
+            // Extend the circuit by another hop
+            let linkspecs = dummy_linkspecs();
+            let handshake_type = HandshakeType::NTOR_V3;
+            let extend2 = relaymsg::Extend2::new(linkspecs, handshake_type, vec![]).into();
+            ctrl.send_fwd(None, extend2, Recognized::Yes, true).await;
+            rt.advance_until_stalled().await;
+            let circid = ctrl.do_create2_handshake(&rt, handshake_type).await;
+            assert!(logs_contain("Extended circuit to the next hop"));
+            assert!(ctrl.outbound_chan_launched());
+
+            // Simulate the client sending us a DESTROY cell
+            let destroy = Destroy::new(DestroyReason::PROTOCOL);
+            ctrl.write_outbound(circid, destroy.into());
+            rt.advance_until_stalled().await;
+
+            // We have *not* received an outbound destroy
+            assert!(!logs_contain(
+                "Received outbound DESTROY, circuit shutting down"
+            ));
+
+            // We received an inbound one (from the next hop)
+            assert!(logs_contain(
+                "Received inbound DESTROY, circuit shutting down"
+            ));
+
+            // Ensure the destroy reason (PROTOCOL) is not propagated
+            // This will check that we've sent a DESTROY cell in both directions.
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+        });
+    }
+
+    #[traced_test]
+    #[test]
+    fn truncate() {
+        tor_rtmock::MockRuntime::test_with_various(|rt| async move {
+            let mut ctrl = ReactorTestCtrl::spawn_reactor(&rt);
+            rt.advance_until_stalled().await;
+
+            // Simulate the client sending us a TRUNCATE cell
+            let truncate = relaymsg::Truncate::default().into();
+            ctrl.send_fwd(None, truncate, Recognized::Yes, false).await;
+            rt.advance_until_stalled().await;
+
+            assert!(logs_contain(
+                "Circuit protocol violation: TRUNCATE not allowed"
+            ));
+
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
         });
     }
 

@@ -165,7 +165,7 @@ pub fn default_agent() -> Result<ureq::Agent, Error> {
 pub struct Connector<R: Runtime> {
     /// [`arti_client::TorClient`] used to make requests.
     #[educe(Debug(ignore))]
-    client: TorClient<R>,
+    client: Arc<TorClient<R>>,
 
     /// Selected [`ureq::tls::TlsProvider`]. Possible options are `Rustls` or `NativeTls`. The default is `Rustls`.
     tls_provider: UreqTlsProvider,
@@ -190,7 +190,7 @@ pub struct Connector<R: Runtime> {
 /// ```
 pub struct ConnectorBuilder<R: Runtime> {
     /// Configured [`arti_client::TorClient`] to be used with [`Connector`].
-    client: Option<TorClient<R>>,
+    client: Option<Arc<TorClient<R>>>,
 
     /// Runtime
     ///
@@ -255,7 +255,7 @@ pub struct Resolver<R: Runtime> {
     ///
     /// Use [`Connector::resolver`] or pass the client from your `Connector` to create an instance of `Resolver`.
     #[educe(Debug(ignore))]
-    client: TorClient<R>,
+    client: Arc<TorClient<R>>,
 }
 
 /// Error making or using http connection.
@@ -420,7 +420,7 @@ impl<R: Runtime> ConnectorBuilder<R> {
     ///
     /// If the client isn't `TorClient<PreferredRuntime>`, use [`ConnectorBuilder::with_runtime()`]
     /// to create a suitable `ConnectorBuilder`.
-    pub fn tor_client(mut self, client: TorClient<R>) -> ConnectorBuilder<R> {
+    pub fn tor_client(mut self, client: Arc<TorClient<R>>) -> ConnectorBuilder<R> {
         self.runtime = client.runtime().clone();
         self.client = Some(client);
         self
@@ -472,7 +472,7 @@ impl<R: Runtime + ToplevelBlockOn> UreqResolver for Resolver<R> {
 
 impl<R: Runtime + ToplevelBlockOn> Connector<R> {
     /// Creates new instance with the provided [`arti_client::TorClient`].
-    pub fn with_tor_client(client: TorClient<R>) -> Connector<R> {
+    pub fn with_tor_client(client: Arc<TorClient<R>>) -> Connector<R> {
         Connector {
             client,
             tls_provider: get_default_tls_provider(),
@@ -709,7 +709,7 @@ mod arti_ureq_test {
     }
 
     // Helper method to allow tests to be ran in a closure.
-    fn test_with_tor_client<R: Runtime>(rt: R, f: impl FnOnce(TorClient<R>)) {
+    fn test_with_tor_client<R: Runtime>(rt: R, f: impl FnOnce(Arc<TorClient<R>>)) {
         let temp_dir = test_temp_dir!();
         temp_dir.used_by(move |temp_dir| {
             let arti_config = TorClientConfigBuilder::from_directories(

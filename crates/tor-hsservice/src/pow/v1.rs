@@ -15,7 +15,7 @@ use equix::EquiXBuilder;
 use futures::{SinkExt, StreamExt};
 use futures::{Stream, channel::mpsc};
 use num_traits::FromPrimitive;
-use rand::{CryptoRng, RngCore};
+use rand::CryptoRng;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tor_basic_utils::RngExt as _;
@@ -438,7 +438,7 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> PowManagerGeneric<R, Q
     }
 
     /// Make a randomized seed expiration time.
-    fn make_next_expiration_time<Rng: RngCore + CryptoRng>(rng: &mut Rng) -> SystemTime {
+    fn make_next_expiration_time<Rng: rand::Rng + CryptoRng>(rng: &mut Rng) -> SystemTime {
         SystemTime::get()
             + Duration::from_secs(
                 60 * rng
@@ -607,7 +607,7 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> PowManagerGeneric<R, Q
     ///
     /// If we don't have any [`Seed`]s for the requested period, generate them. This is the only
     /// way that [`PowManagerGeneric`] learns about new [`TimePeriod`]s.
-    pub(crate) fn get_pow_params<Rng: RngCore + CryptoRng>(
+    pub(crate) fn get_pow_params<Rng: rand::Rng + CryptoRng>(
         self: &Arc<Self>,
         time_period: TimePeriod,
         rng: &mut Rng,

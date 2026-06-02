@@ -271,7 +271,7 @@ impl Proxy {
 #[must_use = "a hidden service ProxySet object will terminate the services when dropped"]
 pub(crate) struct ProxySet<R: Runtime> {
     /// The arti_client that we use to launch proxies.
-    client: arti_client::TorClient<R>,
+    client: Arc<arti_client::TorClient<R>>,
     /// The proxies themselves, indexed by nickname.
     proxies: Mutex<BTreeMap<HsNickname, Proxy>>,
 }
@@ -279,14 +279,14 @@ pub(crate) struct ProxySet<R: Runtime> {
 impl<R: Runtime> ProxySet<R> {
     /// Create and launch a set of onion service proxies.
     pub(crate) fn launch_new(
-        client: &arti_client::TorClient<R>,
+        client: Arc<arti_client::TorClient<R>>,
         config_list: OnionServiceProxyConfigMap,
     ) -> anyhow::Result<Self> {
         let proxies: BTreeMap<_, _> = config_list
             .into_iter()
             .filter_map(|(nickname, cfg)| {
                 // Filter out services which are disabled in the config
-                match Proxy::launch_new(client, cfg) {
+                match Proxy::launch_new(&client, cfg) {
                     Ok(Some(running_service)) => Some(Ok((nickname, running_service))),
                     Err(error) => Some(Err(error)),
                     Ok(None) => None,
@@ -295,7 +295,7 @@ impl<R: Runtime> ProxySet<R> {
             .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
 
         Ok(Self {
-            client: client.clone(),
+            client,
             proxies: Mutex::new(proxies),
         })
     }

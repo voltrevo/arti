@@ -133,7 +133,7 @@ pub(crate) async fn launch_rpc_mgr<R: Runtime>(
     cfg: &RpcConfig,
     resolver: &CfgPathResolver,
     mistrust: &Mistrust,
-    client: TorClient<R>,
+    client: Arc<TorClient<R>>,
 ) -> Result<Option<RpcProxySupport>> {
     if !cfg.enable {
         return Ok(None);
@@ -174,7 +174,7 @@ async fn run_rpc_listener<R: Runtime>(
     runtime: R,
     mut incoming: impl futures::Stream<Item = IoResult<IncomingConn>> + Unpin,
     rpc_mgr: Arc<RpcMgr>,
-    client: TorClient<R>,
+    client: Arc<TorClient<R>>,
     rpc_state: Arc<RpcVisibleArtiState>,
 ) -> Result<()> {
     while let Some((stream, _addr, info)) = incoming.next().await.transpose()? {

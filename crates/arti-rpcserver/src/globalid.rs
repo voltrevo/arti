@@ -5,6 +5,7 @@
 //! can be passed as the target of a SOCKS request.  Since the SOCKS request is
 //! not part of the RPC session, we need a way for it to refer to these objects.
 
+use rand::RngExt;
 use tor_bytes::Reader;
 use tor_llcrypto::util::ct::CtByteArray;
 use tor_rpcbase::{LookupError, ObjectId};
@@ -101,7 +102,7 @@ impl GlobalId {
     }
 
     /// As `encode`, but do not base64-encode the result.
-    fn encode_as_bytes<R: rand::RngCore>(&self, key: &MacKey, rng: &mut R) -> Vec<u8> {
+    fn encode_as_bytes<R: rand::Rng>(&self, key: &MacKey, rng: &mut R) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(Self::ENCODED_LEN);
         bytes.resize(MAC_LEN, 0);
         bytes.extend_from_slice(self.connection.as_ref());

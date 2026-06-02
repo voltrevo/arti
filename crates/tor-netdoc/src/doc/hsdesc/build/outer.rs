@@ -7,7 +7,7 @@
 use crate::doc::hsdesc::outer::{HS_DESC_SIGNATURE_PREFIX, HS_DESC_VERSION_CURRENT, HsOuterKwd};
 use crate::encode::{NetdocBuilder, NetdocEncoder};
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 use tor_bytes::EncodeError;
 use tor_cert::EncodedEd25519Cert;
 use tor_hscrypto::RevisionCounter;
@@ -44,7 +44,7 @@ pub(super) struct HsDescOuter<'a> {
 }
 
 impl<'a> NetdocBuilder for HsDescOuter<'a> {
-    fn build_sign<R: RngCore + CryptoRng>(self, _: &mut R) -> Result<String, EncodeError> {
+    fn build_sign<R: Rng + CryptoRng>(self, _: &mut R) -> Result<String, EncodeError> {
         use HsOuterKwd::*;
 
         let HsDescOuter {

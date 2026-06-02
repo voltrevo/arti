@@ -15,7 +15,7 @@ use crate::encode::NetdocEncoder;
 use crate::types::misc::Iso8601TimeNoSp;
 
 use rand::CryptoRng;
-use rand::RngCore;
+use rand::Rng;
 use tor_bytes::{EncodeError, Writer};
 use tor_cell::chancell::msg::HandshakeType;
 use tor_cert::{CertType, CertifiedKey, Ed25519Cert};
@@ -85,7 +85,7 @@ fn encode_pow_params(
 }
 
 impl<'a> NetdocBuilder for HsDescInner<'a> {
-    fn build_sign<R: RngCore + CryptoRng>(self, _: &mut R) -> Result<String, EncodeError> {
+    fn build_sign<R: Rng + CryptoRng>(self, _: &mut R) -> Result<String, EncodeError> {
         use HsInnerKwd::*;
 
         let HsDescInner {

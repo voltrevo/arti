@@ -1,7 +1,7 @@
 //! Implement the default transport, which opens TCP connections using a
 //! happy-eyeballs style parallel algorithm.
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt, TryFutureExt, stream::FuturesUnordered};
@@ -12,7 +12,7 @@ use tor_proto::peer::PeerAddr;
 use tor_rtcompat::{NetStreamProvider, Runtime};
 use tracing::{instrument, trace};
 
-use crate::Error;
+use crate::{Error, err::ConnectError};
 
 /// A default transport object that opens TCP connections for a
 /// `ChannelMethod::Direct`.
@@ -109,7 +109,7 @@ async fn connect_to_one<R: Runtime>(
                                 addr,
                             } => {
                                 let proto = super::proxied::Protocol::Socks(*version, auth.clone());
-                                super::proxied::connect_via_proxy(rt, addr, &proto, &target).await
+                                super::proxied::connect_via_proxy(rt, addr, &proto, &target).await?
                             }
                             crate::config::ProxyProtocol::HttpConnect { addr, credentials } => {
                                 // Wrap credentials in Sensitive to avoid accidental logging.
@@ -122,24 +122,22 @@ async fn connect_to_one<R: Runtime>(
                                     )
                                 });
                                 let proto = super::proxied::Protocol::HttpConnect { auth };
-                                super::proxied::connect_via_proxy(rt, addr, &proto, &target).await
+                                super::proxied::connect_via_proxy(rt, addr, &proto, &target).await?
                             }
                         }
                     } else {
                         // Direct connection
-                        rt.connect(&a)
-                            .await
-                            .map_err(super::proxied::ProxyError::from)
-                    }?;
+                        rt.connect(&a).await?
+                    };
                     Ok((stream, a))
                 }
-                .map_err(move |e: super::proxied::ProxyError| (e, a))
+                .map_err(move |e: ConnectError| (e, a))
             })
         })
         .collect::<FuturesUnordered<_>>();
 
     let mut ret = None;
-    let mut errors = vec![];
+    let mut errors: Vec<(ConnectError, SocketAddr)> = vec![];
 
     while let Some(result) = connections.next().await {
         match result {
@@ -159,10 +157,10 @@ async fn connect_to_one<R: Runtime>(
     // Ensure we don't continue trying to make connections.
     drop(connections);
 
-    ret.ok_or_else(|| Error::ChannelBuild {
+    ret.ok_or_else(|| Error::Connect {
         addresses: errors
             .into_iter()
-            .map(|(e, a)| (sv(a), Arc::new(std::io::Error::from(e))))
+            .map(|(e, a)| (sv(a.to_string()), e))
             .collect(),
     })
 }
@@ -216,8 +214,20 @@ mod test {
                 .add_address(addr1.ip())
                 .add_address(addr4.ip())
                 .runtime(rt.clone());
-            let _listener = server_rt.mock_net().listen(&addr1).await.unwrap();
-            let _listener2 = server_rt.mock_net().listen(&addr4).await.unwrap();
+
+            let listen_options = Default::default();
+
+            let _listener = server_rt
+                .mock_net()
+                .listen(&addr1, &listen_options)
+                .await
+                .unwrap();
+            let _listener2 = server_rt
+                .mock_net()
+                .listen(&addr4, &listen_options)
+                .await
+                .unwrap();
+
             // TODO: Because this test doesn't mock time, there will actually be
             // delays as we wait for connections to this address to time out. It
             // would be good to use MockSleepProvider instead, once we figure

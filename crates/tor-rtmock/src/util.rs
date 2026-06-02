@@ -72,12 +72,17 @@ define_derive_deftly! {
     impl <$tgens> NetStreamProvider for $ttype {
         type Stream = <$ftype as NetStreamProvider>::Stream;
         type Listener = <$ftype as NetStreamProvider>::Listener;
+        type ListenOptions = <$ftype as NetStreamProvider>::ListenOptions;
 
         async fn connect(&self, addr: &SocketAddr) -> IoResult<Self::Stream> {
             self.$fname.connect(addr).await
         }
-        async fn listen(&self, addr: &SocketAddr) -> IoResult<Self::Listener> {
-            self.$fname.listen(addr).await
+        async fn listen(
+            &self,
+            addr: &SocketAddr,
+            options: &Self::ListenOptions,
+        ) -> IoResult<Self::Listener> {
+            self.$fname.listen(addr, options).await
         }
     }
 
@@ -85,11 +90,16 @@ define_derive_deftly! {
     impl <$tgens> NetStreamProvider<tor_general_addr::unix::SocketAddr> for $ttype {
         type Stream = FakeStream;
         type Listener = FakeListener<tor_general_addr::unix::SocketAddr>;
+        type ListenOptions = tor_rtcompat::UnixListenOptions;
 
         async fn connect(&self, _addr: &tor_general_addr::unix::SocketAddr) -> IoResult<Self::Stream> {
             Err(tor_general_addr::unix::NoAfUnixSocketSupport::default().into())
         }
-        async fn listen(&self, _addr: &tor_general_addr::unix::SocketAddr) -> IoResult<Self::Listener> {
+        async fn listen(
+            &self,
+            _addr: &tor_general_addr::unix::SocketAddr,
+            _options: &Self::ListenOptions,
+        ) -> IoResult<Self::Listener> {
             Err(tor_general_addr::unix::NoAfUnixSocketSupport::default().into())
         }
     }

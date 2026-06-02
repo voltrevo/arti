@@ -5,7 +5,7 @@ use super::msg::{Body, empty_body};
 use amplify::Getters;
 use caret::caret_int;
 use derive_deftly::Deftly;
-use rand::{CryptoRng, Rng, RngCore};
+use rand::{CryptoRng, Rng, RngExt};
 
 use tor_bytes::{EncodeResult, Error, Readable, Reader, Result, Writeable, Writer};
 use tor_llcrypto::util::ct::CtByteArray;
@@ -114,7 +114,7 @@ pub struct V1Nonce(CtByteArray<V1_LINK_NONCE_LEN>);
 
 impl V1Nonce {
     /// Create a random `V1Nonce` to put in a LINK cell.
-    pub fn new<R: RngCore + CryptoRng>(rng: &mut R) -> V1Nonce {
+    pub fn new<R: Rng + CryptoRng>(rng: &mut R) -> V1Nonce {
         let mut nonce = [0_u8; V1_LINK_NONCE_LEN];
         rng.fill(&mut nonce[..]);
         Self(nonce.into())

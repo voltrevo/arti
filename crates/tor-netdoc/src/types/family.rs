@@ -148,9 +148,20 @@ impl Ord for RelayFamilyId {
     }
 }
 
+impl From<Ed25519Identity> for RelayFamilyId {
+    fn from(value: Ed25519Identity) -> Self {
+        Self::Ed25519(value)
+    }
+}
+
 impl NormalItemArgument for RelayFamilyId {}
 
 /// A list of multiple [`RelayFamilyId`] entries as found in microdescs.
+///
+/// Using the [`FromIterator`] implementation for [`RelayFamilyId`] leads the
+/// result to get deduplicated and sorted automatically using
+/// [`RelayFamilyIds::dedup()`] and [`RelayFamilyIds::sort()`], as those calls
+/// are effectively required for a useful use of this type.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deftly, derive_more::AsRef)]
 #[derive_deftly(ItemValueParseable)]
 pub struct RelayFamilyIds(
@@ -183,7 +194,13 @@ impl RelayFamilyIds {
 
 impl FromIterator<RelayFamilyId> for RelayFamilyIds {
     fn from_iter<T: IntoIterator<Item = RelayFamilyId>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
+        let mut res = Self(iter.into_iter().collect());
+        // TODO: We should really reconsider this because it does not achieve
+        // the same as subsequent calls to push.  As outlined above, we probably
+        // want to switch to a BTreeSet in the long run anyways.
+        res.sort();
+        res.dedup();
+        res
     }
 }
 

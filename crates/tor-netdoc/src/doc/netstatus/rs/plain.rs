@@ -1,4 +1,4 @@
-//! Implementation for the style of router descriptors used in
+//! Implementation for the style of router status entries used in
 //! old-style "ns" consensus documents.
 //
 // Read this file in conjunction with `each_variety.rs`.

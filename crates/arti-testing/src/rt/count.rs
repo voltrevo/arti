@@ -77,6 +77,8 @@ impl<R: NetStreamProvider + Send + Sync> NetStreamProvider for Counting<R> {
 
     type Listener = Counting<R::Listener>;
 
+    type ListenOptions = R::ListenOptions;
+
     async fn connect(&self, addr: &SocketAddr) -> IoResult<Self::Stream> {
         {
             self.count.lock().expect("lock poisoned").n_connect_attempt += 1;
@@ -94,8 +96,12 @@ impl<R: NetStreamProvider + Send + Sync> NetStreamProvider for Counting<R> {
         })
     }
 
-    async fn listen(&self, addr: &SocketAddr) -> IoResult<Self::Listener> {
-        let inner = self.inner.listen(addr).await?;
+    async fn listen(
+        &self,
+        addr: &SocketAddr,
+        options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
+        let inner = self.inner.listen(addr, options).await?;
         Ok(Counting {
             inner,
             count: self.count.clone(),

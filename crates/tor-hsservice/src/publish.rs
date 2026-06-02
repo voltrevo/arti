@@ -301,6 +301,7 @@ mod test {
                 // TODO: this will need to change when we start reusing circuits (currently,
                 // we only ever create one data stream per circuit).
                 poll_read_responses: self.poll_read_responses.clone(),
+                at_start: true,
             })
         }
 
@@ -317,6 +318,11 @@ mod test {
         ///
         /// Used for testing whether the reactor correctly retries on failure.
         poll_read_responses: I,
+        /// Are we at the start of a stream?
+        ///
+        /// (We keep track of this so we can assert that streams begin with a reasonable
+        /// HTTP header.)
+        at_start: bool,
     }
 
     impl<I: PollReadIter> AsyncRead for MockDataStream<I> {
@@ -347,14 +353,17 @@ mod test {
 
     impl<I: PollReadIter> AsyncWrite for MockDataStream<I> {
         fn poll_write(
-            self: Pin<&mut Self>,
+            mut self: Pin<&mut Self>,
             _cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<io::Result<usize>> {
             let request = std::str::from_utf8(buf).unwrap();
 
-            assert!(request.starts_with("POST /tor/hs/3/publish HTTP/1.0\r\n"));
-            let _prev = self.publish_count.fetch_add(1, Ordering::SeqCst);
+            if self.at_start {
+                assert!(request.starts_with("POST /tor/hs/3/publish HTTP/1.0\r\n"));
+                let _prev = self.publish_count.fetch_add(1, Ordering::SeqCst);
+                self.as_mut().at_start = false;
+            }
 
             Poll::Ready(Ok(request.len()))
         }

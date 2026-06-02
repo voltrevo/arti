@@ -36,20 +36,21 @@ use crate::parse::keyword::Keyword;
 use crate::parse::parser::{Section, SectionRules};
 use crate::parse::tokenize::{ItemResult, NetDocReader};
 use crate::parse2::{ArgumentError, ArgumentStream, ItemArgumentParseable};
-use crate::types::family::{RelayFamily, RelayFamilyId};
-use crate::types::misc::*;
+use crate::types::family::{RelayFamily, RelayFamilyIds};
 use crate::types::policy::*;
 use crate::types::routerdesc::*;
 use crate::types::version::TorVersion;
+use crate::types::{EmbeddedCert, misc::*};
 use crate::util::PeekableIterator;
 use crate::{AllowAnnotations, Error, KeywordEncodable, NetdocErrorKind as EK, Result};
 
 use derive_deftly::Deftly;
 use ll::pk::ed25519::Ed25519Identity;
+use saturating_time::SaturatingTime;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::{net, time};
-use tor_cert::CertType;
+use std::{iter, net, time};
+use tor_cert::{CertType, KeyUnknownCert};
 use tor_checkable::{Timebound, signed, timed};
 use tor_error::{internal, into_internal};
 use tor_llcrypto as ll;
@@ -107,62 +108,123 @@ pub struct RouterAnnotation {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct RouterDesc {
-    /// Human-readable nickname for this relay.
+    /// `router` --- Introduce a router descriptor.
+    /// * `router <nickname> <address> <orport> <socksport> <dirport>`
+    /// * At start, exactly once.
+    pub router: RouterDescIntroItem,
+
+    /// `identity-ed25519` --- Specify the router's ed25519 identity.
     ///
-    /// This is not secure, and not guaranteed to be unique.
-    pub nickname: Nickname,
-    /// IPv4 address for this relay.
-    pub ipv4addr: Option<net::Ipv4Addr>,
-    /// IPv4 ORPort for this relay.
-    pub orport: u16,
-    /// IPv6 address and port for this relay.
-    // TODO: we don't use a socketaddrv6 because we don't care about
-    // the flow and scope fields.  We should decide whether that's a
-    // good idea.
-    pub ipv6addr: Option<(net::Ipv6Addr, u16)>,
-    /// Directory port for contacting this relay for direct HTTP
-    /// directory downloads.
-    pub dirport: u16,
-    /// Declared uptime for this relay, in seconds.
-    pub uptime: Option<u64>,
-    /// Time when this router descriptor was published.
-    pub published: time::SystemTime,
-    /// Ed25519 identity certificate (identity key authenticating a
-    /// signing key)
-    pub identity_cert: tor_cert::Ed25519Cert,
-    /// RSA identity key for this relay. (Deprecated; never use this without
-    /// the ed25519 identity as well).
-    pub rsa_identity_key: ll::pk::rsa::PublicKey,
-    /// RSA identity key for this relay. (Deprecated; never use this without
-    /// the ed25519 identity as well).
-    pub rsa_identity: ll::pk::rsa::RsaIdentity,
-    /// Key for extending a circuit to this relay using the ntor protocol.
-    pub ntor_onion_key: ll::pk::curve25519::PublicKey,
-    /// Key for extending a circuit to this relay using the
-    /// (deprecated) TAP protocol.
-    pub tap_onion_key: Option<ll::pk::rsa::PublicKey>,
-    /// List of subprotocol versions supported by this relay.
-    pub proto: tor_protover::Protocols,
-    /// True if this relay says it's a directory cache.
-    pub is_dircache: bool,
-    /// True if this relay says that it caches extrainfo documents.
-    pub is_extrainfo_cache: bool,
-    /// Declared family members for this relay.  If two relays are in the
-    /// same family, they shouldn't be used in the same circuit.
-    pub family: Arc<RelayFamily>,
-    /// Declared (and proven) family IDs for this relay. If two relays
-    /// share a family ID, they shouldn't be used in the same circuit.
-    family_ids: Vec<RelayFamilyId>,
-    /// Software and version that this relay says it's running.
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:identity-ed25519>
+    pub identity_ed25519: EmbeddedCert<Ed25519IdentityCert, KeyUnknownCert>,
+
+    /// `master-key-ed25519` --- Redundantly specify the router's ed25519 identity.
+    ///
+    /// * `master-key-ed25519 <master key>`
+    /// * Exactly once.
+    // TODO DIRAUTH when implementing verification, don't forget to check this!
+    pub master_key_ed25519: Ed25519Public,
+
+    /// `bandwidth` --- Report router's network bandwidth.
+    ///
+    /// * `bandwidth <average> <burst> <observed>`
+    /// * Exactly once.
+    pub bandwidth: Bandwidth,
+
+    /// `platform` --- Describe the platform on which this relay is running.
+    ///
+    /// * `platform <rest of line>`
+    /// * At most once.
     pub platform: Option<RelayPlatform>,
-    /// A complete address-level policy for which IPv4 addresses this relay
-    /// says it supports.
+
+    /// `published` --- Time this descriptor (and extra-info) was generated.
+    ///
+    /// * `published <date> <time>`
+    /// * Exactly once.
+    pub published: Iso8601TimeSp,
+
+    /// `fingerprint` --- Redundant hash of ASN-1 encoding of router identity key.
+    ///
+    /// * `fingerprint <spaced fingerprint>`
+    /// * At most once.
+    pub fingerprint: Option<SpFingerprint>,
+
+    /// `uptime` --- How long this relay has been continously running
+    ///
+    /// * `uptime <number>`
+    /// * At most once.
+    pub uptime: Option<u64>,
+
+    /// `onion-key` --- Relay's obsolete RSA tap key.
+    ///
+    /// * `onion-key\n<rsa public key>`
+    /// * At most once.
+    /// * No extra arguments.
+    pub onion_key: Option<ll::pk::rsa::PublicKey>,
+
+    /// `ntor-onion-key` --- The circuit extension key.
+    ///
+    /// * `ntor-onion-key <base64 padded key>`
+    /// * Exactly once.
+    pub ntor_onion_key: Curve25519Public,
+
+    /// `signing-key` --- Obsolete RSA identity key.
+    ///
+    /// * `signing-key\n<rsa public key>`
+    pub signing_key: ll::pk::rsa::PublicKey,
+
+    /// `accept, reject` --- Exit policy.
+    ///
+    /// * `accept exitpattern`
+    /// * `reject exitpattern`
+    /// * Any number of times.
     // TODO: these polices can get bulky too. Perhaps we should
     // de-duplicate them too.
     pub ipv4_policy: AddrPolicy,
-    /// A summary of which ports this relay is willing to connect to
-    /// on IPv6.
+
+    /// `ipv6-policy` --- Exit plicy summary for IPv6
+    ///
+    /// * `ipv6-policy <accept/reject> PortList`
+    /// * At most once.
     pub ipv6_policy: Arc<PortPolicy>,
+
+    /// `family` --- Group relays for the purpose of path selection.
+    ///
+    /// * `family <LongIdent> ...`
+    /// * One or more `LongIdent` arguments.
+    /// * At most once.
+    pub family: Arc<RelayFamily>,
+
+    /// `family-cert` --- Prove membership in a relay family.
+    ///
+    /// * `family-cert\n<object>`
+    /// * Any number of times.
+    pub family_cert: RetainedOrderVec<EmbeddedCert<Ed25519FamilyCert, KeyUnknownCert>>,
+
+    /// `caches-extra-info` --- Router provides extra-info as a dirmirror.
+    ///
+    /// * `caches-extra-info`
+    /// * At most once.
+    /// * No extra arguments.
+    pub caches_extra_info: bool,
+
+    /// `or-address` --- Alternative ORport address and port
+    ///
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:or-address>
+    pub or_address: Vec<net::SocketAddr>,
+
+    /// `tunnelled-dir-server` --- Accepts a `BEGIN_DIR` relay message.
+    ///
+    /// * `tunnelled-dir-server`
+    /// * At most once.
+    /// * No extra arguments.
+    pub tunnelled_dir_server: bool,
+
+    /// `proto` --- Subprotocol capabilities supported.
+    ///
+    /// * `proto <entries>`
+    /// * Exactly once.
+    pub proto: tor_protover::Protocols,
 }
 
 /// Signatures of a [`RouterDesc`].
@@ -384,15 +446,17 @@ const ROUTER_PRE_VALIDITY_SECONDS: u64 = 86400;
 
 impl RouterDesc {
     /// Return a reference to this relay's RSA identity.
-    pub fn rsa_identity(&self) -> &RsaIdentity {
-        &self.rsa_identity
+    pub fn rsa_identity(&self) -> RsaIdentity {
+        self.signing_key.to_rsa_identity()
     }
 
     /// Return a reference to this relay's Ed25519 identity.
     pub fn ed_identity(&self) -> &Ed25519Identity {
-        self.identity_cert
-            .signing_key()
-            .expect("No ed25519 identity key on identity cert")
+        &self
+            .identity_ed25519
+            .get()
+            .expect("ed25519 identity cert should be verified")
+            .id_ed25519
     }
 
     /// Return a reference to the list of subprotocol versions supported by this
@@ -403,21 +467,22 @@ impl RouterDesc {
 
     /// Return a reference to this relay's Ntor onion key.
     pub fn ntor_onion_key(&self) -> &ll::pk::curve25519::PublicKey {
-        &self.ntor_onion_key
+        &self.ntor_onion_key.0
     }
 
     /// Return the publication
     pub fn published(&self) -> time::SystemTime {
-        self.published
+        self.published.0
     }
 
     /// Return an iterator of every `SocketAddr` at which this descriptor says
     /// its relay can be reached.
     pub fn or_ports(&self) -> impl Iterator<Item = net::SocketAddr> + '_ {
-        self.ipv4addr
-            .map(|a| net::SocketAddr::new(a.into(), self.orport))
-            .into_iter()
-            .chain(self.ipv6addr.map(net::SocketAddr::from))
+        iter::once(net::SocketAddr::new(
+            self.router.address.into(),
+            self.router.orport,
+        ))
+        .chain(self.or_address.iter().copied())
     }
 
     /// Return the declared family of this descriptor.
@@ -426,8 +491,13 @@ impl RouterDesc {
     }
 
     /// Return the authenticated family IDs of this descriptor.
-    pub fn family_ids(&self) -> &[RelayFamilyId] {
-        &self.family_ids[..]
+    pub fn family_ids(&self) -> RelayFamilyIds {
+        RelayFamilyIds::from_iter(
+            self.family_cert
+                .iter()
+                .map(|cert| cert.get().expect("unverified family cert?"))
+                .map(|cert| cert.family_ed25519.into()),
+        )
     }
 
     /// Helper: tokenize `s`, and divide it into three validated sections.
@@ -463,6 +533,13 @@ impl RouterDesc {
     ///
     /// Does not actually check liveness or signatures; you need to do that
     /// yourself before you can do the output.
+    ///
+    /// The following fields are not parsed with the legacy parser and their
+    /// default value is used instead.
+    /// * [`RouterDescIntroItem::socksport`] in [`RouterDesc::router`]
+    /// * [`RouterDesc::bandwidth`]
+    /// * [`RouterDesc::or_address`]
+    ///     * Extracts only the first IPv6 address.
     pub fn parse(s: &str) -> Result<UncheckedRouterDesc> {
         let mut reader = crate::parse::tokenize::NetDocReader::new(s)?;
         let result = Self::parse_internal(&mut reader).map_err(|e| e.within(s))?;
@@ -493,7 +570,19 @@ impl RouterDesc {
         let start_offset = header.required(ROUTER)?.offset_in(s).unwrap();
 
         // ed25519 identity and signing key.
-        let (identity_cert, ed25519_signing_key) = {
+        //
+        // Small digression: This is terrible.  We return a tuple containing
+        // a KeyUnknownCert and an UncheckedCert.  This is because of a parse2
+        // and legacy incongruence.  For parse2, we need the KeyUnknownCert
+        // to properly include it into EmbeddedCert, whereas the legacy parser
+        // will need an UncheckedCert because the verification chain is
+        // performed at the end.  Because tor-cert's method all consume self,
+        // we can not go backwards, meaning we have to store two separate
+        // copies.  It is also not possible to do the conversion to
+        // UncheckedCert later, because then we lose the error context returned
+        // in EK::BadObjectVal if the signed-by extension is missing.
+        //
+        let (ku_identity_cert, identity_cert, ed25519_signing_key) = {
             let cert_tok = header.required(IDENTITY_ED25519)?;
             // Unwrap should be safe because above `required` call should
             // return `Error::MissingToken` if `IDENTITY_ED25519` is not `Ok`
@@ -503,17 +592,16 @@ impl RouterDesc {
                     .with_msg("identity-ed25519")
                     .at_pos(cert_tok.pos()));
             }
-            let cert: tor_cert::UncheckedCert = cert_tok
+            let ku_cert = cert_tok
                 .parse_obj::<UnvalidatedEdCert>("ED25519 CERT")?
                 .check_cert_type(tor_cert::CertType::IDENTITY_V_SIGNING)?
-                .into_unchecked()
-                .should_have_signing_key()
-                .map_err(|err| {
-                    EK::BadObjectVal
-                        .err()
-                        .with_source(err)
-                        .at_pos(cert_tok.pos())
-                })?;
+                .into_unchecked();
+            let cert = ku_cert.clone().should_have_signing_key().map_err(|err| {
+                EK::BadObjectVal
+                    .err()
+                    .with_source(err)
+                    .at_pos(cert_tok.pos())
+            })?;
             let sk = *cert.peek_subject_key().as_ed25519().ok_or_else(|| {
                 EK::BadObjectVal
                     .at_pos(cert_tok.pos())
@@ -524,12 +612,12 @@ impl RouterDesc {
                     .at_pos(cert_tok.pos())
                     .with_msg("invalid ed25519 signing key")
             })?;
-            (cert, sk)
+            (ku_cert, cert, sk)
         };
 
         // master-key-ed25519: required, and should match certificate.
         #[allow(unexpected_cfgs)]
-        {
+        let ed25519_identity_key = {
             let master_key_tok = body.required(MASTER_KEY_ED25519)?;
             let ed_id: Ed25519Public = master_key_tok.parse_arg(0)?;
             let ed_id: ll::pk::ed25519::Ed25519Identity = ed_id.into();
@@ -539,7 +627,8 @@ impl RouterDesc {
                     .at_pos(master_key_tok.pos())
                     .with_msg("master-key-ed25519 does not match key in identity-ed25519"));
             }
-        }
+            ed_id
+        };
 
         // Legacy RSA identity
         let rsa_identity_key: ll::pk::rsa::PublicKey = body
@@ -601,7 +690,7 @@ impl RouterDesc {
                         .with_msg(e.to_string())
                         .at_pos(rtrline.pos())
                 })?,
-                Some(rtrline.parse_arg::<net::Ipv4Addr>(1)?),
+                rtrline.parse_arg::<net::Ipv4Addr>(1)?,
                 rtrline.parse_arg(2)?,
                 // Skipping socksport.
                 rtrline.parse_arg(4)?,
@@ -615,12 +704,10 @@ impl RouterDesc {
         let published = body
             .required(PUBLISHED)?
             .args_as_str()
-            .parse::<Iso8601TimeSp>()?
-            .into();
+            .parse::<Iso8601TimeSp>()?;
 
         // ntor key
         let ntor_onion_key: Curve25519Public = body.required(NTOR_ONION_KEY)?.parse_arg(0)?;
-        let ntor_onion_key: ll::pk::curve25519::PublicKey = ntor_onion_key.into();
         // ntor crosscert
         let crosscert_cert: tor_cert::UncheckedCert = {
             let cc = body.required(NTOR_ONION_KEY_CROSSCERT)?;
@@ -629,7 +716,7 @@ impl RouterDesc {
                 return Err(EK::BadArgument.at_pos(cc.arg_pos(0)).with_msg("not 0 or 1"));
             }
             let ntor_as_ed: ll::pk::ed25519::PublicKey =
-                ll::pk::keymanip::convert_curve25519_to_ed25519_public(&ntor_onion_key, sign)
+                ll::pk::keymanip::convert_curve25519_to_ed25519_public(&ntor_onion_key.0, sign)
                     .ok_or_else(|| {
                         EK::BadArgument
                             .at_pos(cc.pos())
@@ -718,38 +805,38 @@ impl RouterDesc {
         };
 
         // Family ids (for "happy families")
-        let family_certs: Vec<tor_cert::UncheckedCert> = body
+        //
+        // Unfortunately we have to store this as a tuple of KeyUnknownCert and
+        // UncheckedCert due to a parse2/legacy incongruence.  parse2 requires
+        // KeyUnknownCert for EmbeddedCert whereas the legacy parser needs
+        // descendants of it obtained by passing it irreversibly through the
+        // tor_cert verification chain.
+        let family_certs = body
             .slice(FAMILY_CERT)
             .iter()
             .map(|ent| {
-                ent.parse_obj::<UnvalidatedEdCert>("FAMILY CERT")?
+                let ku = ent
+                    .parse_obj::<UnvalidatedEdCert>("FAMILY CERT")?
                     .check_cert_type(CertType::FAMILY_V_IDENTITY)?
                     .check_subject_key_is(identity_cert.peek_signing_key())?
-                    .into_unchecked()
-                    .should_have_signing_key()
-                    .map_err(|e| {
-                        EK::BadObjectVal
-                            .with_msg("missing public key")
-                            .at_pos(ent.pos())
-                            .with_source(e)
-                    })
+                    .into_unchecked();
+                let unchecked = ku.clone().should_have_signing_key().map_err(|e| {
+                    EK::BadObjectVal
+                        .with_msg("missing public key")
+                        .at_pos(ent.pos())
+                        .with_source(e)
+                })?;
+                Ok((ku, unchecked))
             })
-            .collect::<Result<_>>()?;
-
-        let mut family_ids: Vec<_> = family_certs
-            .iter()
-            .map(|cert| RelayFamilyId::Ed25519(*cert.peek_signing_key()))
-            .collect();
-        family_ids.sort();
-        family_ids.dedup();
+            .collect::<Result<Vec<_>>>()?;
 
         // or-address
         // Extract at most one ipv6 address from the list.  It's not great,
-        // but it's what Tor does.
-        let mut ipv6addr = None;
+        // but it's what the legacy parser does.
+        let mut ipv6addr = Vec::with_capacity(1);
         for tok in body.slice(OR_ADDRESS) {
             if let Ok(net::SocketAddr::V6(a)) = tok.parse_arg::<net::SocketAddr>(0) {
-                ipv6addr = Some((*a.ip(), a.port()));
+                ipv6addr.push(a.into());
                 break;
             }
             // We skip over unparsable addresses. Is that right?
@@ -816,46 +903,70 @@ impl RouterDesc {
         let identity_cert = identity_cert.dangerously_assume_timely();
         let crosscert_cert = crosscert_cert.dangerously_assume_timely();
         let mut expirations = vec![
-            published + time::Duration::new(ROUTER_EXPIRY_SECONDS, 0),
+            published
+                .0
+                .saturating_add(time::Duration::new(ROUTER_EXPIRY_SECONDS, 0)),
             identity_cert.expiry(),
             crosscert_cert.expiry(),
         ];
 
-        for cert in family_certs {
+        // As outlined above, we have to do this ... :/
+        //
+        // Composing the verified part of the EmbeddedCert by just extracting
+        // the key alone is OK because it gets checked at the end anyways
+        // due to the push to signatures and expirations.
+        let mut embedded_family_certs = Vec::with_capacity(family_certs.len());
+        for (ku_cert, cert) in family_certs {
+            let family_ed25519 = *cert.peek_signing_key();
             let (inner, sig) = cert.dangerously_split().map_err(into_internal!(
                 "Missing a public key that was previously there."
             ))?;
+            let embedded_cert = EmbeddedCert::new(Ed25519FamilyCert { family_ed25519 }, ku_cert);
             signatures.push(Box::new(sig));
             expirations.push(inner.dangerously_assume_timely().expiry());
+            embedded_family_certs.push(embedded_cert);
         }
 
         // Unwrap is safe here because `expirations` array is not empty
         #[allow(clippy::unwrap_used)]
         let expiry = *expirations.iter().min().unwrap();
 
-        let start_time = published - time::Duration::new(ROUTER_PRE_VALIDITY_SECONDS, 0);
+        let start_time = published
+            .0
+            .saturating_sub(time::Duration::new(ROUTER_PRE_VALIDITY_SECONDS, 0));
 
         let desc = RouterDesc {
-            nickname,
-            ipv4addr,
-            orport,
-            ipv6addr,
-            dirport,
-            uptime,
-            published,
-            identity_cert,
-            rsa_identity_key,
-            rsa_identity,
-            ntor_onion_key,
-            tap_onion_key,
-            proto,
-            is_dircache,
-            is_extrainfo_cache,
-            family,
-            family_ids,
+            router: RouterDescIntroItem {
+                nickname,
+                address: ipv4addr,
+                orport,
+                socksport: 0,
+                dirport,
+            },
+            identity_ed25519: EmbeddedCert::new(
+                Ed25519IdentityCert {
+                    id_ed25519: ed25519_identity_key,
+                    sign_ed25519: ed25519_signing_key.into(),
+                },
+                ku_identity_cert,
+            ),
+            master_key_ed25519: ed25519_identity_key.into(),
+            bandwidth: Default::default(),
             platform,
+            published,
+            fingerprint: Some(rsa_identity.into()),
+            uptime,
+            onion_key: tap_onion_key,
+            ntor_onion_key,
+            signing_key: rsa_identity_key,
             ipv4_policy,
             ipv6_policy: ipv6_policy.intern(),
+            family,
+            family_cert: embedded_family_certs.into(),
+            caches_extra_info: is_extrainfo_cache,
+            or_address: ipv6addr,
+            tunnelled_dir_server: is_dircache,
+            proto,
         };
 
         let time_gated = timed::TimerangeBound::new(desc, start_time..expiry);
@@ -1005,9 +1116,9 @@ mod test {
             .check_signature()?
             .dangerously_assume_timely();
 
-        assert_eq!(rd.nickname.as_str(), "Akka");
-        assert_eq!(rd.orport, 443);
-        assert_eq!(rd.dirport, 0);
+        assert_eq!(rd.router.nickname.as_str(), "Akka");
+        assert_eq!(rd.router.orport, 443);
+        assert_eq!(rd.router.dirport, 0);
         assert_eq!(rd.uptime, Some(1036923));
         assert_eq!(
             rd.family.as_ref(),
@@ -1048,7 +1159,7 @@ mod test {
                 "[2a01:4f9:2a:2145::2]:443".parse().unwrap(),
             ]
         );
-        assert!(rd.tap_onion_key.is_some());
+        assert!(rd.onion_key.is_some());
 
         Ok(())
     }
@@ -1059,7 +1170,7 @@ mod test {
         let rd = RouterDesc::parse(TESTDATA2)?
             .check_signature()?
             .dangerously_assume_timely();
-        assert!(rd.tap_onion_key.is_none());
+        assert!(rd.onion_key.is_none());
 
         Ok(())
     }
@@ -1193,7 +1304,7 @@ mod test {
             .dangerously_assume_timely();
 
         assert_eq!(
-            rd.family_ids(),
+            rd.family_ids().as_ref(),
             &[
                 "ed25519:7sToQRuge1bU2hS0CG0ViMndc4m82JhO4B4kdrQey80"
                     .parse()

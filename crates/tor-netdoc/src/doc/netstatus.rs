@@ -64,17 +64,20 @@ pub use proto_statuses_parse2_encode::ProtoStatusesNetdocParseAccumulator;
 #[cfg(feature = "incomplete")]
 use crate::doc::authcert::EncodedAuthCert;
 
-use crate::doc::authcert::{AuthCert, AuthCertKeyIds};
-use crate::encode::{ItemValueEncodable, NetdocEncodable, NetdocEncoder};
+use crate::doc::authcert::{self, AuthCert, AuthCertKeyIds};
+use crate::encode::{
+    ItemArgument, ItemEncoder, ItemValueEncodable, NetdocEncodable, NetdocEncoder,
+};
 use crate::parse::keyword::Keyword;
 use crate::parse::parser::{Section, SectionRules, SectionRulesBuilder};
 use crate::parse::tokenize::{Item, ItemResult, NetDocReader};
 use crate::parse2::{
-    self, ArgumentStream, ErrorProblem, IsStructural, ItemStream, ItemValueParseable, KeywordRef,
-    NetdocParseable, StopAt,
+    self, ArgumentError, ArgumentStream, ErrorProblem, IsStructural, ItemArgumentParseable,
+    ItemStream, ItemValueParseable, KeywordRef, NetdocParseable, SignatureHashInputs,
+    SignatureItemParseable, StopAt, UnparsedItem,
 };
-use crate::types::misc::*;
 use crate::types::relay_flags::{self, DocRelayFlags};
+use crate::types::{self, *};
 use crate::util::PeekableIterator;
 use crate::{Error, KeywordEncodable, NetdocErrorKind as EK, NormalItemArgument, Pos, Result};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -89,6 +92,7 @@ use void::ResultVoidExt as _;
 
 use derive_deftly::{Deftly, define_derive_deftly};
 use digest::Digest;
+use itertools::Itertools;
 use std::sync::LazyLock;
 use tor_checkable::{ExternallySigned, timed::TimerangeBound};
 use tor_llcrypto as ll;
@@ -106,7 +110,7 @@ ns_export_each_flavor! {
 }
 
 ns_export_each_variety! {
-    ty: RouterStatus, Preamble;
+    ty: Footer, RouterStatus, Preamble;
 }
 
 #[deprecated]
@@ -121,6 +125,33 @@ pub use UnvalidatedPlainConsensus as UnvalidatedNsConsensus;
 pub use rs::{RouterStatusMdDigestsVote, SoftwareVersion};
 
 pub use dir_source::{ConsensusAuthoritySection, DirSource, SupersededAuthorityKey};
+
+define_constant_string! {
+    /// `network-status-version` version value
+    ///
+    /// This is the fixed string `3`.
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:network-status-version>
+    //
+    // IMO this is nicer than the formulation with an enum.
+    // In practice we are not going to support other versions with the same parsing approach;
+    // probably not even with the same code.
+    NetworkStatusVersion = "3";
+}
+
+define_constant_string! {
+    /// The `status` value in a `vote-status` line in a consensus
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:vote-status>
+    VoteStatusConsensus = "consensus";
+}
+
+define_constant_string! {
+    /// The `vote` value in a `vote-status` line in a vote
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:vote-status>
+    VoteStatusVote = "vote";
+}
 
 /// `publiscation` field in routerstatus entry intro item other than in votes
 ///
@@ -259,7 +290,7 @@ impl NormalItemArgument for ConsensusMethod {}
 /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:consensus-methods>
 ///
 /// There is also [`consensus_methods_comma_separated`] for `m` lines in votes.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deftly)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Deftly)]
 #[derive_deftly(ItemValueEncodable, ItemValueParseable)]
 #[non_exhaustive]
 pub struct ConsensusMethods {
@@ -286,6 +317,15 @@ pub mod consensus_methods_comma_separated {
             }
         }
         Ok(ConsensusMethods { methods })
+    }
+
+    /// Encode
+    #[cfg(feature = "incomplete")] // untested
+    pub fn write_arg_onto(self_: &ConsensusMethods, out: &mut ItemEncoder) -> Result<(), Bug> {
+        for s in Itertools::intersperse(self_.methods.iter().map(|v| v as &dyn Display), &",") {
+            out.args_raw_string(s);
+        }
+        Ok(())
     }
 }
 
@@ -519,34 +559,214 @@ impl ConsensusFlavor {
     }
 }
 
-define_directory_signature_hash_algo! {
-    #[derive_deftly_adhoc] // TODO DIRAUTH; suppresses complaints about attrs used only in poc
+define_derive_deftly! {
+    /// Bespoke derives applied to [`DirectorySignatureHashAlgo`]
+    ///
+    /// Generates:
+    ///
+    ///  * [`DirectorySignaturesHashesAccu`]
+    ///  * [`DirectorySignaturesHashesAccu::update_from`]
+    ///  * [`DirectorySignaturesHashesAccu::hash_slice_for_verification`]
+    DirectorySignaturesHashesAccu:
+
+    ${define FNAME ${paste ${snake_case $vname}} }
+
+    /// `directory-signature`a hash algorithm argument
+    #[derive(Clone, Copy, Default, Debug, Eq, PartialEq, Deftly)]
+    #[derive_deftly(AsMutSelf)]
+    #[non_exhaustive]
+    pub struct DirectorySignaturesHashesAccu {
+      $(
+        ${vattrs doc}
+        pub $FNAME: Option<[u8; ${vmeta(hash_len) as expr}]>,
+      )
+
+      /// `sha1` but without the algorithm name
+      ///
+      /// This is needed because the hash includes the whole signature item keyword line,
+      /// and therefore a signature with the `sha1` explicitly stated,
+      /// and one without, have different hashes!
+      ///
+      /// So we mustn't use the `sha1` field for both implicit and explicit use of SHA-1,
+      /// or multiple signatures with different syntax would overwrite each others'
+      /// different hashes.
+      pub sha1_unnamed: Option<[u8; 20]>,
+    }
+
+    impl DirectorySignaturesHashesAccu {
+        /// Calculate the hash for a signature item and update this accumulator
+        fn update_from(
+            &mut self,
+            algo: &DigestAlgoInSignature,
+            body: &SignatureHashInputs,
+        ) {
+            // Update the hash in self.$UPDATE according to algorithm $AGLO
+            // (uses dynamic bindings of those parameters)
+            ${define HASH {
+                // Avoid recalculating if we don't need to
+                self.$UPDATE.get_or_insert_with(|| {
+                    let mut h = tor_llcrypto::d::$ALGO::new();
+                    h.update(body.body().body());
+                    h.update(body.signature_item_kw_spc);
+                    h.finalize().into()
+                });
+            }}
+
+            match &**algo {
+              $(
+                Some(KeywordOrString::Known($vtype)) => {
+                    ${define UPDATE $FNAME}
+                    ${define ALGO $vname}
+                    $HASH
+                }
+              )
+                None => {
+                    ${define UPDATE sha1_unnamed}
+                    ${define ALGO Sha1}
+                    $HASH
+                }
+                Some(KeywordOrString::Unknown(..)) => {}
+            }
+        }
+
+        /// Return the hash value for a specific algorithm, as a slice
+        ///
+        /// `None` if the value wasn't computed.
+        /// That shouldn't happen.
+        // TODO DIRAUTH make private when poc's verification is abolished
+        pub(crate) fn hash_slice_for_verification(
+            &self,
+            algo: &DigestAlgoInSignature,
+        ) -> Option<&[u8]> {
+            match &**algo {
+              $(
+                Some(KeywordOrString::Known($vtype)) => Some(self.$FNAME.as_ref()?),
+              )
+                None => Some(self.sha1_unnamed.as_ref()?),
+                Some(KeywordOrString::Unknown(..)) => None,
+            }
+        }
+    }
 }
 
+/// `directory-signature` hash algorithm argument
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::Display, strum::EnumString, Deftly)]
+#[derive_deftly(DirectorySignaturesHashesAccu)]
+#[non_exhaustive]
+#[strum(serialize_all = "snake_case")]
+pub enum DirectorySignatureHashAlgo {
+    /// SHA-1
+    #[deftly(hash_len = "20")]
+    Sha1,
+    /// SHA-256
+    #[deftly(hash_len = "32")]
+    Sha256,
+}
+
+/// `algorithm` field in a `directory-signature` item
+///
+/// This is extremely bizarre: it's an *optional item at the start of the arguments*!
+// TODO SPEC #350
+///
+/// So we parse it with some kind of nightmarish lookahead.
+///
+/// Additionally, to be able to convey the signatures accurately, without breaking them,
+/// we must remember whether the argument was present.
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:directory-signature>
+#[derive(Debug, Clone, derive_more::Deref, derive_more::DerefMut)]
+#[allow(clippy::exhaustive_structs)]
+pub struct DigestAlgoInSignature(pub Option<KeywordOrString<DirectorySignatureHashAlgo>>);
+
+impl ItemArgumentParseable for DigestAlgoInSignature {
+    fn from_args<'s>(args: &mut ArgumentStream<'s>) -> StdResult<Self, ArgumentError> {
+        let v = if args
+            .clone()
+            .next()
+            // Treat it as a fingerprint if it doesn't have any non-hex characters
+            // (including lowercase ones).  If we reuse this item for new algorithms
+            // they should have at least one letter g-z in their name.
+            .and_then(|s| s.chars().all(|c| c.is_ascii_hexdigit()).then_some(()))
+            .is_some()
+        {
+            // next argument looks enough like a fingerprint that we don't treat as an algo name
+            None
+        } else {
+            Some(KeywordOrString::from_args(args)?)
+        };
+        Ok(DigestAlgoInSignature(v))
+    }
+}
+impl ItemArgument for DigestAlgoInSignature {
+    fn write_arg_onto(&self, out: &mut ItemEncoder<'_>) -> StdResult<(), Bug> {
+        if let Some(y) = &self.0 {
+            y.write_arg_onto(out)?;
+        }
+        Ok(())
+    }
+}
+impl DigestAlgoInSignature {
+    /// Return the actual algorithm
+    ///
+    /// This handles the defaulting, where an absent argument means `sha1`.
+    pub fn algorithm(&self) -> &KeywordOrString<DirectorySignatureHashAlgo> {
+        self.as_ref()
+            .unwrap_or(&KeywordOrString::Known(DirectorySignatureHashAlgo::Sha1))
+    }
+}
+
+impl NormalItemArgument for DirectorySignatureHashAlgo {}
+
 /// The signature of a single directory authority on a networkstatus document.
-#[derive(Debug, Clone)]
+///
+/// Implements `ItemValueParseable` which parses without hashing anything;
+/// this is mostly useful for use by the `SignatureItemParseable` implementation.
+#[derive(Debug, Clone, Deftly)]
+#[derive_deftly(ItemValueEncodable, ItemValueParseable)]
 #[non_exhaustive]
 pub struct Signature {
     /// The name of the digest algorithm used to make the signature.
     ///
     /// Currently sha1 and sh256 are recognized.  Here we only support
     /// sha256.
-    pub digest_algo: KeywordOrString<DirectorySignatureHashAlgo>,
+    pub digest_algo: DigestAlgoInSignature,
     /// Fingerprints of the keys for the authority that made
     /// this signature.
+    #[deftly(netdoc(with = authcert::keyids_directory_signature_args))]
     pub key_ids: AuthCertKeyIds,
     /// The signature itself.
+    #[deftly(netdoc(object(label = "SIGNATURE"), with = types::raw_data_object))]
     pub signature: Vec<u8>,
 }
 
+impl SignatureItemParseable for Signature {
+    type HashAccu = DirectorySignaturesHashesAccu;
+
+    fn from_unparsed_and_body(
+        item: UnparsedItem,
+        body: &SignatureHashInputs<'_>,
+        hash: &mut Self::HashAccu,
+    ) -> StdResult<Self, ErrorProblem> {
+        let signature = Signature::from_unparsed(item)?;
+        hash.update_from(&signature.digest_algo, body);
+        Ok(signature)
+    }
+}
+
 /// A collection of signatures that can be checked on a networkstatus document
+///
+/// This is derived from the signatures section of a netstatus,
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:signature>,
+/// but it is not isomorphic to it, and is not directly parseable.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct SignatureGroup {
-    /// The sha256 of the document itself
-    pub sha256: Option<[u8; 32]>,
-    /// The sha1 of the document itself
-    pub sha1: Option<[u8; 20]>,
+    /// The document hashes of the signed part of the document
+    ///
+    /// The pre-parse2 parser always sets `hashes.sha1` and `hashes.sha1_unnamed`
+    /// to the same value, which is wrong. which is
+    /// [bug #2530](https://gitlab.torproject.org/tpo/core/arti/-/work_items/2530)
+    pub hashes: DirectorySignaturesHashesAccu,
     /// The signatures listed on the document.
     pub signatures: Vec<Signature>,
 }
@@ -580,7 +800,95 @@ pub struct SharedRandStatus {
     pub timestamp: Option<Iso8601TimeNoSp>,
 }
 
+/// The two shared random values, `shared-rand-*-value`
+///
+/// As found in the consensus preamble
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:shared-rand-current-value>
+/// and a vote's authority section
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#authority-item-shared-rand-value>
+#[derive(Debug, Clone, Default, Deftly)]
+#[derive_deftly(Constructor, NetdocEncodableFields, NetdocParseableFields)]
+#[allow(clippy::exhaustive_structs)]
+pub struct SharedRandStatuses {
+    /// Global shared-random value for the previous shared-random period.
+    pub shared_rand_previous_value: Option<SharedRandStatus>,
+
+    /// Global shared-random value for the current shared-random period.
+    pub shared_rand_current_value: Option<SharedRandStatus>,
+
+    #[doc(hidden)]
+    #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
+}
+
+/// Relay weight information - `w` item in routerstatus
+///
+/// This is a combination of two representations of (subsets of) the same information,
+/// from an optional `w` in the document.
+///
+///  * [`effective`](RelayWeightsItem::effective):
+///
+///    Always contains the effective weight, as [`RelayWeight`].
+///    This is what is used by clients.
+///    It does not record whether a `w` line was actually present.
+///
+///  * [`params`](RelayWeightsItem::params):
+///
+///    Can represent the presence and whole contents of the `w` line,
+///    including all the known and unknown parameters.
+///    This is within [`Unknown`], so it is only present with crate `feature = "retain-unknown"`,
+///    and only some constructors/parsers record it.
+///
+/// # Parsing
+///
+/// Parsing is done with `NetdocParseableFields` rather than `ItemValueParseable`.
+/// The `params` are [`Retained`](Unknown::Retained) if `retain_unknown_values` is
+/// selected in [`parse2::ParseOptions`].
+//
+// We use NetdocParseableFields because the containing document, RouterStatus,
+// contains `RelayWeightsItem` rather than `Option<RelayWeightsItem>`.
+// The item parsing multiplicity machinery would see plain `RelayWeightsItem` as a required item.
+//
+// This representation also means so that if retaining unknown information is compiled out
+// (ie, in clients) each routerstatus entry stored in memory does not need to record
+// whether `w` was present, merely what the implications were.
+//
+// We can't use ItemValueParseable with #[deftly(netdoc(default))]
+// because `RelayWeightsItem::default()` is a RelayWeightsItem that definitively
+// contains no pazrameters, ie with `Unknown::Retained`,
+// and is therefore only conditionally available.
+/// # Encoding
+///
+/// Encoding requires knowing whether a `w` line is to be included, and its contents,
+/// so is implemented only with if `effective` is `Unknown::Retained`.
+/// The encoding impl is only compiled in with `"retain-unknown"`,
+/// and throws [`Bug`] if applied to a `RelayWeightsItem` whose `params` are `Discarded`.
+///
+/// # Constructors
+///
+/// An "empty" `RelayWeightsItem` can be constructed with [`RelayWeightsItem::new_no_info`].
+///
+/// A `RelayWeightsItem` containing only the effective `RelayWeight`
+/// can be constructed using [`RelayWeightsItem::from_effective`].
+///
+/// With `"retain-unknown"`:
+/// a `RelayWeightsItem` can be constructed from a [`NetParams<u32>`] using `TryFrom`;
+/// and, implements `Default`, which yields a `RelayWeightsItem`
+/// representing the (known) absence of a `w` line.
+//
+// Fields are private to maintain the invariant.
+#[derive(Debug, Clone)]
+pub struct RelayWeightsItem {
+    /// The effective relay weight
+    effective: RelayWeight,
+
+    /// The complete parameter set, if available and `w` was present.
+    params: Unknown<Option<NetParams<u32>>>,
+}
+
 /// Recognized weight fields on a single relay in a consensus
+///
+/// The part of a `w` item that we understand as a client.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
 pub enum RelayWeight {
@@ -590,15 +898,13 @@ pub enum RelayWeight {
     Measured(u32),
 }
 
-impl RelayWeight {
-    /// Return true if this weight is the result of a successful measurement
-    pub fn is_measured(&self) -> bool {
-        matches!(self, RelayWeight::Measured(_))
-    }
-    /// Return true if this weight is nonzero
-    pub fn is_nonzero(&self) -> bool {
-        !matches!(self, RelayWeight::Unmeasured(0) | RelayWeight::Measured(0))
-    }
+/// Error processing a `w` line's netparams into an effective relay weight
+#[derive(Debug, Clone, thiserror::Error)]
+#[non_exhaustive]
+pub enum InvalidRelayWeights {
+    /// Invalid value for `Unmeasured`
+    #[error("invalid value for Unmeasured")]
+    InvalidUnmeasured,
 }
 
 /// Authority entry in a consensus - deprecated compatibility type alias
@@ -655,9 +961,6 @@ pub struct ConsensusAuthorityEntry {
 /// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:authority-entry>
 ///
 /// See also [`ConsensusAuthorityEntry`]
-///
-/// TODO DIRAUTH not all fields are here yet.
-// They have individual comments, below.
 #[derive(Debug, Clone, Deftly)]
 #[derive_deftly(Constructor, NetdocEncodable, NetdocParseable)]
 #[allow(clippy::exhaustive_structs)]
@@ -670,15 +973,140 @@ pub struct VoteAuthorityEntry {
     #[deftly(constructor)]
     pub contact: ContactInfo,
 
-    // TODO DIRAUTH missing field legacy-dir-key
-    // TODO DIRAUTH missing field shared-rand-participate
-    // TODO DIRAUTH missing field shared-rand-commit
-    // TODO DIRAUTH missing field shared-rand-previous-value
-    // TODO DIRAUTH missing field shared-rand-current-value
-    //
+    /// `legacy-dir-key` - superseded authority identity key
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:legacy-dir-key>
+    #[deftly(netdoc(single_arg))]
+    pub legacy_dir_key: Option<Fingerprint>,
+
+    /// `shared-rand-participate` - Indicate shared random participation
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:shared-rand-participate>
+    pub shared_rand_participate: Option<SharedRandParticipate>,
+
+    /// `shared-rand-commit` - Shared random commitment
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:shared-rand-commit>
+    pub shared_rand_commit: Vec<SharedRandCommit>,
+
+    /// Global shared-random values
+    #[deftly(netdoc(flatten))]
+    pub shared_rand: SharedRandStatuses,
+
     #[doc(hidden)]
     #[deftly(netdoc(skip))]
     pub __non_exhaustive: (),
+}
+
+/// `shared-rand-participate` in a vote authority entry
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:shared-rand-participate>
+//
+// We could have done `shared_rand_participate: Option<()>` in VoteAuthorityEntry,
+// but then we might end up with variables of type `&Option<()>` etc.
+// whose meaning has been detached from its type.
+//
+// TODO DIRAUTH rework this according to the API design conclusion from !3977 when there is one
+#[derive(Debug, Clone, Deftly)]
+#[derive_deftly(Constructor, ItemValueEncodable, ItemValueParseable)]
+#[allow(clippy::exhaustive_structs)]
+pub struct SharedRandParticipate {
+    #[doc(hidden)]
+    #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
+}
+
+/// `shared-rand-commit` in a vote authority entry
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:shared-rand-commit>
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deftly)]
+// If new protocols use this item with a different version, we'll call it an API break.
+#[allow(clippy::exhaustive_enums)]
+pub enum SharedRandCommit {
+    /// Version 1, the only one supported
+    V1(SharedRandCommitV1),
+
+    /// Other versions.  Cannot be encoded.
+    // It's not clear that future versions will use this version mechanism.  torspec#408.
+    Unknown {},
+}
+
+/// `shared-rand-commit` in a vote authority entry
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:shared-rand-commit>
+///
+/// Version and hash are not explicitly represented.  See torspec#407.
+///
+/// `ItemValueEncodable` and `ItemValueParseable` impls do not include the fixed arguments;
+/// in a netdoc, this type should be used within `SharedRandCommit::V1`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deftly)]
+#[derive_deftly(Constructor, ItemValueEncodable, ItemValueParseable)]
+#[allow(clippy::exhaustive_structs)]
+pub struct SharedRandCommitV1 {
+    /// Authority id key, recapitulated.
+    // TODO this field shouldn't here at all torspec#407
+    #[deftly(constructor)]
+    h_kp_auth_id_rsa: Fingerprint,
+
+    /// Commitment
+    ///
+    /// `TIMESTAMP || SHA3_256(REVEAL)`, as per
+    /// <https://spec.torproject.org/srv-spec/specification.html#COMMITREVEAL>
+    //
+    // TOOD we would like to replace this with a type that separates out the pieces!
+    // But that would need a FixedB64 generic over some tor-bytes trait, or something.
+    #[deftly(constructor)]
+    commit: FixedB64<40>,
+
+    /// Reveal
+    ///
+    /// `TIMESTAMP || random number`, as per
+    /// <https://spec.torproject.org/srv-spec/specification.html#COMMITREVEAL>
+    reveal: Option<FixedB64<40>>,
+
+    #[doc(hidden)]
+    #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
+}
+
+impl SharedRandCommitV1 {
+    /// The fixed arguments that precede the actual value in `shared-rand-commit 1 ...`
+    const FIXED_ARGUMENTS: &[&str] = &["1", "sha3-256"];
+}
+impl ItemValueEncodable for SharedRandCommit {
+    fn write_item_value_onto(&self, mut out: ItemEncoder) -> StdResult<(), Bug> {
+        match self {
+            SharedRandCommit::V1(values) => {
+                for fixed in SharedRandCommitV1::FIXED_ARGUMENTS {
+                    out.args_raw_string(fixed);
+                }
+                values.write_item_value_onto(out)
+            }
+            SharedRandCommit::Unknown {} => Err(internal!("encoding SharedRandCommit::Unknown")),
+        }
+    }
+}
+impl ItemValueParseable for SharedRandCommit {
+    fn from_unparsed(mut item: UnparsedItem<'_>) -> StdResult<Self, ErrorProblem> {
+        let mut fixed = SharedRandCommitV1::FIXED_ARGUMENTS.iter().copied();
+        let args = item.args_mut();
+        let version = args
+            .next()
+            .ok_or_else(|| args.handle_error("version", ArgumentError::Missing))?;
+        if version != fixed.next().expect("nonempty") {
+            return Ok(SharedRandCommit::Unknown {});
+        }
+        for exp in fixed {
+            let got = args
+                .next()
+                .ok_or_else(|| args.handle_error(exp, ArgumentError::Missing))?;
+            if got != exp {
+                return Err(args.handle_error(exp, ArgumentError::Invalid))?;
+            }
+        }
+        let values = SharedRandCommitV1::from_unparsed(item)?;
+        Ok(SharedRandCommit::V1(values))
+    }
 }
 
 // For `ConsensusAuthoritySection`, see `dir_source.rs`.
@@ -771,16 +1199,24 @@ pub struct VoteAuthoritySection {
     pub __non_exhaustive: (),
 }
 
-/// The signed footer of a consensus netstatus.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct Footer {
-    /// Weights to be applied to certain classes of relays when choosing
-    /// for different roles.
+/// Fields in the footer of a consensus
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:footer>
+///
+/// Not the whole footer, because it lacks the `directory-footer` item.
+#[derive(Debug, Clone, Deftly)]
+#[derive_deftly(Constructor, NetdocEncodableFields, NetdocParseableFields)]
+#[allow(clippy::exhaustive_structs)]
+pub struct ConsensusFooterFields {
+    /// `bandwidth-weights`
     ///
-    /// For example, we want to avoid choosing exits for non-exit
-    /// roles when overall the proportion of exits is small.
-    pub weights: NetParams<i32>,
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:bandwidth-weights>
+    #[deftly(netdoc(default))]
+    pub bandwidth_weights: NetParams<i32>,
+
+    #[doc(hidden)]
+    #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
 }
 
 /// A consensus document that lists relays along with their
@@ -1210,15 +1646,48 @@ impl ConsensusAuthorityEntry {
     }
 }
 
-impl Default for RelayWeight {
-    fn default() -> RelayWeight {
-        RelayWeight::Unmeasured(0)
+impl RelayWeightsItem {
+    /// Return a new `RelayWeightsItem` containing no information
+    ///
+    /// As if parsed from a document with no `w` line, discarding unknown information.
+    pub fn new_no_info() -> Self {
+        RelayWeightsItem {
+            effective: RelayWeight::default(),
+            params: Unknown::new_discard(),
+        }
     }
-}
 
-impl RelayWeight {
+    /// Return a new `RelayWeightsItem` containing only the effective weight
+    pub fn from_effective(effective: RelayWeight) -> Self {
+        RelayWeightsItem {
+            effective,
+            params: Unknown::new_discard(),
+        }
+    }
+
+    /// Get the effective relay weight (bandwidth estimate) for path selection.
+    ///
+    /// Invariant: consistent with from [`params`](RelayWeightsItem::params),
+    /// if `parsed` isn't [`Discarded`](Unknown::Discarded).
+    //
+    // We open-code this rather than deriving it so we can provide better docs.
+    pub fn effective(&self) -> RelayWeight {
+        self.effective
+    }
+
+    /// Get the complete parameter set, if this information is available.
+    ///
+    /// After parsing, this is the parsed but not interpreted `w` item,
+    /// or `None` if the document contained no `w` item.
+    //
+    // We open-code this rather than deriving it because we want to return
+    // `Unknown<&...>` rather than `&Unknown<..>`, which the user would just have to .as_ref().
+    pub fn params(&self) -> Unknown<&Option<NetParams<u32>>> {
+        self.params.as_ref()
+    }
+
     /// Parse a routerweight from a "w" line.
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<RelayWeight> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<RelayWeightsItem> {
         if item.kwd() != NetstatusKwd::RS_W {
             return Err(
                 Error::from(internal!("Wrong keyword {:?} on W line", item.kwd()))
@@ -1227,14 +1696,59 @@ impl RelayWeight {
         }
 
         let params = item.args_as_str().parse()?;
+        let effective = RelayWeight::from_net_params(&params).map_err(|e| e.at_pos(item.pos()))?;
 
-        Self::from_net_params(&params).map_err(|e| e.at_pos(item.pos()))
+        Ok(RelayWeightsItem {
+            effective,
+            params: Unknown::new_discard(),
+        })
+    }
+
+    /// The keyword for parsing and encoding
+    const KEYWORD: &str = "w";
+}
+
+#[cfg(feature = "retain-unknown")]
+impl Default for RelayWeightsItem {
+    fn default() -> Self {
+        RelayWeightsItem {
+            effective: RelayWeight::default(),
+            params: Unknown::Retained(None),
+        }
+    }
+}
+
+impl RelayWeight {
+    /// Return true if this weight is the result of a successful measurement
+    pub fn is_measured(&self) -> bool {
+        matches!(self, RelayWeight::Measured(_))
+    }
+
+    /// Return true if this weight is nonzero
+    pub fn is_nonzero(&self) -> bool {
+        !matches!(self, RelayWeight::Unmeasured(0) | RelayWeight::Measured(0))
     }
 
     /// Parse a routerweight from partially-parsed `w` line in the form of a `NetParams`
     ///
     /// This function is the common part shared between `parse2` and `parse`.
     fn from_net_params(params: &NetParams<u32>) -> Result<RelayWeight> {
+        params
+            .try_into()
+            .map_err(|e: InvalidRelayWeights| EK::BadArgument.with_msg(e.to_string()))
+    }
+}
+
+impl Default for RelayWeight {
+    fn default() -> RelayWeight {
+        RelayWeight::Unmeasured(0)
+    }
+}
+
+impl TryFrom<&NetParams<u32>> for RelayWeight {
+    type Error = InvalidRelayWeights;
+
+    fn try_from(params: &NetParams<u32>) -> StdResult<RelayWeight, InvalidRelayWeights> {
         let bw = params.params.get("Bandwidth");
         let unmeas = params.params.get("Unmeasured");
 
@@ -1246,8 +1760,20 @@ impl RelayWeight {
         match unmeas {
             None | Some(0) => Ok(RelayWeight::Measured(bw)),
             Some(1) => Ok(RelayWeight::Unmeasured(bw)),
-            _ => Err(EK::BadArgument.with_msg("unmeasured value")),
+            _ => Err(InvalidRelayWeights::InvalidUnmeasured),
         }
+    }
+}
+
+#[cfg(feature = "retain-unknown")]
+impl TryFrom<NetParams<u32>> for RelayWeightsItem {
+    type Error = InvalidRelayWeights;
+
+    fn try_from(params: NetParams<u32>) -> StdResult<RelayWeightsItem, InvalidRelayWeights> {
+        Ok(RelayWeightsItem {
+            effective: (&params).try_into()?,
+            params: Unknown::Retained(Some(params)),
+        })
     }
 }
 
@@ -1258,11 +1784,15 @@ mod parse2_impls {
     use super::*;
     pub(super) use parse2::{
         ArgumentError as AE, ArgumentStream, ErrorProblem as EP, ItemArgumentParseable,
-        ItemValueParseable, NetdocParseableFields, UnparsedItem,
+        ItemValueParseable, NetdocParseableFields,
     };
     use std::result::Result;
 
-    impl ItemValueParseable for NetParams<i32> {
+    // The NormalItemArgument bound ensures that this is applied only to sane types eg integers
+    impl<T: FromStr + NormalItemArgument> ItemValueParseable for NetParams<T>
+    where
+        T::Err: std::error::Error,
+    {
         fn from_unparsed(item: parse2::UnparsedItem<'_>) -> Result<Self, EP> {
             item.check_no_object()?;
             item.args_copy()
@@ -1272,14 +1802,34 @@ mod parse2_impls {
         }
     }
 
-    impl ItemValueParseable for RelayWeight {
-        fn from_unparsed(item: parse2::UnparsedItem<'_>) -> Result<Self, EP> {
+    impl NetdocParseableFields for RelayWeightsItem {
+        type Accumulator = Option<NetParams<u32>>;
+
+        fn is_item_keyword(kw: KeywordRef) -> bool {
+            kw == Self::KEYWORD
+        }
+
+        fn accumulate_item(acc: &mut Self::Accumulator, item: UnparsedItem) -> Result<(), EP> {
+            if acc.is_some() {
+                return Err(EP::ItemRepeated);
+            }
             item.check_no_object()?;
-            (|| {
-                let params = item.args_copy().into_remaining().parse()?;
-                Self::from_net_params(&params)
-            })()
-            .map_err(item.invalid_argument_handler("weights"))
+            let params = NetParams::from_unparsed(item)?;
+            *acc = Some(params);
+            Ok(())
+        }
+
+        fn finish(params: Self::Accumulator, items: &ItemStream) -> Result<Self, EP> {
+            let effective = params
+                .as_ref()
+                .map(TryFrom::try_from)
+                .transpose()
+                .map_err(|_| EP::OtherBadDocument("invalid information in `w` item"))?
+                .unwrap_or_default();
+
+            let params = items.parse_options().retain_unknown_values.map(|()| params);
+
+            Ok(RelayWeightsItem { effective, params })
         }
     }
 
@@ -1314,7 +1864,18 @@ mod encode_impls {
         tor_error::Bug,
     };
 
-    impl ItemValueEncodable for NetParams<i32> {
+    #[cfg(feature = "incomplete")] // untested
+    impl NetdocEncodableFields for RelayWeightsItem {
+        fn encode_fields(&self, out: &mut NetdocEncoder) -> Result<(), Bug> {
+            if let Some(w) = self.params.as_ref().into_retained()? {
+                w.write_item_value_onto(out.item(Self::KEYWORD))?;
+            }
+            Ok(())
+        }
+    }
+
+    // The NormalItemArgument bound ensures that this is applied only to sane types eg integers
+    impl<T: NormalItemArgument + Ord + Display> ItemValueEncodable for NetParams<T> {
         fn write_item_value_onto(&self, mut out: ItemEncoder) -> Result<(), Bug> {
             for (k, v) in self.iter().collect::<BTreeSet<_>>() {
                 if k.is_empty()
@@ -1331,21 +1892,38 @@ mod encode_impls {
             Ok(())
         }
     }
+
+    impl ItemValueEncodable for rs::SoftwareVersion {
+        fn write_item_value_onto(&self, mut out: ItemEncoder) -> Result<(), Bug> {
+            out.args_raw_string(self);
+            Ok(())
+        }
+    }
+
+    impl ItemArgument for IgnoredPublicationTimeSp {
+        fn write_arg_onto(&self, out: &mut ItemEncoder) -> Result<(), Bug> {
+            out.args_raw_string(&"2000-01-01 00:00:01");
+            Ok(())
+        }
+    }
 }
 
-impl Footer {
+impl ConsensusFooterFields {
     /// Parse a directory footer from a footer section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Footer> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<ConsensusFooterFields> {
         use NetstatusKwd::*;
         sec.required(DIRECTORY_FOOTER)?;
 
-        let weights = sec
+        let bandwidth_weights = sec
             .maybe(BANDWIDTH_WEIGHTS)
             .args_as_str()
             .unwrap_or("")
             .parse()?;
 
-        Ok(Footer { weights })
+        Ok(ConsensusFooterFields {
+            bandwidth_weights,
+            __non_exhaustive: (),
+        })
     }
 }
 
@@ -1399,8 +1977,8 @@ mod proto_statuses_parse2_encode {
             ) -> Result<(), EP> {
                 ProtoStatusesParseHelper::accumulate_item(acc, item)
             }
-            fn finish(acc: Self::Accumulator) -> Result<Self, EP> {
-                let parse = ProtoStatusesParseHelper::finish(acc)?;
+            fn finish(acc: Self::Accumulator, items: &ItemStream<'_>) -> Result<Self, EP> {
+                let parse = ProtoStatusesParseHelper::finish(acc, items)?;
                 let mut out = ProtoStatuses::default();
                 $(
                     out.$cr.$rr = parse.[< $rr _ $cr _protocols >];
@@ -1463,6 +2041,7 @@ impl Signature {
         };
 
         let digest_algo = digest_algo.to_string().parse().void_unwrap();
+        let digest_algo = DigestAlgoInSignature(Some(digest_algo));
         let id_fingerprint = id_fp.parse::<Fingerprint>()?.into();
         let sk_fingerprint = sk_fp.parse::<Fingerprint>()?.into();
         let key_ids = AuthCertKeyIds {
@@ -1574,9 +2153,10 @@ impl SignatureGroup {
             use DirectorySignatureHashAlgo as DSHA;
             use KeywordOrString as KOS;
 
-            let d: Option<&[u8]> = match sig.digest_algo {
-                KOS::Known(DSHA::Sha256) => self.sha256.as_ref().map(|a| &a[..]),
-                KOS::Known(DSHA::Sha1) => self.sha1.as_ref().map(|a| &a[..]),
+            let d: Option<&[u8]> = match sig.digest_algo.algorithm() {
+                KOS::Known(DSHA::Sha256) => self.hashes.sha256.as_ref().map(|a| &a[..]),
+                // TODO #2530 this needs to depend on whether `sha1` was stated (!)
+                KOS::Known(DSHA::Sha1) => self.hashes.sha1.as_ref().map(|a| &a[..]),
                 _ => None, // We don't know how to find this digest.
             };
             if d.is_none() {
@@ -1805,34 +2385,34 @@ mod test {
     #[test]
     fn test_weight() {
         let w = gettok("w Unmeasured=1 Bandwidth=6\n").unwrap();
-        let w = RelayWeight::from_item(&w).unwrap();
-        assert!(!w.is_measured());
-        assert!(w.is_nonzero());
+        let w = RelayWeightsItem::from_item(&w).unwrap();
+        assert!(!w.effective.is_measured());
+        assert!(w.effective.is_nonzero());
 
         let w = gettok("w Bandwidth=10\n").unwrap();
-        let w = RelayWeight::from_item(&w).unwrap();
-        assert!(w.is_measured());
-        assert!(w.is_nonzero());
+        let w = RelayWeightsItem::from_item(&w).unwrap();
+        assert!(w.effective.is_measured());
+        assert!(w.effective.is_nonzero());
 
-        let w = RelayWeight::default();
-        assert!(!w.is_measured());
-        assert!(!w.is_nonzero());
+        let w = RelayWeightsItem::new_no_info();
+        assert!(!w.effective.is_measured());
+        assert!(!w.effective.is_nonzero());
 
         let w = gettok("w Mustelid=66 Cheato=7 Unmeasured=1\n").unwrap();
-        let w = RelayWeight::from_item(&w).unwrap();
-        assert!(!w.is_measured());
-        assert!(!w.is_nonzero());
+        let w = RelayWeightsItem::from_item(&w).unwrap();
+        assert!(!w.effective.is_measured());
+        assert!(!w.effective.is_nonzero());
 
         let w = gettok("r foo\n").unwrap();
-        let w = RelayWeight::from_item(&w);
+        let w = RelayWeightsItem::from_item(&w);
         assert!(w.is_err());
 
         let w = gettok("r Bandwidth=6 Unmeasured=Frog\n").unwrap();
-        let w = RelayWeight::from_item(&w);
+        let w = RelayWeightsItem::from_item(&w);
         assert!(w.is_err());
 
         let w = gettok("r Bandwidth=6 Unmeasured=3\n").unwrap();
-        let w = RelayWeight::from_item(&w);
+        let w = RelayWeightsItem::from_item(&w);
         assert!(w.is_err());
     }
 

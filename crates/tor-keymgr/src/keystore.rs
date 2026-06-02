@@ -16,16 +16,6 @@ use crate::{KeySpecifier, KeystoreEntry, KeystoreId, Result, UnrecognizedEntryEr
 /// A type alias returned by `Keystore::list`.
 pub type KeystoreEntryResult<T> = std::result::Result<T, UnrecognizedEntryError>;
 
-// NOTE: Some methods require a `KeystoreEntryResult<KeystoreEntry>` as an
-// argument (e.g.: `KeyMgr::raw_keystore_entry`). For this reason  implementing
-// `From<UnrecognizedEntryError> for <KeystoreEntryResult<KeystoreEntry>>` makes
-// `UnrecognizedEntryError` more ergonomic.
-impl<'a> From<UnrecognizedEntryError> for KeystoreEntryResult<KeystoreEntry<'a>> {
-    fn from(val: UnrecognizedEntryError) -> Self {
-        Err(val)
-    }
-}
-
 /// A generic key store.
 pub trait Keystore: Send + Sync + 'static {
     /// An identifier for this key store instance.
@@ -52,6 +42,18 @@ pub trait Keystore: Send + Sync + 'static {
     ///
     /// The specified `raw_id` is allowed to represent an unrecognized
     /// or nonexistent entry.
+    ///
+    /// Implementations that do not have `RawEntryId`s
+    /// that are deserializable from string will return an error.
+    //
+    // TODO: currently, the only such implementation is the EphemeralKeystore.
+    // If we ever decide to remove EphemeralKeystore
+    // (see https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/2580),
+    // we should consider rethinking this API too.
+    //
+    // For example, we might want to remove this function altogether,
+    // and let the user create the RawEntryId instead.
+    //
     ///
     /// Returns a `RawEntryId` that is specific to this [`Keystore`] implementation.
     ///
@@ -82,13 +84,13 @@ pub trait Keystore: Send + Sync + 'static {
         item_type: &KeystoreItemType,
     ) -> Result<Option<()>>;
 
-    /// Remove the specified keystore entry.
+    /// Remove a keystore entry given its [`RawEntryId`].
     ///
-    /// This method accepts both recognized and unrecognized entries, identified
-    /// by a [`RawEntryId`] instance.
+    /// Unlike [`remove`](Keystore::remove), this method can also remove
+    /// entries that are unrecognized
+    /// (i.e. those that do not have a corresponding [`KeySpecifier`] and [`KeystoreItemType`]).
     ///
-    /// If the entry wasn't successfully removed, or if the entry doesn't
-    /// exists, `Err` is returned.
+    /// Returns an error if the entry couldn't be removed, or if the entry doesn't exist.
     #[cfg(feature = "onion-service-cli-extra")]
     fn remove_unchecked(&self, entry_id: &RawEntryId) -> Result<()>;
 

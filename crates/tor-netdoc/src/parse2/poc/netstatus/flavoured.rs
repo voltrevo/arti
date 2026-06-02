@@ -24,6 +24,27 @@ pub type Router = ns_type!(
     crate::doc::netstatus::MdRouterStatus,
 );
 
+/// The real footer type.
+pub type NddDirectoryFooter = ns_type!(
+    crate::doc::netstatus::VoteFooter,
+    crate::doc::netstatus::PlainFooter,
+    crate::doc::netstatus::MdFooter,
+);
+
+/// The real signatures section type.
+pub type NetworkStatusSignatures = ns_type!(
+    crate::doc::netstatus::vote::NetworkStatusSignatures,
+    crate::doc::netstatus::plain::NetworkStatusSignatures,
+    crate::doc::netstatus::md::NetworkStatusSignatures,
+);
+
+/// The real `network-status-version` item type.
+pub type NetworkStatusVersionItem = ns_type!(
+    crate::doc::netstatus::vote::NetworkStatusVersionItem,
+    crate::doc::netstatus::plain::NetworkStatusVersionItem,
+    crate::doc::netstatus::md::NetworkStatusVersionItem,
+);
+
 /// Network status document (vote, consensus, or microdescriptor consensus) - body
 ///
 /// The preamble items are members of this struct.
@@ -34,7 +55,7 @@ pub type Router = ns_type!(
 #[non_exhaustive]
 pub struct NetworkStatus {
     /// `network-status-version`
-    pub network_status_version: (NdaNetworkStatusVersion, NdaNetworkStatusVersionFlavour),
+    pub network_status_version: NetworkStatusVersionItem,
 
     /// `vote-status`
     pub vote_status: NdiVoteStatus,
@@ -68,16 +89,6 @@ pub struct NetworkStatus {
     pub directory_footer: Option<NddDirectoryFooter>,
 }
 
-/// Signatures on a network status document
-#[derive(Deftly, Clone, Debug)]
-#[derive_deftly(NetdocParseableSignatures)]
-#[deftly(netdoc(signatures(hashes_accu = "DirectorySignaturesHashesAccu")))]
-#[non_exhaustive]
-pub struct NetworkStatusSignatures {
-    /// `directory-signature`s
-    pub directory_signature: ns_type!(NdiDirectorySignature, Vec<NdiDirectorySignature>),
-}
-
 /// `vote-status` value
 ///
 /// In a non-demo we'd probably abolish this,
@@ -88,61 +99,8 @@ pub struct NetworkStatusSignatures {
 #[non_exhaustive]
 pub struct NdiVoteStatus {
     /// status
-    pub status: NdaVoteStatus,
+    pub status: ns_type!(VoteStatusVote, VoteStatusConsensus, VoteStatusConsensus),
 }
-
-/// `vote-status` status argument (for a specific flavour)
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct NdaVoteStatus {}
-
-/// `network-status-version` _flavour_ value
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct NdaNetworkStatusVersionFlavour {}
-
-/// The argument in `network-status-version` that is there iff it's a microdesc consensus.
-const NDA_NETWORK_STATUS_VERSION_FLAVOUR: Option<&str> = ns_expr!(None, None, Some("microdesc"));
-
-impl ItemArgumentParseable for NdaNetworkStatusVersionFlavour {
-    fn from_args<'s>(args: &mut ArgumentStream<'s>) -> Result<Self, AE> {
-        let exp: Option<&str> = NDA_NETWORK_STATUS_VERSION_FLAVOUR;
-        if let Some(exp) = exp {
-            let got = args.next().ok_or(AE::Missing)?;
-            if got != exp {
-                return Err(AE::Invalid);
-            };
-        } else {
-            // NS consensus, or vote.  Reject additional arguments, since they
-            // might be an unknown flavour.  See
-            //   https://gitlab.torproject.org/tpo/core/torspec/-/issues/359
-            args.reject_extra_args()?;
-        }
-        Ok(Self {})
-    }
-}
-
-/// The document type argument in `vote-status`
-const NDA_VOTE_STATUS: &str = ns_expr!("vote", "consensus", "consensus");
-
-impl FromStr for NdaVoteStatus {
-    type Err = InvalidNetworkStatusVoteStatus;
-    fn from_str(s: &str) -> Result<Self, InvalidNetworkStatusVoteStatus> {
-        if s == NDA_VOTE_STATUS {
-            Ok(Self {})
-        } else {
-            Err(InvalidNetworkStatusVoteStatus {})
-        }
-    }
-}
-
-impl Display for NdaVoteStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Display::fmt(NDA_VOTE_STATUS, f)
-    }
-}
-
-impl NormalItemArgument for NdaVoteStatus {}
 
 /// `voting-delay` value
 #[derive(Deftly, Clone, Debug, Hash, Eq, PartialEq)]
@@ -153,15 +111,6 @@ pub struct NdiVotingDelay {
     pub vote_seconds: u32,
     /// DistSeconds
     pub dist_seconds: u32,
-}
-
-/// `directory-footer` section
-#[derive(Deftly, Clone, Debug)]
-#[derive_deftly(NetdocParseable)]
-#[non_exhaustive]
-pub struct NddDirectoryFooter {
-    /// `directory-footer`
-    pub directory_footer: (),
 }
 
 /// `dir-source`

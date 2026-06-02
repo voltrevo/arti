@@ -1444,7 +1444,7 @@ mod test {
     #[test]
     fn make_other_requests() {
         tor_rtcompat::test_with_one_runtime!(|rt| async {
-            use rand::Rng;
+            use rand::RngExt;
             let (_tempdir, mgr) = new_mgr(rt);
 
             let certid1 = AuthCertKeyIds {

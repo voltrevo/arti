@@ -533,17 +533,17 @@ impl<const N: usize> MaybenotPadder<N> {
 /// but we can't have it _own_ the thread Rng. )
 #[derive(Clone, Debug)]
 pub(super) struct ThisThreadRng;
-impl rand::RngCore for ThisThreadRng {
+impl rand09::RngCore for ThisThreadRng {
     fn next_u32(&mut self) -> u32 {
-        rand::rng().next_u32()
+        rand09::rng().next_u32()
     }
 
     fn next_u64(&mut self) -> u64 {
-        rand::rng().next_u64()
+        rand09::rng().next_u64()
     }
 
     fn fill_bytes(&mut self, dst: &mut [u8]) {
-        rand::rng().fill_bytes(dst);
+        rand09::rng().fill_bytes(dst);
     }
 }
 

@@ -11,6 +11,7 @@ use futures::{AsyncRead, AsyncWrite, io::BufReader};
 use http::{Method, StatusCode, response::Builder as ResponseBuilder};
 use hyper::{Response, server::conn::http1::Builder as ServerBuilder, service::service_fn};
 use safelog::{Sensitive as Sv, sensitive as sv};
+use std::sync::Arc;
 use tor_error::{ErrorKind, ErrorReport as _, HasKind, into_internal, warn_report};
 use tor_rtcompat::Runtime;
 use tor_rtcompat::SpawnExt as _;
@@ -423,7 +424,7 @@ fn find_conn_target<R: Runtime>(
     rpc_target: Option<&str>,
 ) -> Result<ConnTarget<R>, HttpConnectError> {
     let Some(target_id) = rpc_target else {
-        return Ok(ConnTarget::Client(Box::new(context.tor_client.clone())));
+        return Ok(ConnTarget::Client(Arc::clone(&context.tor_client)));
     };
 
     let Some(rpc_mgr) = &context.rpc_mgr else {

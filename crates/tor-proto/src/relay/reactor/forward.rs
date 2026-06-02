@@ -32,7 +32,7 @@ use tor_rtcompat::Runtime;
 
 use futures::channel::mpsc;
 use futures::{SinkExt as _, future};
-use tracing::trace;
+use tracing::{debug, trace};
 
 use std::result::Result as StdResult;
 use std::sync::Arc;
@@ -262,20 +262,26 @@ impl Forward {
     }
 
     /// Handle a TRUNCATE cell.
-    #[allow(clippy::unused_async)] // TODO(relay)
-    async fn handle_truncate(&mut self) -> StdResult<(), ReactorError> {
-        // TODO(relay): when we implement this, we should try to do better than C Tor:
-        // if we have some cells queued for the next hop in the circuit,
-        // we should try to flush them *before* tearing it down.
+    fn handle_truncate(&mut self) -> StdResult<(), ReactorError> {
+        // This is not strictly spec compliant,
+        // but since none of our implementations use TRUNCATE,
+        // we deem it a proto violation and shut down the circuit.
         //
-        // See https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3487#note_3296035
-        Err(internal!("TRUNCATE is not implemented").into())
+        // TODO(spec): codify this in the spec
+        Err(Error::CircProto("TRUNCATE not allowed".into()).into())
     }
 
     /// Handle a DESTROY cell originating from the client.
-    #[allow(clippy::needless_pass_by_value)] // TODO(relay)
-    fn handle_destroy_cell(&mut self, _cell: Destroy) -> StdResult<(), ReactorError> {
-        Err(internal!("DESTROY is not implemented").into())
+    fn handle_destroy_cell(&mut self, cell: &Destroy) -> StdResult<(), ReactorError> {
+        debug!(
+            circ_id = %self.unique_id,
+            reason = %cell.reason(),
+            "Received outbound DESTROY, circuit shutting down",
+        );
+
+        // We don't need to send a DESTROY cell down the channel,
+        // because that's handled implicitly by our Drop implementation
+        Err(ReactorError::Shutdown)
     }
 
     /// Handle a PADDING_NEGOTIATE cell originating from the client.
@@ -301,7 +307,7 @@ impl ForwardHandler for Forward {
         match msg.cmd() {
             RelayCmd::DROP => self.handle_drop(),
             RelayCmd::EXTEND2 => self.extend_handler.handle_extend2(runtime, early, msg),
-            RelayCmd::TRUNCATE => self.handle_truncate().await,
+            RelayCmd::TRUNCATE => self.handle_truncate(),
             cmd => Err(internal!("relay cmd {cmd} not supported").into()),
         }
     }
@@ -317,7 +323,7 @@ impl ForwardHandler for Forward {
             Relay(r) => self.handle_relay_cell(hop_mgr, r, false),
             RelayEarly(r) => self.handle_relay_cell(hop_mgr, r.into(), true),
             Destroy(d) => {
-                self.handle_destroy_cell(d)?;
+                self.handle_destroy_cell(&d)?;
                 Ok(None)
             }
             PaddingNegotiate(p) => {

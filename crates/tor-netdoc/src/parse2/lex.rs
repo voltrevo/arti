@@ -395,18 +395,8 @@ impl<'s> UnparsedItem<'s> {
     }
 }
 
-/// End of an argument list that does not accept any further (unknown) arguments
-///
-/// Implements `ItemArgumentParseable`.  Parses successfully iff the argument list is empty.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-#[allow(clippy::exhaustive_structs)]
-pub struct NoFurtherArguments;
-
-impl ItemArgumentParseable for NoFurtherArguments {
-    fn from_args(args: &mut ArgumentStream) -> Result<Self, AE> {
-        Ok(args.reject_extra_args()?)
-    }
-}
+#[deprecated = "use types::NoFurtherArguments"]
+pub use crate::types::NoMoreArguments as NoFurtherArguments;
 
 impl<'s> Iterator for ItemStream<'s> {
     type Item = Result<UnparsedItem<'s>, EP>;

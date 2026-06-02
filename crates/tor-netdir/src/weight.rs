@@ -642,7 +642,7 @@ mod test {
 
     #[test]
     fn weightset_from_consensus() {
-        use rand::Rng;
+        use rand::RngExt;
         let now = SystemTime::get();
         let one_hour = Duration::new(3600, 0);
         let mut rng = testing_rng();

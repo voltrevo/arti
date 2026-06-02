@@ -749,7 +749,7 @@ mod test {
     use std::{sync::atomic::AtomicUsize, thread, time::Duration};
 
     use io::{BufRead as _, BufReader, Write as _};
-    use rand::{Rng as _, SeedableRng as _, seq::SliceRandom as _};
+    use rand::{RngExt as _, SeedableRng as _, seq::SliceRandom as _};
     use tor_basic_utils::{RngExt as _, test_rng::testing_rng};
 
     use crate::{

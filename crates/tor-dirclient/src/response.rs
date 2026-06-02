@@ -70,6 +70,11 @@ impl DirResponse {
         self.status
     }
 
+    /// Return the HTTP status message for this response.
+    pub fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
+    }
+
     /// Return true if this is in incomplete response.
     pub fn is_partial(&self) -> bool {
         self.error.is_some()

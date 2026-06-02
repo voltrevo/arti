@@ -216,6 +216,22 @@ impl ConfigBuilder {
     }
 }
 
+impl tor_config::load::Builder for ConfigBuilder {
+    type Built = Config;
+
+    fn build(&self) -> Result<Self::Built, ConfigBuildError> {
+        ConfigBuilder::build(self)
+    }
+}
+
+impl tor_config::load::ConfigBuilder for ConfigBuilder {
+    fn apply_defaults(&mut self) -> Result<(), ConfigBuildError> {
+        self.max.get_or_insert_default();
+        self.low_water.get_or_insert_default();
+        Ok(())
+    }
+}
+
 /// Determine a max given the system's total available memory.
 ///
 /// This is used when `max` is configured as "auto".

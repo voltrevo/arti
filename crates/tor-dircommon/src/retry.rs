@@ -17,7 +17,7 @@ use tor_config::derive::prelude::*;
 #[derive_deftly(TorConfig)]
 pub struct DownloadSchedule {
     /// How many attempts to make before giving up?
-    #[deftly(tor_config(default = r#"NonZeroU32::new(3).expect("Somehow 3==0")"#))]
+    #[deftly(tor_config(default = "3"))]
     attempts: NonZeroU32,
 
     /// The amount of time to delay after the first failure, and a
@@ -27,7 +27,7 @@ pub struct DownloadSchedule {
 
     /// When we want to download a bunch of these at a time, how many
     /// attempts should we try to launch at once?
-    #[deftly(tor_config(default = r#"NonZeroU8::new(1).expect("Somehow 1==0")"#))]
+    #[deftly(tor_config(default = "1"))]
     parallelism: NonZeroU8,
 }
 

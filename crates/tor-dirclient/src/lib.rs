@@ -52,6 +52,7 @@
     allow(unused_imports)
 )]
 
+mod body;
 mod err;
 pub mod request;
 mod response;
@@ -281,11 +282,13 @@ where
     let encoded = util::encode_request(&req);
 
     // Write the request.
-    stream
-        .write_all(encoded.as_bytes())
-        .await
-        .map_err(RequestError::from)
-        .map_err(wrap_err)?;
+    for chunk in encoded.iter() {
+        stream
+            .write_all(chunk)
+            .await
+            .map_err(RequestError::from)
+            .map_err(wrap_err)?;
+    }
     stream
         .flush()
         .await

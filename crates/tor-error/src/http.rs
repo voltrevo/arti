@@ -68,7 +68,9 @@ impl ErrorKind {
 
             EK::ForbiddenStreamTarget => SC::FORBIDDEN,
 
-            EK::OnionServiceAddressInvalid | EK::InvalidStreamTarget => SC::BAD_REQUEST,
+            EK::OnionServiceAddressInvalid | EK::InvalidStreamTarget | EK::TorDocumentRejected => {
+                SC::BAD_REQUEST
+            }
             EK::OnionServiceWrongClientAuth => SC::FORBIDDEN,
             EK::OnionServiceConnectionFailed
             | EK::OnionServiceMissingClientAuth

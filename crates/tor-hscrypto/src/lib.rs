@@ -47,6 +47,8 @@
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 #![allow(dead_code, unused_variables)]
 
+use rand::RngExt;
+
 mod macros;
 #[cfg(feature = "ope")]
 pub mod ope;

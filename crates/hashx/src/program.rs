@@ -4,7 +4,7 @@ use crate::Error;
 use crate::generator::Generator;
 use crate::register::{RegisterFile, RegisterId};
 use fixed_capacity_vec::FixedCapacityVec;
-use rand_core::RngCore;
+use rand_core::Rng;
 use std::fmt;
 use std::ops::BitXor;
 
@@ -203,13 +203,13 @@ impl fmt::Debug for Program {
 }
 
 impl Program {
-    /// Generate a new `Program` from an arbitrary [`RngCore`] implementer
+    /// Generate a new `Program` from an arbitrary [`Rng`] implementer
     ///
     /// This can return [`Error::ProgramConstraints`] if the HashX
     /// post-generation program verification fails. During normal use this
     /// will happen once per several thousand random seeds, and the caller
     /// should skip to another seed.
-    pub(crate) fn generate<T: RngCore>(rng: &mut T) -> Result<Self, Error> {
+    pub(crate) fn generate<T: Rng>(rng: &mut T) -> Result<Self, Error> {
         let mut instructions = FixedCapacityVec::new();
         Generator::new(rng).generate_program(&mut instructions)?;
         Ok(Program(

@@ -21,7 +21,7 @@ pub(crate) mod circuit;
 mod conflux;
 mod control;
 
-use crate::circuit::circhop::SendRelayCell;
+use crate::circuit::circhop::{ReactorStreamComponents, SendRelayCell};
 use crate::circuit::{CircuitRxReceiver, UniqId};
 use crate::client::circuit::ClientCircChanMsg;
 use crate::client::circuit::padding::{PaddingController, PaddingEvent, PaddingEventStream};
@@ -181,15 +181,24 @@ enum RunOnceCmdInner {
     /// Uses the provided stream ID, and sends the provided message to that hop.
     BeginStream {
         /// The cell to send.
-        cell: Result<(SendRelayCell, StreamId)>,
+        cell: SendRelayCell,
+        /// The ID of the stream to return on the oneshot channel.
+        stream_id: StreamId,
         /// The location of the hop on the tunnel. We don't use this (and `Circuit`s shouldn't need
         /// to worry about legs anyways), but need it so that we can pass it back in `done` to the
         /// caller.
         hop: HopLocation,
         /// The circuit leg to begin the stream on.
         leg: UniqId,
+        /// Components that are needed to interact with the new stream.
+        stream_components: ReactorStreamComponents,
         /// Oneshot channel to notify on completion, with the allocated stream ID.
-        done: ReactorResultChannel<(StreamId, HopLocation, RelayCellFormat)>,
+        done: ReactorResultChannel<(
+            StreamId,
+            HopLocation,
+            RelayCellFormat,
+            ReactorStreamComponents,
+        )>,
     },
     /// Consider sending an XON message with the given `rate`.
     MaybeSendXon {
@@ -940,33 +949,30 @@ impl Reactor {
             RunOnceCmdInner::BeginStream {
                 leg,
                 cell,
+                stream_id,
                 hop,
+                stream_components,
                 done,
             } => {
-                match cell {
-                    Ok((cell, stream_id)) => {
-                        let circ = self
-                            .circuits
-                            .leg_mut(leg)
-                            .ok_or_else(|| internal!("leg disappeared?!"))?;
-                        let cell_hop = cell.hop.expect("missing hop in client SendRelayCell?!");
-                        let relay_format = circ
-                            .hop_mut(cell_hop)
-                            // TODO: Is this the right error type here? Or should there be a "HopDisappeared"?
-                            .ok_or(Error::NoSuchHop)?
-                            .relay_cell_format();
+                let circ = self
+                    .circuits
+                    .leg_mut(leg)
+                    .ok_or_else(|| internal!("leg disappeared?!"))?;
+                let cell_hop = cell.hop.expect("missing hop in client SendRelayCell?!");
+                let relay_format = circ
+                    .hop_mut(cell_hop)
+                    // TODO: Is this the right error type here? Or should there be a "HopDisappeared"?
+                    .ok_or(Error::NoSuchHop)?
+                    .relay_cell_format();
 
-                        let outcome = self.circuits.send_relay_cell_on_leg(cell, Some(leg)).await;
-                        // don't care if receiver goes away.
-                        let _ = done.send(outcome.clone().map(|_| (stream_id, hop, relay_format)));
-                        outcome?;
-                    }
-                    Err(e) => {
-                        // don't care if receiver goes away.
-                        let _ = done.send(Err(e.clone()));
-                        return Err(e.into());
-                    }
-                }
+                let outcome = self.circuits.send_relay_cell_on_leg(cell, Some(leg)).await;
+                // don't care if receiver goes away.
+                let _ = done.send(
+                    outcome
+                        .clone()
+                        .map(|_| (stream_id, hop, relay_format, stream_components)),
+                );
+                outcome?;
             }
             RunOnceCmdInner::CloseStream {
                 hop,

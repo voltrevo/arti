@@ -672,7 +672,7 @@ mod test {
 
     use super::*;
     use hex_literal::hex;
-    use rand::Rng as _;
+    use rand::RngExt as _;
     use tor_basic_utils::test_rng::testing_rng;
 
     #[test]

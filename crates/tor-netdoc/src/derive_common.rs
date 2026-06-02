@@ -22,7 +22,7 @@ define_derive_deftly! {
     ///
     ///  * Each field must impl `Default` or be annotated `#[deftly(constructor)]`
     ///
-    ///  * `Thing` should contain `#[doc(hidden)] pub __non_exhaustive: ()`
+    ///  * `Thing` must contain `#[doc(hidden)] pub __non_exhaustive: ()`
     ///    rather than being `#[non_exhaustive]`.
     ///    (Because struct literal syntax is not available otherwise.)
     ///
@@ -103,6 +103,14 @@ define_derive_deftly! {
     ${defcond F_DEFAULT_TRAIT not(fmeta(constructor))}
     ${defcond F_REQUIRED not(any(F_DEFAULT_EXPR, F_DEFAULT_TRAIT))}
 
+    ${for fields {
+        ${loop_exactly_1 "need a `__non_exhaustive` field (instead of `#[non_exhaustive]`"}
+        ${when all(
+            approx_equal($fname, __non_exhaustive),
+            approx_equal({}, ${tattrs non_exhaustive}),
+        )}
+    }}
+
     $/// Constructor (required fields) for `$tname`
     $///
     $/// See [`$tname`].
@@ -161,6 +169,139 @@ define_derive_deftly! {
             constructor.construct()
         }
     }
+}
+
+define_derive_deftly! {
+    /// Derive all parsing and encoding for a fixed, constant, string
+    ///
+    /// Usually, use the more-cooked [`define_constant_string!`] macro instead.
+    ///
+    /// # Input
+    ///
+    /// Typically, a unit struct.
+    /// (Can be applied to any ZST struct that implements `Default`.)
+    ///
+    /// # Required attribute
+    ///
+    ///  * `#[deftly(constant_string = EXPR))]` where `EXPR` is a `&str` expression.
+    ///
+    /// # Generated items
+    ///
+    /// Implementations of [`FromStr`, `Display`, and `NormalItemArgument`].
+    /// Therefore also [`ItemArgument`](crate::encode::ItemArgument)
+    /// and [`ItemArgumentParseable`](crate::parse2::ItemArgumentParseable).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use derive_deftly::Deftly;
+    /// use tor_netdoc::derive_deftly_template_ConstantString;
+    ///
+    /// #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Deftly)]
+    /// #[derive_deftly(ConstantString)]
+    /// #[deftly(constant_string = "sha3-256")]
+    /// #[allow(clippy::exhaustive_structs)]
+    /// pub struct SharedRandV1AlgName;
+    /// ```
+    // TODO DIRMIRROR / TODO DIRAUTH use ConstantString for routerdesc::OverloadGeneralVersion?
+    // TODO DIRMIRROR / TODO DIRAUTH use ConstantString for routerdesc::AuthCertVersion?
+    export ConstantString for struct, beta_deftly, meta_quoted retain:
+
+    // Bind `constant`.  Ensures the type is as expected.
+    ${define LET_CONSTANT {
+        let constant: &str = ${tmeta(constant_string) as expr};
+    }}
+
+    ${define FMT { ::std::fmt} }
+    ${define ERR { $crate::ExpectedConstantString } }
+
+    impl<$tgens> $FMT::Display for $ttype where $twheres {
+        fn fmt(&self, f: &mut $FMT::Formatter) -> $FMT::Result {
+            $LET_CONSTANT
+            $FMT::Display::fmt(constant, f)
+        }
+    }
+
+    impl<$tgens> ::std::str::FromStr for $ttype where $twheres {
+        type Err = $ERR;
+
+        fn from_str(s: &str) -> ::std::result::Result<Self, $ERR> {
+            $LET_CONSTANT
+            if s == constant {
+                Ok(::std::default::Default::default())
+            } else {
+                Err($ERR {
+                    got: s.to_string(),
+                    expected: constant,
+                })
+            }
+        }
+    }
+
+    impl<$tgens> $crate::NormalItemArgument for $ttype where $twheres {}
+}
+
+/// Define a ZST struct for a fixed, constant, argument string in a netdoc item
+///
+/// Convenience macro to define a unit struct, derive many traits,
+/// and derive
+/// [`ConstantString`](derive_deftly_template_ConstantString).
+///
+/// # Example
+///
+/// ```
+/// use tor_netdoc::define_constant_string;
+/// use tor_netdoc::derive_deftly_template_ConstantString; // sadly, needed for Reasons
+///
+/// define_constant_string! {
+///     /// The shared random algorithm name for the V1 shared random protocol
+///     ///
+///     /// This is a constant string, since the version defines the hash algorithm.
+///     SharedRandV1AlgName = "sha3-256";
+/// }
+///
+/// assert_eq!("sha3-256".parse::<SharedRandV1AlgName>(), Ok(SharedRandV1AlgName));
+/// assert_eq!(SharedRandV1AlgName.to_string(), "sha3-256");
+/// ```
+///
+/// # Input
+///
+/// ```rust,ignore
+/// define_constant_string! {
+///     #[ATTRIBUTES...]
+///     TYPE_NAME = STRING_LITERAL;
+/// }
+/// ```
+///
+/// # Generated items
+///
+/// ```rust,ignore
+/// #[ATTRIBUTES...]
+/// pub struct TYPE_NAME;
+/// ```
+///
+/// Implementations of `Default`, `Debug`, `Clone`, `Copy`,
+/// `Eq`, `PartialEq`, `Ord`, `PartialOrd`, `Hash`.
+///
+/// Implementations of [`FromStr`, `Display`, and `NormalItemArgument`].
+/// Therefore also [`ItemArgument`](crate::encode::ItemArgument)
+/// and [`ItemArgumentParseable`](crate::parse2::ItemArgumentParseable).
+//
+// This macro exists mostly to encapsulate this astonishing list of traits to derive!
+#[macro_export]
+macro_rules! define_constant_string {
+    {
+        $( #[ $($attr:tt)* ] )*
+        $name:ident = $string:expr;
+    } => {
+        $( #[ $($attr)* ] )*
+        #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        #[derive($crate::derive_deftly::Deftly)]
+        #[derive_deftly(ConstantString)]
+        #[deftly(constant_string = ($string))]
+        #[allow(clippy::exhaustive_structs)]
+        pub struct $name;
+    };
 }
 
 /// Macro to help check that netdoc items in a derive input are in the right order

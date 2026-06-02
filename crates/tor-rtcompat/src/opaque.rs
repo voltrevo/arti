@@ -73,28 +73,38 @@ macro_rules! implement_opaque_runtime {
     impl $crate::traits::NetStreamProvider<std::net::SocketAddr> for $t {
         type Stream = <$mty as $crate::traits::NetStreamProvider>::Stream;
         type Listener = <$mty as $crate::traits::NetStreamProvider>::Listener;
+        type ListenOptions = <$mty as $crate::traits::NetStreamProvider>::ListenOptions;
         #[inline]
         #[tracing::instrument(skip_all, level = "trace")]
         async fn connect(&self, addr: &std::net::SocketAddr) -> std::io::Result<Self::Stream> {
             self.$member.connect(addr).await
         }
         #[inline]
-        async fn listen(&self, addr: &std::net::SocketAddr) -> std::io::Result<Self::Listener> {
-            self.$member.listen(addr).await
+        async fn listen(
+            &self,
+            addr: &std::net::SocketAddr,
+            options: &Self::ListenOptions,
+        ) -> std::io::Result<Self::Listener> {
+            self.$member.listen(addr, options).await
         }
     }
     #[async_trait::async_trait]
     impl $crate::traits::NetStreamProvider<tor_general_addr::unix::SocketAddr> for $t {
         type Stream = <$mty as $crate::traits::NetStreamProvider<tor_general_addr::unix::SocketAddr>>::Stream;
         type Listener = <$mty as $crate::traits::NetStreamProvider<tor_general_addr::unix::SocketAddr>>::Listener;
+        type ListenOptions = <$mty as $crate::traits::NetStreamProvider<tor_general_addr::unix::SocketAddr>>::ListenOptions;
         #[inline]
         #[tracing::instrument(skip_all, level = "trace")]
         async fn connect(&self, addr: &tor_general_addr::unix::SocketAddr) -> std::io::Result<Self::Stream> {
             self.$member.connect(addr).await
         }
         #[inline]
-        async fn listen(&self, addr: &tor_general_addr::unix::SocketAddr) -> std::io::Result<Self::Listener> {
-            self.$member.listen(addr).await
+        async fn listen(
+            &self,
+            addr: &tor_general_addr::unix::SocketAddr,
+            options: &Self::ListenOptions,
+        ) -> std::io::Result<Self::Listener> {
+            self.$member.listen(addr, options).await
         }
     }
 

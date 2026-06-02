@@ -13,7 +13,7 @@ use tor_llcrypto::pk::rsa::RsaIdentity;
 use tor_llcrypto::util::ct::ct_lookup;
 
 use digest::Mac;
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, Rng};
 
 /// Client side of the Ntor handshake.
 pub(crate) struct NtorClient;
@@ -25,7 +25,7 @@ impl super::ClientHandshake for NtorClient {
     type ClientAuxData = ();
     type ServerAuxData = ();
 
-    fn client1<R: RngCore + CryptoRng, M: Borrow<()>>(
+    fn client1<R: Rng + CryptoRng, M: Borrow<()>>(
         rng: &mut R,
         key: &Self::KeyType,
         _client_aux_data: &M,
@@ -49,7 +49,7 @@ impl super::ServerHandshake for NtorServer {
     type ClientAuxData = ();
     type ServerAuxData = ();
 
-    fn server<R: RngCore + CryptoRng, REPLY: AuxDataReply<Self>, T: AsRef<[u8]>>(
+    fn server<R: Rng + CryptoRng, REPLY: AuxDataReply<Self>, T: AsRef<[u8]>>(
         rng: &mut R,
         reply_fn: &mut REPLY,
         key: &[Self::KeyType],
@@ -148,7 +148,7 @@ fn client_handshake_ntor_v1<R>(
     relay_public: &NtorPublicKey,
 ) -> Result<(NtorHandshakeState, Vec<u8>)>
 where
-    R: RngCore + CryptoRng,
+    R: Rng + CryptoRng,
 {
     let my_sk = StaticSecret::random_from_rng(rng);
     let my_public = PublicKey::from(&my_sk);
@@ -274,7 +274,7 @@ fn server_handshake_ntor_v1<R, T>(
     keys: &[NtorSecretKey],
 ) -> RelayHandshakeResult<(NtorHkdfKeyGenerator, Vec<u8>)>
 where
-    R: RngCore + CryptoRng,
+    R: Rng + CryptoRng,
     T: AsRef<[u8]>,
 {
     // TODO(nickm): we generate this key whether or not we are

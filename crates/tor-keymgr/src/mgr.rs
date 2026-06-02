@@ -2,7 +2,7 @@
 //!
 //! See the [`KeyMgr`] docs for more details.
 
-use crate::raw::{RawEntryId, RawKeystoreEntry};
+use crate::raw::RawEntryId;
 use crate::{
     ArtiPath, BoxedKeystore, KeyPath, KeyPathError, KeyPathInfo, KeyPathInfoExtractor,
     KeyPathPattern, KeySpecifier, KeystoreCorruptionError, KeystoreEntryResult, KeystoreId,
@@ -77,12 +77,13 @@ pub struct KeystoreEntry<'a> {
     keystore_id: &'a KeystoreId,
     /// The [`RawEntryId`] of the key, an identifier used in
     /// `arti raw` operations.
-    #[getter(skip)]
+    #[cfg_attr(not(feature = "onion-service-cli-extra"), getter(skip))]
     raw_id: RawEntryId,
 }
 
 impl<'a> KeystoreEntry<'a> {
     /// Create a new `KeystoreEntry`
+    #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
     pub(crate) fn new(
         key_path: KeyPath,
         key_type: KeystoreItemType,
@@ -95,22 +96,6 @@ impl<'a> KeystoreEntry<'a> {
             keystore_id,
             raw_id,
         }
-    }
-
-    /// Return an instance of [`RawKeystoreEntry`]
-    #[cfg(feature = "onion-service-cli-extra")]
-    pub fn raw_entry(&self) -> RawKeystoreEntry {
-        RawKeystoreEntry::new(self.raw_id.clone(), self.keystore_id.clone())
-    }
-}
-
-// NOTE: Some methods require a `KeystoreEntryResult<KeystoreEntry>` as an
-// argument (e.g.: `KeyMgr::raw_keystore_entry`). For this reason  implementing
-// `From<KeystoreEntry<'a>> for KeystoreEntryResult<KeystoreEntry<'a>>` makes
-// `KeystoreEntry` more ergonomic.
-impl<'a> From<KeystoreEntry<'a>> for KeystoreEntryResult<KeystoreEntry<'a>> {
-    fn from(val: KeystoreEntry<'a>) -> Self {
-        Ok(val)
     }
 }
 
@@ -849,11 +834,11 @@ mod tests {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::keystore::arti::err::{ArtiNativeKeystoreError, MalformedPathError};
-    use crate::raw::{RawEntryId, RawKeystoreEntry};
+    use crate::raw::RawEntryId;
     use crate::test_utils::{TestDerivedKeySpecifier, TestDerivedKeypairSpecifier};
     use crate::{
         ArtiPath, ArtiPathUnavailableError, Error, KeyPath, KeystoreEntryResult, KeystoreError,
-        UnrecognizedEntryError,
+        UnrecognizedEntry, UnrecognizedEntryError,
     };
     use std::path::PathBuf;
     use std::result::Result as StdResult;
@@ -1327,7 +1312,7 @@ mod tests {
         for i in 0..count {
             let invalid_key_path = PathBuf::from(&format!("unrecognized_entry{}", i));
             let raw_id = RawEntryId::Path(invalid_key_path.clone());
-            let entry = RawKeystoreEntry::new(raw_id, keystore.id.clone()).into();
+            let entry = UnrecognizedEntry::new(raw_id, keystore.id.clone());
             let entry = UnrecognizedEntryError::new(
                 entry,
                 Arc::new(ArtiNativeKeystoreError::MalformedPath {
@@ -2025,15 +2010,16 @@ mod tests {
                         &item_type,
                     );
                     recognized_entries += 1;
-                    all_entries.push(RawKeystoreEntry::new(
-                        build_raw_id_path(entry.key_path(), entry.key_type()),
-                        primary_keystore_id.clone(),
-                    ));
+                    let raw_id = build_raw_id_path(entry.key_path(), entry.key_type());
+                    let keystore_id = primary_keystore_id.clone();
+                    all_entries.push((raw_id, keystore_id));
                 }
                 Err(u) => {
-                    assert_eq!(u.entry().raw_id(), &unrecognized_entry_id);
+                    let raw_id = u.entry().raw_id().clone();
+                    assert_eq!(raw_id, unrecognized_entry_id);
                     unrecognized_entries += 1;
-                    all_entries.push(u.entry().into());
+                    let keystore_id = u.entry().keystore_id().clone();
+                    all_entries.push((raw_id, keystore_id));
                 }
             }
         }
@@ -2041,8 +2027,8 @@ mod tests {
         assert_eq!(unrecognized_entries, 1);
 
         // Remove a recognized entry and an recognized one
-        for entry in all_entries {
-            mgr.remove_unchecked(&entry.raw_id().to_string(), entry.keystore_id())
+        for (raw_id, keystore_id) in all_entries {
+            mgr.remove_unchecked(&raw_id.to_string(), &keystore_id)
                 .unwrap();
         }
 

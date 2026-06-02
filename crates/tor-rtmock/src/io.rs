@@ -208,7 +208,7 @@ mod test {
 
     use futures::io::{AsyncReadExt, AsyncWriteExt};
     use futures_await_test::async_test;
-    use rand::Rng;
+    use rand::RngExt;
     use tor_basic_utils::test_rng::testing_rng;
 
     #[async_test]

@@ -61,7 +61,7 @@
 // be used by tests, where this is the preferred means of communication with the user.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 // We'll use the same PRNG as the (current) standard.  We specify it here rather
 // than using StdRng, since we want determinism in the future.
 pub use rand_chacha::ChaCha12Rng as TestingRng;

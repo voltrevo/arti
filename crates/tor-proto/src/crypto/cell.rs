@@ -351,7 +351,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
-    use rand::{RngCore, seq::IndexedRandom as _};
+    use rand::{Rng, seq::IndexedRandom as _};
     use tor_basic_utils::{RngExt as _, test_rng::testing_rng};
     use tor_bytes::SecretBuf;
     use tor_cell::relaycell::RelayCellFormat;

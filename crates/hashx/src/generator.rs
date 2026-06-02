@@ -6,7 +6,7 @@ use crate::program::{Instruction, InstructionVec, Opcode};
 use crate::rand::RngBuffer;
 use crate::register::{RegisterId, RegisterSet};
 use crate::scheduler::{InstructionPlan, Scheduler};
-use rand_core::RngCore;
+use rand_core::Rng;
 
 /// The `model` attempts to document HashX program generation choices,
 /// separate from the main body of the program generator.
@@ -85,7 +85,7 @@ mod model {
 }
 
 /// Program generator
-pub(crate) struct Generator<'r, R: RngCore> {
+pub(crate) struct Generator<'r, R: Rng> {
     /// The program generator wraps a random number generator, via [`RngBuffer`].
     rng: RngBuffer<'r, R>,
 
@@ -106,7 +106,7 @@ pub(crate) struct Generator<'r, R: RngCore> {
     last_selector_result_op: Option<Opcode>,
 }
 
-impl<'r, R: RngCore> Generator<'r, R> {
+impl<'r, R: Rng> Generator<'r, R> {
     /// Create a fresh program generator from a random number generator state.
     #[inline(always)]
     pub(crate) fn new(rng: &'r mut R) -> Self {
@@ -462,7 +462,7 @@ enum OpcodeSelector {
 impl OpcodeSelector {
     /// Apply the selector, advancing the Rng state and returning an Opcode.
     #[inline(always)]
-    fn apply<R: RngCore>(&self, generator: &mut Generator<'_, R>) -> Opcode {
+    fn apply<R: Rng>(&self, generator: &mut Generator<'_, R>) -> Opcode {
         match self {
             OpcodeSelector::Target => Opcode::Target,
             OpcodeSelector::Branch => Opcode::Branch,

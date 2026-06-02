@@ -190,7 +190,7 @@ pub struct Ed25519Cert {
 }
 
 /// One of the data types that can be certified by an Ed25519Cert.
-#[derive(Debug, Clone, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
 #[non_exhaustive]
 pub enum CertifiedKey {
     /// An Ed25519 public key, signed directly.
@@ -207,7 +207,7 @@ pub enum CertifiedKey {
 }
 
 /// A key whose type we didn't recognize.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnrecognizedKey {
     /// Actual type of the key.
     key_type: KeyType,

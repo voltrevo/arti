@@ -22,10 +22,10 @@ use crate::util::notify::NotifySender;
 #[derive(Debug)]
 enum StreamFlowCtrlInner {
     /// "legacy" sendme-window-based flow control.
-    WindowBased(WindowFlowCtrl),
+    Window(WindowFlowCtrl),
     /// XON/XOFF flow control.
     #[cfg(feature = "flowctl-cc")]
-    XonXoffBased(XonXoffFlowCtrl),
+    XonXoff(XonXoffFlowCtrl),
 }
 
 /// Manages the circuit reactor's flow control for a stream.
@@ -44,7 +44,7 @@ impl StreamFlowCtrl {
     /// Returns a new sendme-window-based [`StreamFlowCtrl`].
     pub(crate) fn new_window(window: sendme::StreamSendWindow) -> Self {
         Self {
-            inner: StreamFlowCtrlInner::WindowBased(WindowFlowCtrl::new(window)),
+            inner: StreamFlowCtrlInner::Window(WindowFlowCtrl::new(window)),
         }
     }
 
@@ -57,7 +57,7 @@ impl StreamFlowCtrl {
         drain_rate_requester: NotifySender<DrainRateRequest>,
     ) -> Self {
         Self {
-            inner: StreamFlowCtrlInner::XonXoffBased(XonXoffFlowCtrl::new(
+            inner: StreamFlowCtrlInner::XonXoff(XonXoffFlowCtrl::new(
                 params,
                 use_sidechannel_mitigations,
                 rate_limit_updater,
@@ -72,12 +72,12 @@ impl StreamFlowCtrl {
     /// that is designed to be used for half-streams.
     pub(crate) fn half_stream(self) -> HalfStreamFlowCtrl {
         let inner = match self.inner {
-            StreamFlowCtrlInner::WindowBased(x) => {
-                HalfStreamFlowCtrlInner::WindowBased(HalfStreamWindowFlowCtrl::new(x))
+            StreamFlowCtrlInner::Window(x) => {
+                HalfStreamFlowCtrlInner::Window(HalfStreamWindowFlowCtrl::new(x))
             }
             #[cfg(feature = "flowctl-cc")]
-            StreamFlowCtrlInner::XonXoffBased(x) => {
-                HalfStreamFlowCtrlInner::XonXoffBased(HalfStreamXonXoffFlowCtrl::new(x))
+            StreamFlowCtrlInner::XonXoff(x) => {
+                HalfStreamFlowCtrlInner::XonXoff(HalfStreamXonXoffFlowCtrl::new(x))
             }
         };
 
@@ -113,6 +113,10 @@ impl FlowCtrlHooks for StreamFlowCtrl {
 
     fn maybe_send_xoff(&mut self, buffer_len: usize) -> Result<Option<Xoff>> {
         self.inner.maybe_send_xoff(buffer_len)
+    }
+
+    fn inbound_queue_max_len(&self) -> usize {
+        self.inner.inbound_queue_max_len()
     }
 }
 
@@ -168,6 +172,14 @@ pub(crate) trait FlowCtrlHooks {
     /// If we should, then returns the XOFF message that should be sent.
     /// Returns an error if XON/XOFF messages aren't supported for this type of flow control.
     fn maybe_send_xoff(&mut self, buffer_len: usize) -> Result<Option<Xoff>>;
+
+    /// The max queue length that should be used for stream messages incoming from the Tor network.
+    ///
+    /// This is the queue length between the user-facing stream reader (`DataReader`)
+    /// and the circuit reactor.
+    ///
+    /// If the queue would ever exceed this many messages, the stream should be closed.
+    fn inbound_queue_max_len(&self) -> usize;
 }
 
 /// Manages flow control for a half-stream (`HalfStream`).
@@ -182,10 +194,10 @@ pub(crate) struct HalfStreamFlowCtrl {
 #[derive(Debug)]
 enum HalfStreamFlowCtrlInner {
     /// "legacy" sendme-window-based flow control.
-    WindowBased(HalfStreamWindowFlowCtrl),
+    Window(HalfStreamWindowFlowCtrl),
     /// XON/XOFF flow control.
     #[cfg(feature = "flowctl-cc")]
-    XonXoffBased(HalfStreamXonXoffFlowCtrl),
+    XonXoff(HalfStreamXonXoffFlowCtrl),
 }
 
 /// Methods that can be called on a [`HalfStreamFlowCtrl`].

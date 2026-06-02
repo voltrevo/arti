@@ -1,6 +1,5 @@
 //! Declare error types for tor-chanmgr
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::task::SpawnError;
@@ -69,11 +68,17 @@ pub enum Error {
     },
 
     /// Failed to build a channel, after trying multiple addresses.
-    #[error("Channel build failed: [(address, error)] = {addresses:?}")]
-    ChannelBuild {
+    //
+    // TODO: This output does not conform to our usual standards.
+    // We should use RetryError and make sure our error_report code can deal with it.
+    #[error("Connection attempt(s) failed: [(address, error)] = {addresses:?}")]
+    Connect {
         /// The list of addresses we tried to connect to, coupled with
         /// the error we encountered connecting to each one.
-        addresses: Vec<(ChanSensitive<SocketAddr>, Arc<std::io::Error>)>,
+        ///
+        /// These addresses are currently represented as strings; this
+        /// type may change in the future if and when refactor this error type.
+        addresses: Vec<(ChanSensitive<String>, ConnectError)>,
     },
 
     /// Unable to spawn task
@@ -110,10 +115,6 @@ pub enum Error {
     #[error("Channel request cancelled or superseded")]
     RequestCancelled,
 
-    /// We tried to create a channel through a proxy, and encountered an error.
-    #[error("Problem while connecting to Tor via a proxy")]
-    Proxy(#[from] ProxyError),
-
     /// An error occurred in a pluggable transport manager.
     ///
     /// We can't know the type, because any pluggable transport manager implementing
@@ -130,6 +131,25 @@ pub enum Error {
     /// An internal error of some kind that should never occur.
     #[error("Internal error")]
     Internal(#[from] tor_error::Bug),
+}
+
+/// An error trying to open a network connection.
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ConnectError {
+    /// Unable to open a direct connection.
+    #[error("Problem connecting to relay")]
+    Direct(#[source] Arc<std::io::Error>),
+
+    /// Unable to open a proxied connection.
+    #[error("Problem connecting to relay via a proxy")]
+    Proxy(#[from] ProxyError),
+}
+
+impl From<std::io::Error> for ConnectError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Direct(Arc::new(e))
+    }
 }
 
 impl<T> From<std::sync::PoisonError<T>> for Error {
@@ -169,11 +189,32 @@ impl tor_error::HasKind for Error {
             E::UnusableTarget(_) | E::Internal(_) => EK::Internal,
             E::MissingId => EK::BadApiUsage,
             E::IdentityConflict => EK::TorAccessFailed,
-            E::ChannelBuild { .. } => EK::TorAccessFailed,
+            E::Connect { .. } => EK::TorAccessFailed,
             E::RequestCancelled => EK::TransientFailure,
-            E::Proxy(e) => e.kind(),
             E::Memquota(e) => e.kind(),
             E::Pt(e) => e.kind(),
+        }
+    }
+}
+
+impl tor_error::HasRetryTime for ConnectError {
+    fn retry_time(&self) -> tor_error::RetryTime {
+        match self {
+            // TODO: Someday we might want to distinguish among different kinds
+            // of IO errors.
+            ConnectError::Direct(_) => tor_error::RetryTime::AfterWaiting,
+            ConnectError::Proxy(e) => e.retry_time(),
+        }
+    }
+}
+
+impl tor_error::HasKind for ConnectError {
+    fn kind(&self) -> ErrorKind {
+        match self {
+            // TODO: Someday we might want to distinguish among different kinds
+            // of IO errors.
+            ConnectError::Direct(_) => ErrorKind::TorAccessFailed,
+            ConnectError::Proxy(e) => e.kind(),
         }
     }
 }
@@ -193,15 +234,14 @@ impl tor_error::HasRetryTime for Error {
             E::PendingFailed { .. } | E::Proto { .. } | E::Io { .. } => RT::AfterWaiting,
 
             // Delegate.
-            E::Proxy(e) => e.retry_time(),
             E::Pt(e) => e.retry_time(),
 
-            // This error reflects multiple attempts, but every failure is an IO
-            // error, so we can also retry this after a delay.
-            //
-            // TODO: Someday we might want to distinguish among different kinds
-            // of IO errors.
-            E::ChannelBuild { .. } => RT::AfterWaiting,
+            // This error reflects multiple attempts, so we go with whichever error
+            // can be retried the earliest.
+            E::Connect { addresses } => {
+                RT::earliest_approx(addresses.iter().map(|(_, e)| e.retry_time()))
+                    .unwrap_or(RT::AfterWaiting)
+            }
 
             // This one can't succeed: if the ChanTarget have addresses to begin with,
             // it won't have addresses in the future.

@@ -35,11 +35,11 @@ pub(crate) const CHANNEL_SIZE: usize = 100;
 async fn is_bridge_online(
     bridge_config: &BridgeConfig,
     tor_client: &TorClient<PreferredRuntime>,
-) -> Result<Arc<Channel>, tor_chanmgr::Error> {
-    let chanmgr = tor_client.chanmgr();
-    chanmgr
+) -> anyhow::Result<Arc<Channel>> {
+    let chanmgr = tor_client.chanmgr()?;
+    Ok(chanmgr
         .build_unmanaged_channel(bridge_config, ChannelAccount::new_noop())
-        .await
+        .await?)
 }
 
 /// Waits for given channel to expire and sends this info through specified
@@ -82,7 +82,7 @@ fn build_pt_bridge_config(
 /// This is done up until all the bridges in the slice are covered
 async fn test_bridges(
     bridge_lines: &[String],
-    common_tor_client: TorClient<PreferredRuntime>,
+    common_tor_client: Arc<TorClient<PreferredRuntime>>,
 ) -> (HashMap<String, BridgeResult>, HashMap<String, Arc<Channel>>) {
     let mut results = HashMap::new();
     let mut channels = HashMap::new();
@@ -172,7 +172,7 @@ pub fn get_failed_bridges(
 /// Task which checks if failed bridges have come up online
 pub async fn check_failed_bridges_task(
     initial_failed_bridges: Vec<String>,
-    common_tor_client: TorClient<PreferredRuntime>,
+    common_tor_client: Arc<TorClient<PreferredRuntime>>,
     now_online_bridges_tx: Sender<HashMap<String, Arc<Channel>>>,
     mut once_online_bridges_rx: Receiver<Vec<String>>,
     updates_tx: broadcast::Sender<HashMap<String, BridgeResult>>,
@@ -257,7 +257,7 @@ pub async fn detect_bridges_going_down(
 pub async fn continuous_check(
     channels: HashMap<String, Arc<Channel>>,
     failed_bridges: Vec<String>,
-    common_tor_client: TorClient<PreferredRuntime>,
+    common_tor_client: Arc<TorClient<PreferredRuntime>>,
     updates_tx: broadcast::Sender<HashMap<String, BridgeResult>>,
     new_bridges_rx: broadcast::Receiver<Vec<String>>,
 ) {
@@ -280,7 +280,7 @@ pub async fn continuous_check(
 /// Note that this is mainly a wrapper for convenience purposes
 pub async fn build_common_tor_client(
     obfs4_path: &str,
-) -> anyhow::Result<TorClient<PreferredRuntime>> {
+) -> anyhow::Result<Arc<TorClient<PreferredRuntime>>> {
     let builder = build_pt_bridge_config("obfs4", obfs4_path)?.build()?;
     Ok(TorClient::create_bootstrapped(builder).await?)
 }

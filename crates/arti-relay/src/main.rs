@@ -65,33 +65,23 @@ mod tasks;
 mod util;
 
 use std::io::IsTerminal as _;
-use std::time::SystemTime;
 
 use anyhow::Context;
-use base64ct::Base64Unpadded;
-use base64ct::Encoding as _;
+use cfg_if::cfg_if;
 use clap::Parser;
 use futures::FutureExt;
 use safelog::with_safe_logging_suppressed;
 use tor_basic_utils::iter_join;
 use tor_error::warn_report;
-use tor_keymgr::KeyMgr;
-use tor_keymgr::KeySpecifierPattern as _;
-use tor_relay_crypto::pk::RelayNtorKeypair;
-use tor_relay_crypto::pk::{RelayIdentityKeypair, RelayIdentityRsaKeypair};
 use tor_rtcompat::SpawnExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tor_rtcompat::{Runtime, ToplevelRuntime};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use tracing_subscriber::FmtSubscriber;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::config::{DEFAULT_LOG_LEVEL, TorRelayConfig, base_resolver};
-use crate::keys::{
-    RelayIdentityKeypairSpecifier, RelayIdentityRsaKeypairSpecifier, RelayNtorKeypairSpecifier,
-    RelayNtorKeypairSpecifierPattern,
-};
 use crate::relay::InertTorRelay;
 
 fn main() {
@@ -155,6 +145,7 @@ fn main_main(cli: cli::Cli) -> anyhow::Result<()> {
 }
 
 /// Initialize and start the relay.
+#[allow(clippy::cognitive_complexity)]
 // Pass by value so that we don't need to clone fields, which keeps the code simpler.
 #[allow(clippy::needless_pass_by_value)]
 fn start_relay(_args: cli::RunArgs, global_args: cli::GlobalArgs) -> anyhow::Result<()> {
@@ -229,6 +220,31 @@ fn start_relay(_args: cli::RunArgs, global_args: cli::GlobalArgs) -> anyhow::Res
         None
     };
 
+    if let Some(listen) = {
+        // https://github.com/metrics-rs/metrics/issues/567
+        config
+            .metrics
+            .prometheus
+            .listen
+            .single_address_legacy()
+            .context("can only listen on a single address for Prometheus metrics")?
+    } {
+        cfg_if! {
+            if #[cfg(feature = "metrics")] {
+                metrics_exporter_prometheus::PrometheusBuilder::new()
+                    .with_http_listener(listen)
+                    .install()
+                    .with_context(|| format!(
+                        "set up Prometheus metrics exporter on {listen}"
+                    ))?;
+                info!("Arti Prometheus metrics export scraper endpoint http://{listen}");
+            } else {
+                let _ = listen;
+                warn!("`metrics.prometheus.listen` config set but `metrics` cargo feature compiled out in `arti-relay` crate");
+            }
+        }
+    }
+
     tracing::dispatcher::with_default(&logger, || {
         let runtime = init_runtime().context("Failed to initialize the runtime")?;
 
@@ -297,10 +313,6 @@ async fn run_relay<R: Runtime>(
         .await
         .context("Failed to bootstrap")?;
 
-    // TODO: This is mostly useful for debugging.
-    // We might want to remove this in the future, or move this somewhere else.
-    log_public_keys(relay.keymgr()).context("Failed to log public keys")?;
-
     // This blocks until end of time or an error.
     relay.run().await
 }
@@ -329,54 +341,4 @@ enum MainloopStatus<T> {
     Finished(T),
     /// The future was cancelled due to a ctrl-c event.
     CtrlC,
-}
-
-/// Log the relay's identities and public ntor key.
-fn log_public_keys(keymgr: &KeyMgr) -> anyhow::Result<()> {
-    let rsa_id = keymgr
-        .get::<RelayIdentityRsaKeypair>(&RelayIdentityRsaKeypairSpecifier::new())
-        .context("Failed to get RSA identity from key manager")?
-        .context("Missing RSA identity")?
-        .to_rsa_identity();
-    let ed_id = keymgr
-        .get::<RelayIdentityKeypair>(&RelayIdentityKeypairSpecifier::new())
-        .context("Failed to get Ed25519 identity from key manager")?
-        .context("Missing Ed25519 identity")?
-        .to_ed25519_id();
-
-    let ntor_keys = keymgr
-        .list_matching(&RelayNtorKeypairSpecifierPattern::new_any().arti_pattern()?)?
-        .into_iter()
-        .map(|entry| {
-            let key_path = entry.key_path();
-            let valid_until =
-                SystemTime::from(RelayNtorKeypairSpecifier::try_from(key_path)?.valid_until);
-            let key = keymgr
-                .get_entry::<RelayNtorKeypair>(&entry)
-                .context("Failed to get ntor key from key manager")?
-                .context("Ntor key disappeared?!")?;
-            Ok((valid_until, key))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    // Find the longest valid ntor key (max as ordered by the "valid until" time).
-    let ntor = ntor_keys
-        .into_iter()
-        .max_by_key(|x| x.0)
-        .map(|x| x.1)
-        .context("Missing ntor key")?;
-
-    // Base64-encode the public ntor key.
-    let ntor = Base64Unpadded::encode_string(ntor.public().inner().as_bytes());
-
-    // Log the relay's identities.
-    // TODO: We should also log this after a key rotation:
-    // https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3773#note_3367789
-    // TODO: This is useful at info level while we're developing,
-    // but the level should probably be lowered in the future.
-    tracing::info!("RSA identity: {rsa_id}");
-    tracing::info!("Ed25519 identity: {ed_id}");
-    tracing::info!("Ntor public key: {ntor}");
-
-    Ok(())
 }

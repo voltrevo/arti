@@ -144,6 +144,8 @@ pub mod doc_howto {}
 /// It also has a `new()` method that calls `Default::default()`.
 ///
 /// The builder struct implements
+/// [`Builder`](crate::load::Builder),
+/// [`ConfigBuilder`](crate::load::ConfigBuilder),
 /// [`ExtendBuilder`](crate::extend_builder::ExtendBuilder)
 /// and [`Flattenable`](crate::Flattenable).
 ///
@@ -478,6 +480,11 @@ pub mod doc_generated_code {}
 /// When this attribute is provided, if the given field is absent in the builder,
 /// the `build()` method will set its value to the value of the provided expression.
 /// The expression may invoke a function, but cannot use `self`.
+///
+/// The type of the default must match the type of the field _in the builder_.
+/// Usually this is the same type as in the built configuration, but for some
+/// ["magic" types](crate::derive::doc_magic_types), the two can differ.
+/// (If this is the case, we note the fact with the "magic" type's documentation.)
 ///
 /// For each field, you must specify exactly one of
 /// [`default`], [`default =`], [`no_default`], [`build`], [`try_build`], or [`sub_builder`].
@@ -837,6 +844,31 @@ pub mod doc_generated_code {}
 /// }
 /// ```
 ///
+/// <div id="fmeta:apply_field_default">
+///
+/// ### `deftly(tor_config(apply_field_default = { FIELD_DEFAULT }))` — Apply a default for a specialized builder.
+///
+/// </div>
+///
+/// By default, the builder's generated [`apply_defaults()`] method
+/// does nothing for fields with [`build`] or [`try_build`] attributes,
+/// and recursively calls [`apply_defaults()`]
+/// for [`sub_builder`] fields.
+///
+/// This attribute replaces that behavior for a single field.
+/// FIELD_DEFAULT must be an expression that expands to a closure taking `&mut Self` as an argument.
+/// It checks whether the field is set,
+/// and sets it to a reasonable default otherwise.
+/// It must return Result<(), E>, where E is some type implementing `Into<ConfigBuildError>`.
+/// Within `FIELD_DEFAUlT`, `self` refers to the `Builder`.
+/// The [`build`] or [`try_build`] functions for that field may assume
+/// that the FIELD_DEFAULT has already been executed.
+///
+/// The code in this attribute is invoked after earlier fields are set to their defaults,
+/// and before later fields are set to theirs.
+///
+/// It is an error to use this attribute along with [`default`] or [`no_default`].
+///
 /// <div id="fmeta:field_vis">
 ///
 /// ### `deftly(tor_config(field(vis = "..")))` — Change the visibility of a field in the builder
@@ -992,6 +1024,7 @@ pub mod doc_generated_code {}
 /// This attribute disables [type-based magic behavior](crate::derive::doc_magic_types)
 /// for the current field.
 ///
+/// [`apply_defaults()`]: crate::load::ConfigBuilder::apply_defaults
 /// [`build_fn(error)`]:  crate::derive::doc_ref_attrs#tmeta:build_fn_error
 /// [`build_fn(missing_field)`]:  crate::derive::doc_ref_attrs#tmeta:build_fn_missing_field
 /// [`build`]: crate::derive::doc_ref_attrs#fmeta:build
@@ -1077,6 +1110,9 @@ pub mod doc_differences {}
 /// The setter for a [`NonZero`]`<T>` field takes
 /// `impl `[`PossiblyBoundsChecked`]`<T>` as its argument.
 /// This trait is implemented by `T` and by [`NonZero`]`<T>`.
+///
+/// The default for a `NonZero<T>` should be of type `T`.
+/// (Passing the value `0` will cause a test failure.)
 ///
 /// When the build() function is called, it returns an error if the provided
 /// value was zero.
@@ -1169,6 +1205,7 @@ pub mod exports {
         impl_standard_builder,
         load::Buildable as BuildableTrait,
         load::Builder as BuilderTrait,
+        load::ConfigBuilder,
     };
     pub use derive_deftly::Deftly;
     pub use figment;
@@ -1310,11 +1347,10 @@ macro_rules! nonzero_typemagic {
     { @setter_arg_type {$t:ty} } => { impl $crate::setter_traits::PossiblyBoundsChecked<$t> };
     { @setter_cvt {$t:ty} {$e:expr} } => { $e.to_unchecked() };
     { @build_field {$t:ty} {$e:expr} {$fname:expr}} => {
-        $e.map(|v|
-            v.try_into().map_err(|_| $crate::ConfigBuildError::Invalid {
+        $e.try_into().map_err(|_| $crate::ConfigBuildError::Invalid {
                 field: $fname.to_string(),
                 problem: "value not allowed to be zero".to_string()
-        })).transpose()?
+        })?
     };
     { @check_type {$t:ty} } => {};
     { @setter_docs {$t:ty} } => {
@@ -1335,14 +1371,13 @@ macro_rules! opt_nz_typemagic {
     { @setter_cvt {$t:ty} {$e:expr} } => { $e.to_option_unchecked() };
     { @build_field {$t:ty} {$e:expr} {$fname:expr}} => {
         match $e {
-            Some(Some(v)) => match v.try_into() {
-                Ok(n) => Some(Some(n)),
+            Some(v) => match v.try_into() {
+                Ok(n) => Some(n),
                 Err(_) => return Err( $crate::ConfigBuildError::Invalid {
                     field: $fname.to_string(),
                     problem: "value not allowed to be zero".to_string()
                 })
             }
-            Some(None) => Some(None),
             None => None,
         }
     };
@@ -1941,6 +1976,18 @@ define_derive_deftly! {
             ${error "With list, must specify list(element(clone)) or list(element(build))"}
         }}
     }}
+    ${define APPLY_DEFAULTS_LIST_ELEMENT {
+        ${select1
+        fmeta(tor_config(list(element(build)))) {
+            |v| $E::ConfigBuilder::apply_defaults(v)
+        }
+        fmeta(tor_config(list(element(clone)))) {
+            |_v| Ok::<_ , $E::ConfigBuildError>(())
+        }
+        else {
+            ${error "With list, must specify list(element(clone)) or list(element(build))"}
+        }}
+    }}
     ${define BLD_LIST_ELT_TYPE {
         ${select1
         fmeta(tor_config(list(element(build)))) {
@@ -1974,6 +2021,7 @@ define_derive_deftly! {
             built: $ftype = $fname;
             default = ${fmeta(tor_config(default)) as expr};
             item_build: $BUILD_LIST_ELEMENT;
+            item_apply_defaults: $APPLY_DEFAULTS_LIST_ELEMENT;
         }
     )
 
@@ -2163,13 +2211,13 @@ define_derive_deftly! {
         ${fmeta(tor_config(sub_builder(build_fn))) as path, default build}
     }}
 
-    // Expands to an expression of type Option<$ftype> for the current field,
+    // Expands to an expression of type Option<$ftype> for a field named "value",
     // taking type-based magic into account.
     ${define BLD_MAGIC_CVT {
         ${if fmeta(tor_config(no_magic)) {
-            self.$fname.clone()
+            value.clone()
         } else {
-            $E::bld_magic_cvt!({self.$fname} {${concat $fname}} {$ftype})
+            $E::bld_magic_cvt!({value} {${concat $fname}} {$ftype})
         }}
     }}
 
@@ -2191,8 +2239,11 @@ define_derive_deftly! {
             }
             all(fmeta(tor_config(default)), not(any(fmeta(tor_config(list)),
                                                     fmeta(tor_config(map))))) {
-                $BLD_MAGIC_CVT.unwrap_or_else(
-                    || ${fmeta(tor_config(default)) as expr, default {Default::default()}})
+                {
+                    let value = self.$fname.clone().unwrap_or_else(
+                        || ${fmeta(tor_config(default)) as expr, default {Default::default()}});
+                    $BLD_MAGIC_CVT
+                }
             }
             fmeta(tor_config(build)) {
                 (${fmeta(tor_config(build)) as expr})(self)
@@ -2201,9 +2252,11 @@ define_derive_deftly! {
                 (${fmeta(tor_config(try_build)) as expr})(self)?
             }
             fmeta(tor_config(no_default)) {
-                $BLD_MAGIC_CVT.ok_or_else(
-                    || { ($BLD_MISSING_FIELD)(stringify!($fname)) }
-                )?
+                {
+                    let value = self.$fname.clone().ok_or_else(
+                        || { ($BLD_MISSING_FIELD)(stringify!($fname)) })?;
+                    $BLD_MAGIC_CVT
+                }
             }
             else {
                 ${error "Every field must have default, no_default, try_build, build, or sub_builder."}
@@ -2260,6 +2313,13 @@ define_derive_deftly! {
                 }}
             )
 
+            // TODO: It would be good to call apply_defaults here,
+            // but if we make  change, we will hit extra redundancy:
+            // If build() calls apply_defaults(),
+            // our own apply_defaults will recurse to our sub-builders,
+            // and then the build() functions of our sub-builders will
+            // also invoke their apply_defaults methods.
+
             // Construct the configuration struct.
             let result = $tname {
                 $(
@@ -2279,6 +2339,38 @@ define_derive_deftly! {
             }}
 
             Ok(result)
+        }
+    }
+
+    // -------------------
+    // Implement ConfigBuilder
+
+    impl<$tgens> $E::ConfigBuilder for $<$ttype Builder>
+    where $twheres {
+        fn apply_defaults(&mut self) -> Result<(), $E::ConfigBuildError> {
+            #[allow(unused_imports)]
+            use $E::ConfigBuilder as _;
+            $(
+                ${IF_CFG}
+                ${if fmeta(tor_config(apply_field_default)) {
+                    ${if any(fmeta(tor_config(default)),
+                             fmeta(tor_config(no_default))) {
+                        ${error "Cannot use apply_field_default with default or no_default."}
+                    }}
+                    {
+                        let closure = ${fmeta(tor_config(apply_field_default)) as expr};
+                        (closure)(self)?;
+                    }
+                } else if any(fmeta(tor_config(sub_builder)),
+                        fmeta(tor_config(list)),
+                        fmeta(tor_config(map))) {
+                    self.$fname.apply_defaults()?;
+                } else if fmeta(tor_config(default)) {
+                    let _ = self.$fname.get_or_insert_with(
+                        || ${fmeta(tor_config(default)) as expr, default {Default::default()}});
+                }}
+            )
+            Ok(())
         }
     }
 
@@ -2486,10 +2578,10 @@ mod test {
         #[derive(Deftly, Clone, Debug, PartialEq)]
         #[derive_deftly(TorConfig)]
         pub(super) struct Magic {
-            #[deftly(tor_config(default = "nz(7)"))]
+            #[deftly(tor_config(default = "7"))]
             pub(super) nzu8: NonZeroU8,
 
-            #[deftly(tor_config(default = "nz(123)"))]
+            #[deftly(tor_config(default = "123"))]
             pub(super) nzu8_2: NonZero<u8>,
 
             #[deftly(tor_config(default))]
@@ -2497,10 +2589,6 @@ mod test {
 
             #[deftly(tor_config(default))]
             pub(super) s: String,
-        }
-
-        fn nz(x: u8) -> NonZeroU8 {
-            x.try_into().unwrap()
         }
 
         #[derive(Deftly, Clone, Debug, PartialEq)]
@@ -2602,7 +2690,7 @@ mod test {
             pub(super) a: Option<u32>,
             #[deftly(tor_config(default = "Some(123)"))]
             pub(super) b: Option<u32>,
-            #[deftly(tor_config(default = "Some(nz(42))"))]
+            #[deftly(tor_config(default = "Some(42)"))]
             pub(super) nz: Option<NonZeroU8>,
             #[deftly(tor_config(default))]
             pub(super) s: Option<String>,

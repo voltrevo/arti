@@ -31,7 +31,7 @@ use crate::{Error, Result};
 
 use self::{
     params::{Algorithm, CongestionControlParams, CongestionWindowParams},
-    rtt::RoundtripTimeEstimator,
+    rtt::{ClockStall, RoundtripTimeEstimator},
     sendme::SendmeValidator,
 };
 use tor_cell::relaycell::msg::SendmeTag;
@@ -72,6 +72,7 @@ pub(crate) trait CongestionControlAlgorithm: Send + std::fmt::Debug {
         state: &mut State,
         rtt: &mut RoundtripTimeEstimator,
         signals: CongestionSignals,
+        clock_stall: ClockStall,
     ) -> Result<()>;
     /// Inform the algorithm that we just sent a SENDME.
     fn sendme_sent(&mut self) -> Result<()>;
@@ -327,15 +328,17 @@ impl CongestionControl {
         // Update our RTT estimate if the algorithm yields back a congestion window. RTT
         // measurements only make sense for a congestion window. For example, FixedWindow here
         // doesn't use it and so no need for the RTT.
-        if let Some(cwnd) = self.algorithm.cwnd() {
+        let clock_stall = if let Some(cwnd) = self.algorithm.cwnd() {
             self.rtt
                 .update(now, &self.state, &cwnd)
-                .map_err(|e| Error::CircProto(e.to_string()))?;
-        }
+                .map_err(|e| Error::CircProto(e.to_string()))?
+        } else {
+            ClockStall::NotDetected
+        };
 
         // Notify the algorithm that we've received a SENDME.
         self.algorithm
-            .sendme_received(&mut self.state, &mut self.rtt, signals)
+            .sendme_received(&mut self.state, &mut self.rtt, signals, clock_stall)
     }
 
     /// Called when a SENDME cell is sent.

@@ -1,5 +1,7 @@
 //! [`IptLocalId`]
 
+use rand::{Rng, RngExt};
+
 use crate::internal_prelude::*;
 
 /// Persistent local identifier for an introduction point
@@ -52,7 +54,7 @@ impl IptLocalId {
 }
 
 impl rand::distr::Distribution<IptLocalId> for rand::distr::StandardUniform {
-    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> IptLocalId {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> IptLocalId {
         IptLocalId(rng.random())
     }
 }

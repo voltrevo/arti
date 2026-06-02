@@ -52,6 +52,8 @@ define_derive_deftly_module! {
     ///
     /// The including macro is expected to define:
     ///
+    ///  * **`ITEM_STREAM`**: The input `ItemStream<'_>`.
+    ///
     ///  * **`THIS_ITEM`**: consumes the next item and evaluates to it as an `UnparsedItem`.
     ///    See the definition in `NetdocParseable`.
     ///
@@ -226,7 +228,7 @@ define_derive_deftly_module! {
         ${for fields {
           ${when F_FLATTEN}
 
-          if $ftype::is_item_keyword(kw) {
+          if <$ftype>::is_item_keyword(kw) {
               dtrace!(${concat "is flatten in " $fname}, kw);
               let item = $THIS_ITEM;
               <$ftype as NetdocParseableFields>::accumulate_item($F_ACCUMULATE_VAR, item)?;
@@ -248,7 +250,10 @@ define_derive_deftly_module! {
                   let $fpatname = $F_SELECTOR.finish($fpatname, $F_KEYWORD_REPORT)?;
               }
               F_FLATTEN {
-                  let $fpatname = <$ftype as NetdocParseableFields>::finish($fpatname)?;
+                  let $fpatname = <$ftype as NetdocParseableFields>::finish(
+                      $fpatname,
+                      $ITEM_STREAM,
+                  )?;
               }
               F_SUBDOC {
                   let $fpatname = $F_SELECTOR.finish_subdoc($fpatname)?;
@@ -291,6 +296,7 @@ define_derive_deftly_module! {
     use NetdocSomeItemsDeriveCommon;
     use NetdocSomeItemsParseableCommon;
 
+    ${define ITEM_STREAM input}
     ${define F_ACCUMULATE_VAR { (&mut $fpatname) }}
 
   ${define IMPL_NETDOC_PARSEABLE {
@@ -767,6 +773,7 @@ define_derive_deftly! {
     // NetdocParseableSignatures::HashesAccu
     ${define SIGS_HASHES_ACCU_TYPE { ${tmeta(netdoc(signatures(hashes_accu))) as ty} }}
 
+    ${define ITEM_STREAM input}
     ${define THIS_ITEM { input.next_item()?.expect("peeked") }}
     ${define F_ACCUMULATE_VAR { (&mut $fpatname) }}
 
@@ -851,6 +858,7 @@ define_derive_deftly! {
     ///
     export NetdocParseableFields for struct , meta_quoted rigorous, expect items, beta_deftly:
 
+    ${define ITEM_STREAM items}
     ${define THIS_ITEM item}
     ${define F_ACCUMULATE_VAR { (&mut acc.$fname) }}
 
@@ -913,7 +921,9 @@ define_derive_deftly! {
 
         fn finish(
             #[allow(unused_variables)] // If there are no fields, this is unused
-            acc: Self::Accumulator
+            acc: Self::Accumulator,
+            #[allow(unused_variables)] // often unused
+            items: &$P::ItemStream<'_>,
         ) -> $P::Result<Self, $P::ErrorProblem> {
             #[allow(unused_imports)] // false positives in some situations
             use $P::*;
@@ -1306,7 +1316,7 @@ define_derive_deftly! {
                               return Err(EP::ObjectIncorrectLabel)
                           }
                       } else {
-                          selector.check_label(object.label())?;
+                          selector.${paste_spanned $fname check_label}(object.label())?;
                       }}
                       ${if fmeta(netdoc(with)) {
                           ${fmeta(netdoc(with)) as path}::${paste_spanned $fname try_from}

@@ -57,7 +57,7 @@ use arti::cfg::ArtiCombinedConfig;
 use arti_client::{IsolationToken, TorAddr, TorClient, TorClientConfig};
 use clap::{Arg, ArgAction, value_parser};
 use futures::StreamExt;
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::StandardUniform;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -2,7 +2,6 @@
 // TODO: The output of these subcommands needs improvement. Also, some of the `display_` functions
 // are repetitive and redundant.
 
-use std::ops::Deref;
 use std::str::FromStr;
 
 use anyhow::Result;
@@ -128,7 +127,8 @@ pub(crate) fn run<R: Runtime>(
         KeysSubcommand::ListKeystores => run_list_keystores(&client_builder.create_inert()?),
         KeysSubcommand::CheckIntegrity(args) => run_check_integrity(
             &args,
-            &rt.reenter_block_on(client_builder.create_bootstrapped())?,
+            rt.reenter_block_on(client_builder.create_bootstrapped())?
+                .as_ref(),
             config,
             client_config,
         ),
@@ -137,14 +137,13 @@ pub(crate) fn run<R: Runtime>(
 
 /// Print information about a keystore entry.
 fn display_entry(entry: &KeystoreEntry, keymgr: &KeyMgr) {
-    let raw_entry = entry.raw_entry();
     match keymgr.describe(entry.key_path()) {
         Some(e) => {
             println!(" Keystore ID: {}", entry.keystore_id());
             println!(" Role: {}", e.role());
             println!(" Summary: {}", e.summary());
             println!(" KeystoreItemType: {:?}", entry.key_type());
-            println!(" Location: {}", raw_entry.raw_id());
+            println!(" Location: {}", entry.raw_id());
             let extra_info = e.extra_info();
             println!(" Extra info:");
             for (key, value) in extra_info {
@@ -152,7 +151,7 @@ fn display_entry(entry: &KeystoreEntry, keymgr: &KeyMgr) {
             }
         }
         None => {
-            println!(" Unrecognized path {}", raw_entry.raw_id());
+            println!(" Unrecognized path {}", entry.raw_id());
         }
     }
     println!("\n {}", "-".repeat(LINE_LEN));
@@ -354,11 +353,11 @@ fn display_invalid_keystore_entries(affected_keystores: &[InvalidKeystoreEntries
     {
         println!("\nInvalid keystore entries in keystore {}:\n", keystore_id);
         for InvalidKeystoreEntry { entry, error_msg } in entries {
-            let raw_entry = match entry {
-                Ok(e) => e.raw_entry(),
-                Err(e) => e.entry().into(),
+            let raw_id = match entry {
+                Ok(e) => e.raw_id(),
+                Err(e) => e.entry().raw_id(),
             };
-            println!("{}", raw_entry.raw_id());
+            println!("{raw_id}");
             println!("\tError: {}", error_msg);
         }
     }
@@ -416,7 +415,7 @@ fn get_expired_keys<'a, R: Runtime>(
     services: &'a Vec<OnionService>,
     client: &TorClient<R>,
 ) -> Result<Vec<InvalidKeystoreEntry<'a>>> {
-    let netdir = client.dirmgr().timely_netdir()?;
+    let netdir = client.dirmgr()?.timely_netdir()?;
 
     let mut expired_keys = Vec::new();
     for service in services {
@@ -464,16 +463,16 @@ fn maybe_remove_invalid_entries(
             error_msg: _,
         } in entries.iter()
         {
-            let raw_entry = match entry {
-                Ok(e) => &e.raw_entry(),
-                Err(e) => e.entry().deref(),
+            let (raw_id, keystore_id) = match entry {
+                Ok(e) => (e.raw_id(), e.keystore_id()),
+                Err(e) => (e.entry().raw_id(), e.entry().keystore_id()),
             };
 
             if keymgr
-                .remove_unchecked(&raw_entry.raw_id().to_string(), raw_entry.keystore_id())
+                .remove_unchecked(&raw_id.to_string(), keystore_id)
                 .is_err()
             {
-                eprintln!("Failed to remove entry at location: {}", raw_entry.raw_id());
+                eprintln!("Failed to remove entry at location: {raw_id}");
             }
         }
     }

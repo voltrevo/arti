@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tracing::instrument;
 
 use crate::circuit::UniqId;
+use crate::circuit::circhop::ReactorStreamComponents;
 #[cfg(feature = "circ-padding-manual")]
 pub use crate::client::circuit::padding::{
     CircuitPadder, CircuitPadderConfig, CircuitPadderConfigError,
@@ -31,16 +32,12 @@ use crate::crypto::cell::HopNum;
 use crate::memquota::{SpecificAccount as _, StreamAccount};
 use crate::stream::STREAM_READER_BUFFER;
 use crate::stream::cmdcheck::AnyCmdChecker;
-use crate::stream::flow_ctrl::state::StreamRateLimit;
 use crate::stream::flow_ctrl::xon_xoff::reader::XonXoffReaderCtrl;
-use crate::stream::queue::stream_queue;
 use crate::stream::{RECV_WINDOW_INIT, StreamComponents, StreamTarget, Tunnel};
-use crate::util::notify::NotifySender;
 use crate::{Error, ResolveError, Result};
-use circuit::{CIRCUIT_BUFFER_SIZE, ClientCirc, Path};
+use circuit::{ClientCirc, Path};
 use reactor::{CtrlCmd, CtrlMsg, FlowCtrlMsg, MetaCellHandler};
 
-use postage::watch;
 use tor_cell::relaycell::StreamId;
 use tor_cell::relaycell::flow_ctrl::XonKbpsEwma;
 use tor_cell::relaycell::msg::{AnyRelayMsg, Begin, Resolve, Resolved, ResolvedVal};
@@ -306,10 +303,13 @@ impl ClientTunnel {
                 req,
                 stream_id,
                 hop,
-                receiver,
-                msg_tx,
-                rate_limit_stream,
-                drain_rate_request_stream,
+                stream_components:
+                    ReactorStreamComponents {
+                        stream_inbound_rx,
+                        stream_outbound_tx,
+                        rate_limit_rx,
+                        drain_rate_request_rx,
+                    },
                 memquota,
                 relay_cell_format,
             } = req_ctx;
@@ -328,20 +328,20 @@ impl ClientTunnel {
             // https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3002#note_3200937
             let target = StreamTarget {
                 tunnel: Tunnel::Client(Arc::clone(&tunnel)),
-                tx: msg_tx,
+                tx: stream_outbound_tx,
                 hop: Some(allowed_hop_loc),
                 stream_id,
                 relay_cell_format,
-                rate_limit_stream,
+                rate_limit_stream: rate_limit_rx,
             };
 
             // can be used to build a reader that supports XON/XOFF flow control
             let xon_xoff_reader_ctrl =
-                XonXoffReaderCtrl::new(drain_rate_request_stream, target.clone());
+                XonXoffReaderCtrl::new(drain_rate_request_rx, target.clone());
 
             let reader = StreamReceiver {
                 target: target.clone(),
-                receiver,
+                receiver: stream_inbound_rx,
                 recv_window: StreamRecvWindow::new(RECV_WINDOW_INIT),
                 ended: false,
             };
@@ -373,46 +373,34 @@ impl ClientTunnel {
         // assuming it's the last hop.
         let hop = TargetHop::LastHop;
 
-        let time_prov = self.circ.time_provider.clone();
-
         let memquota = StreamAccount::new(self.circ.mq_account())?;
-        let (sender, receiver) = stream_queue(
-            #[cfg(not(feature = "flowctl-cc"))]
-            STREAM_READER_BUFFER,
-            &memquota,
-            &time_prov,
-        )?;
         let (tx, rx) = oneshot::channel();
-        let (msg_tx, msg_rx) =
-            MpscSpec::new(CIRCUIT_BUFFER_SIZE).new_mq(time_prov, memquota.as_raw_account())?;
-
-        let (rate_limit_tx, rate_limit_rx) = watch::channel_with(StreamRateLimit::MAX);
-
-        // A channel for the reactor to request a new drain rate from the reader.
-        // Typically this notification will be sent after an XOFF is sent so that the reader can
-        // send us a new drain rate when the stream data queue becomes empty.
-        let mut drain_rate_request_tx = NotifySender::new_typed();
-        let drain_rate_request_rx = drain_rate_request_tx.subscribe();
 
         self.circ
             .control
             .unbounded_send(CtrlMsg::BeginStream {
                 hop,
                 message: begin_msg,
-                sender,
-                rx: msg_rx,
-                rate_limit_notifier: rate_limit_tx,
-                drain_rate_requester: drain_rate_request_tx,
+                memquota: memquota.clone(),
                 done: tx,
                 cmd_checker,
             })
             .map_err(|_| Error::CircuitClosed)?;
 
-        let (stream_id, hop, relay_cell_format) = rx.await.map_err(|_| Error::CircuitClosed)??;
+        let (stream_id, hop, relay_cell_format, stream_components) =
+            rx.await.map_err(|_| Error::CircuitClosed)??;
+
+        // Destructure so that we don't forget to use any fields.
+        let ReactorStreamComponents {
+            stream_inbound_rx,
+            stream_outbound_tx,
+            rate_limit_rx,
+            drain_rate_request_rx,
+        } = stream_components;
 
         let target = StreamTarget {
             tunnel: Tunnel::Client(self.clone()),
-            tx: msg_tx,
+            tx: stream_outbound_tx,
             hop: Some(hop),
             stream_id,
             relay_cell_format,
@@ -424,7 +412,7 @@ impl ClientTunnel {
 
         let stream_receiver = StreamReceiver {
             target: target.clone(),
-            receiver,
+            receiver: stream_inbound_rx,
             recv_window: StreamRecvWindow::new(RECV_WINDOW_INIT),
             ended: false,
         };

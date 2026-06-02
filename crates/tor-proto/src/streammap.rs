@@ -23,7 +23,7 @@ use std::task::{Poll, Waker};
 use tor_error::{bad_api_usage, internal};
 use web_time_compat::Instant;
 
-use rand::Rng;
+use rand::RngExt;
 
 use tracing::debug;
 
@@ -609,10 +609,7 @@ mod test {
 
         // Try add_ent
         for n in 1..=128 {
-            let (sink, _) = fake_stream_queue(
-                #[cfg(not(feature = "flowctl-cc"))]
-                128,
-            );
+            let (sink, _) = fake_stream_queue(128);
             let (_, rx) = fake_mpsc(2);
             let id = map.add_ent(
                 sink,

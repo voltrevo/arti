@@ -1,0 +1,47 @@
+[package]
+name = "tor-dirpublish"
+version = "0.43.0"
+authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
+description = "Publish documents to Tor directory servers."
+keywords = ["tor", "arti", "download", "async"]
+categories = ["network-programming", "cryptography"]
+repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = []
+full = [
+    "safelog/full",
+    "tor-basic-utils/full",
+    "tor-dirclient/full",
+    "tor-error/full",
+    "tor-linkspec/full",
+    "tor-rtcompat/full",
+    "web-time-compat/full",
+]
+
+[dependencies]
+async-trait = "0.1.54"
+educe = "0.4.22"
+event-listener = "5"
+futures = "0.3.14"
+postage = { version = "0.5.0", default-features = false, features = ["futures-traits"] }
+rand = "0.10.1"
+safelog = { path = "../safelog", version = "0.8.1" }
+thiserror = "2"
+tor-basic-utils = { path = "../tor-basic-utils", version = "0.43.0" }
+tor-dirclient = { path = "../tor-dirclient", version = "0.43.0", default-features = false }
+tor-error = { path = "../tor-error", version = "0.43.0", features = ["tracing"] }
+tor-linkspec = { path = "../tor-linkspec", version = "0.43.0" }
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.43.0" }
+tracing = "0.1.36"
+web-time-compat = { path = "../web-time-compat", version = "0.1.0" }
+
+[dev-dependencies]
+tor-rtmock = { path = "../tor-rtmock", version = "0.43.0" }

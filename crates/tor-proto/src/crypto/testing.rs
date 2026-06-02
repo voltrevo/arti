@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 pub(crate) struct FakePRNG<'a> {
     bytes: &'a [u8],
 }
@@ -6,18 +8,22 @@ impl<'a> FakePRNG<'a> {
         Self { bytes }
     }
 }
-impl<'a> rand_core::RngCore for FakePRNG<'a> {
-    fn next_u32(&mut self) -> u32 {
-        rand_core::impls::next_u32_via_fill(self)
+impl<'a> rand_core::TryRng for FakePRNG<'a> {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+        rand_core::utils::next_word_via_fill(self)
     }
-    fn next_u64(&mut self) -> u64 {
-        rand_core::impls::next_u64_via_fill(self)
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        rand_core::utils::next_word_via_fill(self)
     }
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
         assert!(dest.len() <= self.bytes.len());
 
         dest.copy_from_slice(&self.bytes[0..dest.len()]);
         self.bytes = &self.bytes[dest.len()..];
+
+        Ok(())
     }
 }
-impl rand_core::CryptoRng for FakePRNG<'_> {}
+impl rand_core::TryCryptoRng for FakePRNG<'_> {}

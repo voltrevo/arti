@@ -20,12 +20,12 @@ use tor_rtcompat::Runtime;
 #[derive_deftly(rpc::Object)]
 pub(super) struct RpcSuperuser<R: Runtime> {
     /// A view of the underlying TorClient managed by this RpcSuperuser object.
-    tor_client: TorClient<R>,
+    tor_client: Arc<TorClient<R>>,
 }
 
 impl<R: Runtime> RpcSuperuser<R> {
     /// Construct a new RpcSuperuser object.
-    pub(super) fn new(tor_client: TorClient<R>) -> Self {
+    pub(super) fn new(tor_client: Arc<TorClient<R>>) -> Self {
         RpcSuperuser { tor_client }
     }
 

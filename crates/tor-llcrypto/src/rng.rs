@@ -16,9 +16,12 @@
 // security hole if we use rand::rng() instead:
 // CautiousRng is a defense-in-depth mechanism.
 
+use std::convert::Infallible;
+
 use digest::{ExtendableOutput, Update};
 
-use rand_core::TryRngCore;
+use rand::rngs::SysRng;
+use rand_core::TryRng;
 use sha3::Shake256;
 use zeroize::Zeroizing;
 
@@ -31,7 +34,7 @@ use zeroize::Zeroizing;
 ///
 /// Do not implement this trait for new Rngs unless you know what you are doing;
 /// any Rng to which you apply this trait should be _at least_ as
-/// unpredictable and secure as `OsRng`.
+/// unpredictable and secure as `SysRng`.
 ///
 /// We recommend using [`CautiousRng`] when you need an instance of this trait.
 pub trait EntropicRng: rand_core::CryptoRng {}
@@ -41,42 +44,49 @@ impl EntropicRng for CautiousRng {}
 /// Functionality for testing Rng code that requires an EntropicRng.
 #[cfg(feature = "testing")]
 mod testing {
+    use std::convert::Infallible;
+
     /// Testing only: Pretend that an inner RNG truly implements `EntropicRng`.
     #[allow(clippy::exhaustive_structs)]
     pub struct FakeEntropicRng<R>(pub R);
 
-    impl<R: rand_core::RngCore> rand_core::RngCore for FakeEntropicRng<R> {
-        fn next_u32(&mut self) -> u32 {
-            self.0.next_u32()
+    impl<R: rand_core::TryRng<Error = Infallible>> rand_core::TryRng for FakeEntropicRng<R> {
+        type Error = Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+            self.0.try_next_u32()
         }
 
-        fn next_u64(&mut self) -> u64 {
-            self.0.next_u64()
+        fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+            self.0.try_next_u64()
         }
 
-        fn fill_bytes(&mut self, dst: &mut [u8]) {
-            self.0.fill_bytes(dst);
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
+            self.0.try_fill_bytes(dst)
         }
     }
-    impl<R: rand_core::CryptoRng> rand_core::CryptoRng for FakeEntropicRng<R> {}
+    impl<R: rand_core::TryCryptoRng<Error = Infallible>> rand_core::TryCryptoRng
+        for FakeEntropicRng<R>
+    {
+    }
     impl<R: rand_core::CryptoRng> super::EntropicRng for FakeEntropicRng<R> {}
 }
 #[cfg(feature = "testing")]
 pub use testing::FakeEntropicRng;
 
-/// An exceptionally cautious wrapper for [`rand_core::OsRng`]
+/// An exceptionally cautious wrapper for [`SysRng`]
 ///
-/// Ordinarily, one trusts `OsRng`.
+/// Ordinarily, one trusts `SysRng`.
 /// But we want Arti to run on a wide variety of platforms,
-/// and the chances of a bogus OsRng increases the more places we run.
-/// This Rng combines OsRng with several other entropy sources,
+/// and the chances of a bogus SysRng increases the more places we run.
+/// This Rng combines SysRng with several other entropy sources,
 /// in an attempt to reduce the likelihood of creating compromised keys.[^scary]
 ///
-/// This Rng is slower than `OsRng`.
+/// This Rng is slower than `SysRng`.
 ///
 /// # Panics
 ///
-/// This rng will panic if `OsRng` fails;
+/// This rng will panic if `SysRng` fails;
 /// but that's the only sensible behavior for a cryptographic-heavy application like ours.
 ///
 /// [^scary]: Who else remembers [CVE-2008-0166](https://www.cve.org/CVERecord?id=CVE-2008-0166)?
@@ -84,20 +94,22 @@ pub use testing::FakeEntropicRng;
 #[allow(clippy::exhaustive_structs)]
 pub struct CautiousRng;
 
-impl rand_core::RngCore for CautiousRng {
-    fn next_u32(&mut self) -> u32 {
+impl TryRng for CautiousRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
         let mut buf = Zeroizing::new([0_u8; 4]);
-        self.fill_bytes(buf.as_mut());
-        u32::from_le_bytes(*buf)
+        self.try_fill_bytes(buf.as_mut())?;
+        Ok(u32::from_le_bytes(*buf))
     }
 
-    fn next_u64(&mut self) -> u64 {
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
         let mut buf = Zeroizing::new([0_u8; 8]);
-        self.fill_bytes(buf.as_mut());
-        u64::from_le_bytes(*buf)
+        self.try_fill_bytes(buf.as_mut())?;
+        Ok(u64::from_le_bytes(*buf))
     }
 
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
         let mut xof = Shake256::default();
         let mut buf = Zeroizing::new([0_u8; 32]);
 
@@ -117,7 +129,7 @@ impl rand_core::RngCore for CautiousRng {
             // since it can indicate a few different error conditions,
             // including a lack of hardware support, or exhausted CPU entropy
             // (whatever that is supposed to mean).
-            // We only want to panic on a failure from OsRng.
+            // We only want to panic on a failure from SysRng.
             let _ignore_failure = rdrand.try_fill_bytes(buf.as_mut());
 
             // We add the output from rdrand unconditionally, since a partial return is possible,
@@ -131,24 +143,26 @@ impl rand_core::RngCore for CautiousRng {
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Some(mut rng) = backup::backup_rng() {
-                rng.fill_bytes(buf.as_mut());
+                let _ignore_failure = rng.try_fill_bytes(buf.as_mut());
                 xof.update(buf.as_ref());
             }
         }
 
-        rand::rng().fill_bytes(buf.as_mut());
+        rand::rng().try_fill_bytes(buf.as_mut())?;
         xof.update(buf.as_ref());
 
-        rand_core::OsRng
+        SysRng
             .try_fill_bytes(buf.as_mut())
             .expect("No strong entropy source was available: cannot proceed");
         xof.update(buf.as_ref());
 
         xof.finalize_xof_into(dest);
+
+        Ok(())
     }
 }
 
-impl rand_core::CryptoRng for CautiousRng {}
+impl rand_core::TryCryptoRng for CautiousRng {}
 
 /// A backup RNG, independent of other known sources.
 ///
@@ -159,8 +173,10 @@ impl rand_core::CryptoRng for CautiousRng {}
 #[cfg(not(target_arch = "wasm32"))]
 mod backup {
 
-    use rand::{RngCore, rngs::ReseedingRng};
-    use rand_chacha::ChaCha20Core;
+    use rand::TryRng;
+    use rand_chacha::ChaCha20Rng;
+    use reseeding_rng::ReseedingRng;
+    use std::convert::Infallible;
     use std::sync::LazyLock;
     use std::sync::{Mutex, MutexGuard};
 
@@ -170,7 +186,7 @@ mod backup {
     ///
     /// We use JitterRng to reseed a ChaCha20 core
     /// because it is potentially _very_ slow.
-    type BackupRng = ReseedingRng<ChaCha20Core, Box<dyn RngCore + Send>>;
+    type BackupRng = ReseedingRng<ChaCha20Rng, Box<dyn TryRng<Error = Infallible> + Send>>;
 
     /// Static instance of our BackupRng; None if we failed to construct one.
     static JITTER_BACKUP: LazyLock<Option<Mutex<BackupRng>>> = LazyLock::new(new_backup_rng);
@@ -179,10 +195,10 @@ mod backup {
     /// return None on failure.
     fn new_backup_rng() -> Option<Mutex<BackupRng>> {
         let jitter = rand_jitter::JitterRng::new().ok()?;
-        let jitter: Box<dyn RngCore + Send> = Box::new(jitter);
+        let jitter: Box<dyn TryRng<Error = Infallible> + Send> = Box::new(jitter);
         // The "1024" here is chosen more or less arbitrarily;
         // we might want to tune it if we find that it matters.
-        let reseeding = ReseedingRng::new(1024, jitter).ok()?;
+        let reseeding = ReseedingRng::try_new(1024, jitter).ok()?;
         Some(Mutex::new(reseeding))
     }
 

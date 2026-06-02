@@ -365,7 +365,7 @@ mod test {
     fn split_into_chunks() {
         use std::collections::HashSet;
         //use itertools::Itertools;
-        use rand::Rng;
+        use rand::RngExt;
 
         // Construct a big query.
         let mut rng = testing_rng();

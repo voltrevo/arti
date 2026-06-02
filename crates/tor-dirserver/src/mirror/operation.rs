@@ -37,7 +37,7 @@ use tor_netdoc::{
     },
     parse2::{
         self,
-        poc::netstatus::{cons, md, NdiDirectorySignature},
+        poc::netstatus::{cons, md},
         NetdocParseable, NetdocUnverified, ParseInput,
     },
 };
@@ -718,21 +718,7 @@ impl FlavoredConsensusSigned {
             Self::Ns(ns) => &ns.sigs.sigs.directory_signature,
             Self::Md(md) => &md.sigs.sigs.directory_signature,
         };
-        sigs.iter()
-            .filter_map(|sig| match sig {
-                NdiDirectorySignature::Known {
-                    h_kp_auth_id_rsa,
-                    h_kp_auth_sign_rsa,
-                    ..
-                } => Some(AuthCertKeyIds {
-                    id_fingerprint: *h_kp_auth_id_rsa,
-                    sk_fingerprint: *h_kp_auth_sign_rsa,
-                }),
-                // TODO DIRMIRROR: This is inappropriate, but because we are
-                // using poc, we have to refactor this either way.
-                _ => None,
-            })
-            .collect()
+        sigs.iter().map(|sig| sig.key_ids).collect()
     }
 }
 

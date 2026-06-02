@@ -110,6 +110,8 @@ impl<R: AsyncRead + BufferIsEmpty> AsyncRead for XonXoffReader<R> {
 }
 
 /// The control structure for a stream that partakes in XON/XOFF flow control.
+///
+/// Used to construct an [`XonXoffReader`].
 #[derive(Debug)]
 #[pin_project]
 pub(crate) struct XonXoffReaderCtrl {

@@ -33,8 +33,6 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time;
 
-use crate::parse2::ItemObjectParseable;
-
 #[cfg(feature = "build_docs")]
 mod build;
 

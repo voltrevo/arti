@@ -72,7 +72,15 @@ the parsers for the documents themselves.
 
 `hs-service`: enable support for generating hidden service descriptors.
 
-`encode`: enable support for encoding documents, in general.
+`hs-pow-full`: Hidden Services proof-of-work schemes.
+Brings in pow support crates as dependencies.
+
+`retain-unknown`: Ability to round-trip network status documents (as eg an authority needs to),
+by retaining during parsing information which we can see, but not understand.
+Enables the `Retained` variant of the `Unknown` enum.
+
+`testing`: Test data and other features useful for testing.
+Likely to change without warning and not covered by out stability policy.
 
 There are also other features includijng experimental ones
 which aren't documented here and shouldn't be relied on.
@@ -84,12 +92,8 @@ not be used.  Use of such features is (even more) at your own risk.
 
 #### Deprecated features
 
-`routerdesc`: previously needed to enable support for the "router
-descriptor" document type.  This support is now enabled unconditionally.
-
-`plain-consensus`: previously needed to enable support for the "plain
-(unflavoured) consensus" document type.  This support is now enabled
-unconditionally.
+`encode`: Previously required to enable support for encoding documents, in general.
+This is now enabled unconditionally.
 
 `build_docs`: enable code to construct the objects representing different
 network documents, with builder patterns.

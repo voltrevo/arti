@@ -189,9 +189,9 @@ impl Parameters {
 
 /// Timing parameters, "compiled" into a form which can be sampled more efficiently
 ///
-/// According to the docs for [`rand::Rng::gen_range`],
+/// According to the docs for [`rand::RngExt::random_range`],
 /// it is better to construct a distribution,
-/// than to call `gen_range` repeatedly on the same range.
+/// than to call `random_range` repeatedly on the same range.
 #[derive(Debug, Clone)]
 struct PreparedParameters {
     /// The distribution of `X` (not of the ultimate delay, which is `max(X1,X2)`)

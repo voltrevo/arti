@@ -7,6 +7,8 @@
 
 use std::sync::{Arc, Weak};
 
+use rand::RngExt;
+
 use slotmap_careful::{Key as _, KeyData, SlotMap};
 use tor_rpcbase as rpc;
 
@@ -71,15 +73,14 @@ impl GenIdx {
     }
 
     /// As `encode`, but take a Rng as an argument. For testing.
-    fn encode_with_rng<R: rand::RngCore>(self, rng: &mut R) -> rpc::ObjectId {
+    fn encode_with_rng<R: rand::Rng>(self, rng: &mut R) -> rpc::ObjectId {
         use base64ct::Encoding;
         let bytes = self.to_bytes(rng);
         rpc::ObjectId::from(base64ct::Base64UrlUnpadded::encode_string(&bytes[..]))
     }
 
     /// As `encode_with_rng`, but return an array of bytes.
-    pub(crate) fn to_bytes<R: rand::RngCore>(self, rng: &mut R) -> [u8; Self::BYTE_LEN] {
-        use rand::Rng;
+    pub(crate) fn to_bytes<R: rand::Rng>(self, rng: &mut R) -> [u8; Self::BYTE_LEN] {
         use tor_bytes::Writer;
         let ffi_idx = self.data().as_ffi();
         let x = rng.random::<u64>();
@@ -297,7 +298,6 @@ mod test {
 
     #[test]
     fn objid_encoding() {
-        use rand::Rng;
         fn test_roundtrip(a: u32, b: u32, rng: &mut tor_basic_utils::test_rng::TestingRng) {
             let a: u64 = a.into();
             let b: u64 = b.into();

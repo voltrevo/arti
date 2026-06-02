@@ -90,7 +90,10 @@ pub trait NetdocParseableFields: Sized {
     ///
     /// Resolves the `Accumulator` into the output type.
     /// Generally, this means throwing an error if expected fields were not present.
-    fn finish(acc: Self::Accumulator) -> Result<Self, EP>;
+    ///
+    /// `items` is provided to obtain the parsing options and similar purposes.
+    /// Its position in the input stream should not be relied on.
+    fn finish(acc: Self::Accumulator, items: &ItemStream<'_>) -> Result<Self, EP>;
 }
 
 /// An item (value) that can be parsed in a netdoc
@@ -188,8 +191,8 @@ impl<T: NetdocParseableFields> NetdocParseableFields for Arc<T> {
     fn accumulate_item(acc: &mut Self::Accumulator, item: UnparsedItem<'_>) -> Result<(), EP> {
         T::accumulate_item(acc, item)
     }
-    fn finish(acc: Self::Accumulator) -> Result<Self, EP> {
-        T::finish(acc).map(Arc::new)
+    fn finish(acc: Self::Accumulator, items: &ItemStream) -> Result<Self, EP> {
+        T::finish(acc, items).map(Arc::new)
     }
 }
 

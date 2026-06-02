@@ -99,7 +99,7 @@ MockRuntime::test_with_various(|rt| async move {
 
     eprintln!("Second test.  Listening, but no-one picks up the phone: timeout.");
     let saddr = SocketAddr::new(sip, 2);
-    let listener = srt.listen(&saddr).await.unwrap();
+    let listener = srt.listen(&saddr, &Default::default()).await.unwrap();
     let mut ret_fut = spawn_test(saddr);
     rt.progress_until_stalled().await; // let it run as far as it can get
     assert!(ret_fut.try_recv().unwrap().is_none()); // it hasn't completed right away
@@ -112,7 +112,7 @@ MockRuntime::test_with_various(|rt| async move {
 
     eprintln!("Third test.  Working.");
     let saddr = SocketAddr::new(sip, 3);
-    let listener = srt.listen(&saddr).await.unwrap();
+    let listener = srt.listen(&saddr, &Default::default()).await.unwrap();
     let mut incoming_streams = listener.incoming();
     let mut ret_fut = spawn_test(saddr);
     let (mut conn, caddr) = incoming_streams.next().await.unwrap().unwrap();

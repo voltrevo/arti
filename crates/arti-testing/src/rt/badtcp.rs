@@ -148,6 +148,7 @@ impl<R> BrokenTcpProvider<R> {
 impl<R: NetStreamProvider + SleepProvider> NetStreamProvider for BrokenTcpProvider<R> {
     type Stream = BreakableTcpStream<R::Stream>;
     type Listener = BrokenTcpProvider<R::Listener>;
+    type ListenOptions = R::ListenOptions;
 
     async fn connect(&self, addr: &SocketAddr) -> IoResult<Self::Stream> {
         match self.get_action(addr) {
@@ -165,8 +166,12 @@ impl<R: NetStreamProvider + SleepProvider> NetStreamProvider for BrokenTcpProvid
         }
     }
 
-    async fn listen(&self, addr: &SocketAddr) -> IoResult<Self::Listener> {
-        let listener = self.inner.listen(addr).await?;
+    async fn listen(
+        &self,
+        addr: &SocketAddr,
+        options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
+        let listener = self.inner.listen(addr, options).await?;
         Ok(BrokenTcpProvider {
             inner: listener,
             action: self.action.clone(),

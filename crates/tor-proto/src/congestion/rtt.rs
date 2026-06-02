@@ -185,7 +185,7 @@ impl RoundtripTimeEstimator {
         now: Instant,
         state: &State,
         cwnd: &CongestionWindow,
-    ) -> Result<(), Error> {
+    ) -> Result<ClockStall, Error> {
         let data_sent_at = self
             .sendme_expected_from
             .pop_front()
@@ -193,7 +193,7 @@ impl RoundtripTimeEstimator {
         let raw_rtt = now.saturating_duration_since(data_sent_at);
 
         if self.is_clock_stalled(raw_rtt, state.in_slow_start()) {
-            return Ok(());
+            return Ok(ClockStall::Detected);
         }
 
         self.max_rtt = self.max_rtt.max(Some(raw_rtt));
@@ -232,7 +232,7 @@ impl RoundtripTimeEstimator {
 
         let Some(min_rtt) = self.min_rtt else {
             self.min_rtt = self.ewma_rtt;
-            return Ok(());
+            return Ok(ClockStall::NotDetected);
         };
 
         if cwnd.get() == cwnd.min() && !state.in_slow_start() {
@@ -249,8 +249,17 @@ impl RoundtripTimeEstimator {
             self.min_rtt = self.ewma_rtt;
         }
 
-        Ok(())
+        Ok(ClockStall::NotDetected)
     }
+}
+
+/// Whether a clock stall or jump was detected.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ClockStall {
+    /// Clock stall or jump was detected.
+    Detected,
+    /// No clock stall or jump detected.
+    NotDetected,
 }
 
 #[cfg(test)]

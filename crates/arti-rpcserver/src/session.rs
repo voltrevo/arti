@@ -66,7 +66,7 @@ trait Client: rpc::Object {
 
 impl<R: Runtime> Client for TorClient<R> {
     fn isolated_client(&self) -> Arc<dyn rpc::Object> {
-        Arc::new(TorClient::isolated_client(self))
+        TorClient::isolated_client(self)
     }
 
     fn upcast_arc(self: Arc<Self>) -> Arc<dyn rpc::Object> {

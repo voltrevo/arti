@@ -58,7 +58,7 @@ mod siphash;
 
 use crate::compiler::{Architecture, Executable};
 use crate::program::Program;
-use rand_core::RngCore;
+use rand_core::Rng;
 
 pub use crate::err::{CompilerError, Error};
 pub use crate::rand::SipRand;
@@ -201,9 +201,9 @@ impl HashXBuilder {
         self.build_from_rng(&mut rng, key1)
     }
 
-    /// Build a [`HashX`] instance from an arbitrary [`RngCore`] and
+    /// Build a [`HashX`] instance from an arbitrary [`Rng`] and
     /// a [`SipState`] key used for initializing the register file.
-    pub fn build_from_rng<R: RngCore>(
+    pub fn build_from_rng<R: Rng>(
         &self,
         rng: &mut R,
         register_key: SipState,

@@ -102,7 +102,7 @@ impl LockFileGuard {
         let path = path.as_ref();
         loop {
             let file = Self::open(path)?;
-            file.lock()?;
+            do_lock(&file)?;
 
             if os::lockfile_has_path(&file, path)? {
                 return Ok(Self { locked_file: file });
@@ -120,7 +120,7 @@ impl LockFileGuard {
     {
         let path = path.as_ref();
         let file = Self::open(path)?;
-        match file.try_lock() {
+        match do_try_lock(&file) {
             Ok(()) => {
                 if os::lockfile_has_path(&file, path)? {
                     Ok(Some(Self { locked_file: file }))
@@ -145,6 +145,83 @@ impl LockFileGuard {
             std::fs::remove_file(path)
         } else {
             Err(std::io::Error::other(MismatchedPathError {}))
+        }
+    }
+}
+
+/// Try to lock `f`, blocking if need be.
+///
+/// On non-android, this just calls [`fs::File::lock`].
+#[cfg(not(target_os = "android"))]
+fn do_lock(f: &fs::File) -> std::io::Result<()> {
+    f.lock()
+}
+
+/// Try to lock `f`, without blocking.
+///
+/// On non-android, this just calls [`fs::File::try_lock`].
+#[cfg(not(target_os = "android"))]
+fn do_try_lock(f: &fs::File) -> Result<(), std::fs::TryLockError> {
+    f.try_lock()
+}
+
+/// Try to lock `f`, blocking if need be.
+///
+/// On android, we need to use flock manually, since Rust (as of May 2026)
+/// always returns "not implemented" for `lock()` and `try_lock()`.
+///
+/// See <https://github.com/rust-lang/rust/issues/148325>.
+/// Apparently,
+/// although there are filesystems (specifically FUSE filesystems)
+/// where flock won't work, it will correctly report ENOSYS
+/// on those filesystems.
+//
+// TODO MSRV ????: we can remove this once Rust supports file locking on Android
+// at our MSRV.  As of May 2026, https://github.com/rust-lang/rust/pull/157038/
+// seems like the likeliest MR for that, but it has not been merged.
+#[cfg(target_os = "android")]
+fn do_lock(f: &fs::File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    let fd = f.as_raw_fd();
+    // SAFETY: Since `f` is a file, it has a valid fd.
+    let success = unsafe { libc::flock(fd, libc::LOCK_EX) } == 0;
+
+    if success {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+/// Try to lock `f`, without blocking.
+///
+/// On android, we need to use flock manually, since Rust (as of May 2026)
+/// always returns "not implemented" for `lock()` and `try_lock()`.
+///
+/// See <https://github.com/rust-lang/rust/issues/148325>.
+/// Apparently,
+/// although there are filesystems (specifically FUSE filesystems)
+/// where flock won't work, it will correctly report ENOSYS
+/// on those filesystems.
+//
+// TODO MSRV ????: See 'TODO MSRV' on do_lock above.
+#[cfg(target_os = "android")]
+fn do_try_lock(f: &fs::File) -> Result<(), std::fs::TryLockError> {
+    use std::os::fd::AsRawFd;
+
+    let fd = f.as_raw_fd();
+    // SAFETY: Since `f` is a file, it has a valid fd.
+    let success = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0;
+
+    if success {
+        Ok(())
+    } else {
+        let err = std::io::Error::last_os_error();
+        if err.kind() == std::io::ErrorKind::WouldBlock {
+            Err(std::fs::TryLockError::WouldBlock)
+        } else {
+            Err(std::fs::TryLockError::Error(err))
         }
     }
 }
@@ -278,32 +355,56 @@ mod os {
 #[cfg(windows)]
 mod os {
     use std::{fs::File, mem::MaybeUninit, os::windows::io::AsRawHandle, path::Path};
-    use winapi::um::fileapi::{BY_HANDLE_FILE_INFORMATION as Info, GetFileInformationByHandle};
+    use windows_sys::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx},
+    };
+
+    /// Use `GetFileInformationByHandleEx` to return a FILE_ID_INFO data for `f`.
+    ///
+    /// `GetFileInformationByHandleEx` is supported in Vista and later, so it
+    /// should be fine here.  Unlike GetFileInformationByHandle, it gives
+    /// 128-bit identifiers which are supposedly even more unique.
+    fn get_id_info(f: &File) -> std::io::Result<FILE_ID_INFO> {
+        let handle = f.as_raw_handle() as HANDLE;
+        let mut info: MaybeUninit<FILE_ID_INFO> = MaybeUninit::uninit();
+        let buffersize: u32 = std::mem::size_of::<FILE_ID_INFO>()
+            .try_into()
+            .expect("sizeof(FILE_ID_INFO) is ridiculously large");
+
+        let info = unsafe {
+            // SAFETY: Since `size` is the size of info, this will not write to
+            // uninitialized memory.
+            let rv = GetFileInformationByHandleEx(
+                handle,
+                FileIdInfo,
+                info.as_mut_ptr() as _,
+                buffersize,
+            );
+
+            if rv == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            // SAFETY: since rv was nonzero, this value is initialized.
+            info.assume_init()
+        };
+        Ok(info)
+    }
 
     /// Return true if `lf` currently exists with the given `path`, and false otherwise.
     pub(crate) fn lockfile_has_path(lf: &File, path: &Path) -> std::io::Result<bool> {
-        let mut m1: MaybeUninit<Info> = MaybeUninit::uninit();
-        let mut m2: MaybeUninit<Info> = MaybeUninit::uninit();
-
         let f2 = File::open(path)?;
 
         // Note: we would like to just use the MetadataExt methods for index and
-        // volume serial number, but they are currently available only on nightly:
-        // https://github.com/rust-lang/rust/issues/63010
+        // volume serial number, but they are currently available only on
+        // nightly: https://github.com/rust-lang/rust/issues/63010
         //
-        // If and when they stabilize at our MSRV, we can use them here instead.
+        // If they stabilize at our MSRV, _and_ the file ID is expanded to the
+        // 128-bit version, we can use them here instead.
 
-        let (i1, i2) = unsafe {
-            // TODO: I am told that there is a GetFileInformationByHandleEx
-            // that can return 128-bit IDs.
-            if GetFileInformationByHandle(lf.as_raw_handle() as _, m1.as_mut_ptr()) == 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            if GetFileInformationByHandle(f2.as_raw_handle() as _, m2.as_mut_ptr()) == 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            (m1.assume_init(), m2.assume_init())
-        };
+        let i1 = get_id_info(lf)?;
+        let i2 = get_id_info(&f2)?;
 
         // This comparison is about the best we can do on Windows,
         // though there are caveats.
@@ -312,9 +413,8 @@ mod os {
         //   https://devblogs.microsoft.com/oldnewthing/20220128-00/?p=106201
         // and also see BurntSushi's caveats at
         //   https://github.com/BurntSushi/same-file/blob/master/src/win.rs
-        Ok(i1.nFileIndexHigh == i2.nFileIndexHigh
-            && i1.nFileIndexLow == i2.nFileIndexLow
-            && i1.dwVolumeSerialNumber == i2.dwVolumeSerialNumber)
+        Ok(i1.VolumeSerialNumber == i2.VolumeSerialNumber
+            && i1.FileId.Identifier == i2.FileId.Identifier)
     }
 }
 

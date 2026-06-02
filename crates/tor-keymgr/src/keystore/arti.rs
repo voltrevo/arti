@@ -14,10 +14,10 @@ use std::sync::Arc;
 
 use crate::keystore::fs_utils::{FilesystemAction, FilesystemError, RelKeyPath, checked_op};
 use crate::keystore::{EncodableItem, ErasedKey, KeySpecifier, Keystore};
-use crate::raw::{RawEntryId, RawKeystoreEntry};
+use crate::raw::RawEntryId;
 use crate::{
     ArtiPath, ArtiPathUnavailableError, KeystoreEntry, KeystoreId, Result, UnknownKeyTypeError,
-    UnrecognizedEntryError, arti_path,
+    UnrecognizedEntry, UnrecognizedEntryError, arti_path,
 };
 use certs::UnparsedCert;
 use err::ArtiNativeKeystoreError;
@@ -351,7 +351,7 @@ impl Keystore for ArtiNativeKeystore {
                         err,
                     };
                     let raw_id = RawEntryId::Path(path.into());
-                    let entry = RawKeystoreEntry::new(raw_id, self.id().clone()).into();
+                    let entry = UnrecognizedEntry::new(raw_id, self.id().clone());
                     Some(Err(UnrecognizedEntryError::new(entry, Arc::new(error))))
                 };
 
@@ -789,10 +789,10 @@ mod tests {
             };
             Some(entry.entry())
         });
-        let expected_entry = UnrecognizedEntry::from(RawKeystoreEntry::new(
+        let expected_entry = UnrecognizedEntry::new(
             RawEntryId::Path(PathBuf::from(TEST_SPECIFIER_PATH)),
             key_store.id().clone(),
-        ));
+        );
         assert_eq!(unrecognized_entries.next().unwrap(), &expected_entry);
         assert!(unrecognized_entries.next().is_none());
     }
@@ -810,7 +810,7 @@ mod tests {
         let entries = key_store.list().unwrap();
 
         // Remove valid entry
-        let valid_specifier = entries
+        let raw_id = entries
             .iter()
             .find_map(|res| {
                 let Ok(entry) = res else {
@@ -821,8 +821,7 @@ mod tests {
                         let mut path_str = a.to_string();
                         path_str.push('.');
                         path_str.push_str(&entry.key_type().arti_extension());
-                        let raw_id = RawEntryId::Path(PathBuf::from(&path_str));
-                        Some(RawKeystoreEntry::new(raw_id, key_store.id().to_owned()))
+                        Some(RawEntryId::Path(PathBuf::from(&path_str)))
                     }
                     _ => {
                         panic!("Unexpected KeyPath variant encountered")
@@ -830,9 +829,7 @@ mod tests {
                 }
             })
             .unwrap();
-        key_store
-            .remove_unchecked(valid_specifier.raw_id())
-            .unwrap();
+        key_store.remove_unchecked(&raw_id).unwrap();
         let entries = key_store.list().unwrap();
         // Assert no valid entries are encountered
         assert!(

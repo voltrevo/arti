@@ -1627,6 +1627,7 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
                         desc,
                         revision_counter,
                     } = hsdesc;
+                    let desc: Arc<str> = desc.into();
 
                     trace!(
                         nickname=%imm.nickname, time_period=?time_period,
@@ -1726,7 +1727,7 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
     ///
     /// This function does not handle timeouts.
     async fn upload_descriptor(
-        hsdesc: String,
+        hsdesc: Arc<str>,
         netdir: &Arc<NetDir>,
         hsdir: &Relay<'_>,
         imm: Arc<Immutable<R, M>>,
@@ -1778,7 +1779,7 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
     ///
     /// See also [`BackoffSchedule`].
     async fn upload_descriptor_with_retries(
-        hsdesc: String,
+        hsdesc: Arc<str>,
         netdir: &Arc<NetDir>,
         hsdir: &Relay<'_>,
         ed_id: &str,
@@ -2239,7 +2240,7 @@ mod test {
         const SRV2: [u8; 32] = *b"It said, 'Five cents, please.'  ";
 
         let dir = testnet::construct_custom_netdir(|_, _, bld| {
-            bld.shared_rand_prev(7, SRV1.into(), None)
+            bld.shared_rand_cur(7, SRV1.into(), None)
                 .shared_rand_prev(7, SRV2.into(), None);
         })
         .unwrap();

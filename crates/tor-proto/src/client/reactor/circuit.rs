@@ -6,7 +6,7 @@ pub(super) mod extender;
 use crate::channel::Channel;
 use crate::circuit::cell_sender::CircuitCellSender;
 use crate::circuit::celltypes::CreateResponse;
-use crate::circuit::circhop::HopSettings;
+use crate::circuit::circhop::{HopSettings, ReactorStreamComponents};
 use crate::circuit::create::{Create2Wrap, CreateFastWrap, CreateHandshakeWrap};
 use crate::circuit::padding::CircPaddingDisposition;
 use crate::circuit::{CircuitRxReceiver, UniqId};
@@ -29,14 +29,10 @@ use crate::crypto::handshake::ntor_v3::{NtorV3Client, NtorV3PublicKey};
 use crate::crypto::handshake::{ClientHandshake, KeyGenerator};
 use crate::memquota::{CircuitAccount, SpecificAccount as _, StreamAccount};
 use crate::stream::cmdcheck::{AnyCmdChecker, StreamStatus};
-use crate::stream::flow_ctrl::state::StreamRateLimit;
-use crate::stream::flow_ctrl::xon_xoff::reader::DrainRateRequest;
-use crate::stream::queue::{StreamQueueSender, stream_queue};
-use crate::stream::{StreamMpscReceiver, msg_streamid};
+use crate::stream::msg_streamid;
 use crate::streammap;
 use crate::tunnel::TunnelScopedCircId;
 use crate::util::err::ReactorError;
-use crate::util::notify::NotifySender;
 use crate::util::timeout::TimeoutEstimator;
 use crate::{ClockSkew, Error, Result};
 
@@ -51,12 +47,10 @@ use tor_cell::relaycell::{
 use tor_error::{Bug, internal};
 use tor_linkspec::RelayIds;
 use tor_llcrypto::pk;
-use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 use web_time_compat::{Duration, Instant, SystemTime};
 
 use futures::SinkExt as _;
 use oneshot_fused_workaround as oneshot;
-use postage::watch;
 use tor_rtcompat::{DynTimeProvider, SleepProvider as _};
 use tracing::{debug, instrument, trace, warn};
 
@@ -839,7 +833,6 @@ impl Circuit {
         use tor_error::into_internal;
         use tor_log_ratelim::log_ratelim;
 
-        use crate::client::circuit::CIRCUIT_BUFFER_SIZE;
         use crate::stream::incoming::StreamReqInfo;
 
         // We need to construct this early so that we don't double-borrow &mut self
@@ -921,44 +914,19 @@ impl Circuit {
 
         let memquota = StreamAccount::new(&self.memquota)?;
 
-        let (sender, receiver) = stream_queue(
-            #[cfg(not(feature = "flowctl-cc"))]
-            STREAM_READER_BUFFER,
-            &memquota,
-            self.chan_sender.time_provider(),
-        )?;
-
-        let (msg_tx, msg_rx) = MpscSpec::new(CIRCUIT_BUFFER_SIZE).new_mq(
-            self.chan_sender.time_provider().clone(),
-            memquota.as_raw_account(),
-        )?;
-
-        let (rate_limit_tx, rate_limit_rx) = watch::channel_with(StreamRateLimit::MAX);
-
-        // A channel for the reactor to request a new drain rate from the reader.
-        // Typically this notification will be sent after an XOFF is sent so that the reader can
-        // send us a new drain rate when the stream data queue becomes empty.
-        let mut drain_rate_request_tx = NotifySender::new_typed();
-        let drain_rate_request_rx = drain_rate_request_tx.subscribe();
-
         let cmd_checker = InboundDataCmdChecker::new_connected();
-        hop.add_ent_with_id(
-            sender,
-            msg_rx,
-            rate_limit_tx,
-            drain_rate_request_tx,
+        let stream_components = hop.add_ent_with_id(
+            self.chan_sender.time_provider(),
             stream_id,
             cmd_checker,
+            &memquota,
         )?;
 
         let outcome = Pin::new(&mut handler.incoming_sender).try_send(StreamReqInfo {
             req,
             stream_id,
             hop: Some((leg, hop_num).into()),
-            msg_tx,
-            receiver,
-            rate_limit_stream: rate_limit_rx,
-            drain_rate_request_stream: drain_rate_request_rx,
+            stream_components,
             memquota,
             relay_cell_format,
         });
@@ -1432,27 +1400,19 @@ impl Circuit {
         &mut self,
         hop_num: HopNum,
         message: AnyRelayMsg,
-        sender: StreamQueueSender,
-        rx: StreamMpscReceiver<AnyRelayMsg>,
-        rate_limit_notifier: watch::Sender<StreamRateLimit>,
-        drain_rate_requester: NotifySender<DrainRateRequest>,
+        time_prov: &DynTimeProvider,
         cmd_checker: AnyCmdChecker,
-    ) -> StdResult<Result<(SendRelayCell, StreamId)>, Bug> {
+        memquota: &StreamAccount,
+    ) -> Result<(SendRelayCell, StreamId, ReactorStreamComponents)> {
         let Some(hop) = self.hop_mut(hop_num) else {
             return Err(internal!(
                 "{}: Attempting to send a BEGIN cell to an unknown hop {hop_num:?}",
                 self.unique_id,
-            ));
+            )
+            .into());
         };
 
-        Ok(hop.begin_stream(
-            message,
-            sender,
-            rx,
-            rate_limit_notifier,
-            drain_rate_requester,
-            cmd_checker,
-        ))
+        hop.begin_stream(message, time_prov, cmd_checker, memquota)
     }
 
     /// Close the specified stream

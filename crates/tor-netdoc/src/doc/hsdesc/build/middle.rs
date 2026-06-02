@@ -18,7 +18,7 @@ use tor_llcrypto::pk::curve25519::{EphemeralSecret, PublicKey};
 use tor_llcrypto::util::ct::CtByteArray;
 
 use base64ct::{Base64, Encoding};
-use rand::{CryptoRng, Rng, RngCore};
+use rand::{CryptoRng, Rng, RngExt};
 
 /// The representation of the middle document of an onion service descriptor.
 ///
@@ -40,7 +40,7 @@ pub(super) struct HsDescMiddle<'a> {
 }
 
 impl<'a> NetdocBuilder for HsDescMiddle<'a> {
-    fn build_sign<R: RngCore + CryptoRng>(self, rng: &mut R) -> Result<String, EncodeError> {
+    fn build_sign<R: Rng + CryptoRng>(self, rng: &mut R) -> Result<String, EncodeError> {
         use HsMiddleKwd::*;
         use cipher::{KeyIvInit, StreamCipher};
         use tor_llcrypto::cipher::aes::Aes256Ctr as Cipher;
@@ -187,7 +187,7 @@ AQIDBA==
                 secret: secret.into(),
             },
             auth_clients: &[],
-            descriptor_cookie: rand::Rng::random::<[u8; HS_DESC_ENC_NONCE_LEN]>(&mut rng),
+            descriptor_cookie: rand::RngExt::random::<[u8; HS_DESC_ENC_NONCE_LEN]>(&mut rng),
         };
 
         let err = HsDescMiddle {
@@ -222,7 +222,7 @@ AQIDBA==
                 secret: secret.into(),
             },
             auth_clients: &auth_clients,
-            descriptor_cookie: rand::Rng::random::<[u8; HS_DESC_ENC_NONCE_LEN]>(&mut rng),
+            descriptor_cookie: rand::RngExt::random::<[u8; HS_DESC_ENC_NONCE_LEN]>(&mut rng),
         };
 
         let hs_desc = HsDescMiddle {

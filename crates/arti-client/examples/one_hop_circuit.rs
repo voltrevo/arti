@@ -2,7 +2,6 @@
 #![cfg_attr(not(all(feature = "full", feature = "experimental")), allow(unused))]
 
 use anyhow::Result;
-use std::ops::Deref;
 use std::sync::Arc;
 use tokio_crate as tokio;
 use tracing_subscriber::{filter, prelude::*};
@@ -28,15 +27,15 @@ fn find_one_hop_dir_cache(netdir: &NetDir) -> Option<Relay<'_>> {
 async fn launch_one_hop_dir_circ<R: Runtime>(
     arti_client: &arti_client::TorClient<R>,
 ) -> Result<()> {
-    let netdir = arti_client.dirmgr().timely_netdir().unwrap();
+    let netdir = arti_client.dirmgr()?.timely_netdir().unwrap();
 
     let relay = find_one_hop_dir_cache(&netdir);
 
     if let Some(relay) = relay {
         let fp = relay.rsa_id().to_string();
 
-        let circuit = arti_client.circmgr().deref();
-        let one_hop_circ = circuit.get_or_launch_dir_specific(&relay).await;
+        let circmgr = arti_client.circmgr()?;
+        let one_hop_circ = circmgr.get_or_launch_dir_specific(&relay).await;
         match one_hop_circ {
             Err(e) => println!("[-] Unable to launch one-hop circuit: {e}"),
             Ok(_) => println!("[+] Successful one-hop circuit to: {fp:?}"),

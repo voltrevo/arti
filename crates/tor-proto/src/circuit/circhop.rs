@@ -6,20 +6,22 @@ use crate::client::circuit::handshake::RelayCryptLayerProtocol;
 use crate::ccparams::CongestionControlParams;
 use crate::circuit::CircParameters;
 use crate::congestion::{CongestionControl, sendme};
+use crate::memquota::{SpecificAccount, StreamAccount};
 use crate::stream::CloseStreamBehavior;
 use crate::stream::SEND_WINDOW_INIT;
-use crate::stream::StreamMpscReceiver;
+use crate::stream::StreamMpscSender;
 use crate::stream::cmdcheck::{AnyCmdChecker, StreamStatus};
 use crate::stream::flow_ctrl::params::FlowCtrlParameters;
-use crate::stream::flow_ctrl::state::{StreamFlowCtrl, StreamRateLimit};
+use crate::stream::flow_ctrl::state::{FlowCtrlHooks, StreamFlowCtrl, StreamRateLimit};
 use crate::stream::flow_ctrl::xon_xoff::reader::DrainRateRequest;
-use crate::stream::queue::StreamQueueSender;
+use crate::stream::queue::{StreamQueueReceiver, stream_queue};
 use crate::streammap::{
     self, EndSentStreamEnt, OpenStreamEnt, ShouldSendEnd, StreamEntMut, StreamMap,
 };
-use crate::util::notify::NotifySender;
+use crate::util::notify::{NotifyReceiver, NotifySender};
 use crate::{Error, HopNum, Result};
 
+use derive_deftly::Deftly;
 use postage::watch;
 use safelog::sensitive as sv;
 use tracing::{debug, trace};
@@ -33,7 +35,10 @@ use tor_cell::relaycell::{
     StreamId, UnparsedRelayMsg,
 };
 use tor_error::{Bug, internal};
+use tor_memquota::derive_deftly_template_HasMemoryCost;
+use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 use tor_protover::named;
+use tor_rtcompat::DynTimeProvider;
 
 use std::num::NonZeroU32;
 use std::pin::Pin;
@@ -45,6 +50,10 @@ use web_time_compat::Instant;
 use tor_cell::relaycell::msg::SendmeTag;
 
 use cfg_if::cfg_if;
+
+/// The size of the stream's outbound RELAY message queue.
+// TODO(tuning): figure out if this is a good size for this buffer
+const CIRCUIT_BUFFER_SIZE: usize = 128;
 
 /// Type of negotiation that we'll be performing as we establish a hop.
 ///
@@ -383,28 +392,51 @@ impl CircHopOutbound {
 
     /// Start a stream. Creates an entry in the stream map with the given channels, and sends the
     /// `message` to the provided hop.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn begin_stream(
         &mut self,
         hop: Option<HopNum>,
         message: AnyRelayMsg,
-        sender: StreamQueueSender,
-        rx: StreamMpscReceiver<AnyRelayMsg>,
-        rate_limit_updater: watch::Sender<StreamRateLimit>,
-        drain_rate_requester: NotifySender<DrainRateRequest>,
+        time_prov: &DynTimeProvider,
         cmd_checker: AnyCmdChecker,
-    ) -> Result<(SendRelayCell, StreamId)> {
-        let flow_ctrl = self.build_flow_ctrl(
-            Arc::clone(&self.flow_ctrl_params),
-            rate_limit_updater,
-            drain_rate_requester,
+        memquota: &StreamAccount,
+    ) -> Result<(SendRelayCell, StreamId, ReactorStreamComponents)> {
+        // TODO: This has a lot of duplicated code with `Self::add_ent_with_id()`.
+
+        // A channel for the reactor to inform the writer of a new rate limit.
+        let (rate_limit_tx, rate_limit_rx) = watch::channel_with(StreamRateLimit::MAX);
+
+        // A channel for the reactor to request a new drain rate from the reader.
+        // Typically this notification will be sent after an XOFF is sent so that the reader can
+        // send us a new drain rate when the stream data queue becomes empty.
+        let mut drain_rate_request_tx = NotifySender::new_typed();
+        let drain_rate_request_rx = drain_rate_request_tx.subscribe();
+
+        let flow_ctrl = self.build_flow_ctrl(rate_limit_tx, drain_rate_request_tx)?;
+
+        let stream_queue_max_len = flow_ctrl.inbound_queue_max_len();
+
+        // A queue for inbound RELAY messages.
+        let (sender, receiver) = stream_queue(stream_queue_max_len, memquota, time_prov)?;
+
+        // A queue for outbound RELAY messages.
+        let (msg_tx, msg_rx) = MpscSpec::new(CIRCUIT_BUFFER_SIZE)
+            .new_mq(time_prov.clone(), memquota.as_raw_account())?;
+
+        let r = self.map.lock().expect("lock poisoned").add_ent(
+            sender,
+            msg_rx,
+            flow_ctrl,
+            cmd_checker,
         )?;
-        let r =
-            self.map
-                .lock()
-                .expect("lock poisoned")
-                .add_ent(sender, rx, flow_ctrl, cmd_checker)?;
         let cell = AnyRelayMsgOuter::new(Some(r), message);
+
+        let stream_components = ReactorStreamComponents {
+            stream_inbound_rx: receiver,
+            stream_outbound_tx: msg_tx,
+            rate_limit_rx,
+            drain_rate_request_rx,
+        };
+
         Ok((
             SendRelayCell {
                 hop,
@@ -412,6 +444,7 @@ impl CircHopOutbound {
                 cell,
             },
             r,
+            stream_components,
         ))
     }
 
@@ -586,27 +619,42 @@ impl CircHopOutbound {
     #[cfg(any(feature = "hs-service", feature = "relay"))]
     pub(crate) fn add_ent_with_id(
         &self,
-        sink: StreamQueueSender,
-        rx: StreamMpscReceiver<AnyRelayMsg>,
-        rate_limit_updater: watch::Sender<StreamRateLimit>,
-        drain_rate_requester: NotifySender<DrainRateRequest>,
+        time_prov: &DynTimeProvider,
         stream_id: StreamId,
         cmd_checker: AnyCmdChecker,
-    ) -> Result<()> {
-        let mut hop_map = self.map.lock().expect("lock poisoned");
-        hop_map.add_ent_with_id(
-            sink,
-            rx,
-            self.build_flow_ctrl(
-                Arc::clone(&self.flow_ctrl_params),
-                rate_limit_updater,
-                drain_rate_requester,
-            )?,
-            stream_id,
-            cmd_checker,
-        )?;
+        memquota: &StreamAccount,
+    ) -> Result<ReactorStreamComponents> {
+        // TODO: This has a lot of duplicated code with `Self::begin_stream()`.
 
-        Ok(())
+        // A channel for the reactor to inform the writer of a new rate limit.
+        let (rate_limit_tx, rate_limit_rx) = watch::channel_with(StreamRateLimit::MAX);
+
+        // A channel for the reactor to request a new drain rate from the reader.
+        // Typically this notification will be sent after an XOFF is sent so that the reader can
+        // send us a new drain rate when the stream data queue becomes empty.
+        let mut drain_rate_request_tx = NotifySender::new_typed();
+        let drain_rate_request_rx = drain_rate_request_tx.subscribe();
+
+        let flow_ctrl = self.build_flow_ctrl(rate_limit_tx, drain_rate_request_tx)?;
+
+        let stream_queue_max_len = flow_ctrl.inbound_queue_max_len();
+
+        // A queue for inbound RELAY messages.
+        let (sender, receiver) = stream_queue(stream_queue_max_len, memquota, time_prov)?;
+
+        // A queue for outbound RELAY messages.
+        let (msg_tx, msg_rx) = MpscSpec::new(CIRCUIT_BUFFER_SIZE)
+            .new_mq(time_prov.clone(), memquota.as_raw_account())?;
+
+        let mut hop_map = self.map.lock().expect("lock poisoned");
+        hop_map.add_ent_with_id(sender, msg_rx, flow_ctrl, stream_id, cmd_checker)?;
+
+        Ok(ReactorStreamComponents {
+            stream_inbound_rx: receiver,
+            stream_outbound_tx: msg_tx,
+            rate_limit_rx,
+            drain_rate_request_rx,
+        })
     }
 
     /// Builds the reactor's flow control handler for a new stream.
@@ -614,10 +662,11 @@ impl CircHopOutbound {
     #[cfg_attr(feature = "flowctl-cc", expect(clippy::unnecessary_wraps))]
     fn build_flow_ctrl(
         &self,
-        params: Arc<FlowCtrlParameters>,
         rate_limit_updater: watch::Sender<StreamRateLimit>,
         drain_rate_requester: NotifySender<DrainRateRequest>,
     ) -> Result<StreamFlowCtrl> {
+        let params = Arc::clone(&self.flow_ctrl_params);
+
         if self
             .ccontrol()
             .lock()
@@ -855,4 +904,33 @@ fn cvt(limit: u32) -> NonZeroU32 {
         .saturating_add(1)
         .try_into()
         .expect("Adding one left it as zero?")
+}
+
+/// A collection of components that can be used to interact with the reactor's view of a Tor stream.
+//
+// TODO: We also have a `StreamComponents` type that is used and built outside of the reactor.
+// It's maybe confusing to have these similar type names, so a better name would be nice.
+//
+// TODO(arti#2068): The components we return should maybe depend on what type of flow control is
+// used, so in the future we might want to make some of these fields optional.
+#[derive(Debug, Deftly)]
+#[derive_deftly(HasMemoryCost)]
+pub(crate) struct ReactorStreamComponents {
+    /// An MPSC receiver for inbound messages that arrive on the stream.
+    #[deftly(has_memory_cost(indirect_size = "0"))] // estimate
+    pub(crate) stream_inbound_rx: StreamQueueReceiver,
+
+    /// An MPSC sender for outbound messages to be sent on the stream.
+    #[deftly(has_memory_cost(indirect_size = "size_of::<AnyRelayMsg>()"))] // estimate
+    pub(crate) stream_outbound_tx: StreamMpscSender<AnyRelayMsg>,
+
+    /// A mechanism to allow the stream's writer to receive rate limit updates from the reactor.
+    // The `watch::Sender` owns the indirect data.
+    #[deftly(has_memory_cost(indirect_size = "0"))]
+    pub(crate) rate_limit_rx: watch::Receiver<StreamRateLimit>,
+
+    /// A mechanism to allow the stream's reader to receive drain rate update requests from the
+    /// reactor.
+    #[deftly(has_memory_cost(indirect_size = "0"))]
+    pub(crate) drain_rate_request_rx: NotifyReceiver<DrainRateRequest>,
 }

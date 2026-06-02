@@ -3,6 +3,7 @@
 // (This module is called `cfg` to avoid name clash with the `config` crate, which we use.)
 
 use derive_deftly::Deftly;
+use tor_basic_utils::ByteQty;
 use tor_config_path::CfgPath;
 
 #[cfg(feature = "onion-service-service")]
@@ -20,7 +21,7 @@ use arti_client::TorClientConfig;
 #[cfg(feature = "onion-service-service")]
 use tor_config::define_list_builder_accessors;
 use tor_config::derive::prelude::*;
-pub(crate) use tor_config::{ConfigBuildError, Listen};
+pub(crate) use tor_config::{ConfigBuildError, Listen, MetricsConfig, MetricsConfigBuilder};
 
 use crate::{LoggingConfig, LoggingConfigBuilder};
 
@@ -49,6 +50,23 @@ pub(crate) const ARTI_EXAMPLE_CONFIG: &str = concat!(include_str!("./arti-exampl
 // parsable.
 #[cfg(test)]
 const OLDEST_SUPPORTED_CONFIG: &str = concat!(include_str!("./oldest-supported-config.toml"),);
+
+// Our proxy sockets will use a small-ish fixed kernel socket buffer size.
+// Tor streams are slow relative to a pair of loopback sockets,
+// so don't need socket buffers as large as what Linux provides by default
+// (sometimes several MBs).
+//
+// This has a few advantages over the defaults:
+// - Less buffer bloat.
+// - Better ability to make congestion/flow control decisions.
+// - Disables TCP autotuning, which means behaviour will better match Shadow sims.
+// - Easier to reason about stream performance when the buffer size isn't dynamic.
+//
+// See https://gitlab.torproject.org/tpo/core/arti/-/work_items/2500.
+/// See [`ProxyConfig::socket_send_buf_size`].
+const DEFAULT_SEND_BUF_SIZE: usize = 128_000;
+/// See [`ProxyConfig::socket_recv_buf_size`].
+const DEFAULT_RECV_BUF_SIZE: usize = 128_000;
 
 /// Replacement for rpc config when the rpc feature is disabled.
 #[cfg(not(feature = "rpc"))]
@@ -120,6 +138,14 @@ pub(crate) struct ProxyConfig {
     ))]
     #[deftly(tor_config(default = "true"))]
     pub(crate) enable_http_connect: bool,
+
+    /// The send buffer size (`SO_SNDBUF`) of proxy sockets.
+    #[deftly(tor_config(default = "ByteQty(DEFAULT_SEND_BUF_SIZE)"))]
+    pub(crate) socket_send_buf_size: ByteQty,
+
+    /// The receive buffer size (`SO_RCVBUF`) of proxy sockets.
+    #[deftly(tor_config(default = "ByteQty(DEFAULT_RECV_BUF_SIZE)"))]
+    pub(crate) socket_recv_buf_size: ByteQty,
 }
 
 impl ProxyConfig {
@@ -299,35 +325,6 @@ define_list_builder_accessors! {
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) type ArtiCombinedConfig = (ArtiConfig, TorClientConfig);
 
-/// Configuration for exporting metrics (eg, perf data)
-#[derive(Debug, Clone, Deftly, Eq, PartialEq)]
-#[derive_deftly(TorConfig)]
-#[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
-pub(crate) struct MetricsConfig {
-    /// Where to listen for incoming HTTP connections.
-    #[deftly(tor_config(sub_builder))]
-    pub(crate) prometheus: PrometheusConfig,
-}
-
-/// Configuration for one or more proxy listeners.
-#[derive(Debug, Clone, Deftly, Eq, PartialEq)]
-#[derive_deftly(TorConfig)]
-#[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
-pub(crate) struct PrometheusConfig {
-    /// Port on which to establish a Prometheus scrape endpoint
-    ///
-    /// We listen here for incoming HTTP connections.
-    ///
-    /// If just a port is provided, we don't support IPv6.
-    /// Alternatively, (only) a single address and port can be specified.
-    /// These restrictions are due to upstream limitations:
-    /// <https://github.com/metrics-rs/metrics/issues/567>.
-    #[deftly(tor_config(default))]
-    pub(crate) listen: Listen,
-}
-
 impl ArtiConfig {
     /// Return the [`ApplicationConfig`] for this configuration.
     #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
@@ -382,9 +379,9 @@ mod test {
     // Saves adding many individual #[cfg], or a sub-module
     #![cfg_attr(not(feature = "pt-client"), allow(dead_code))]
 
-    use arti_client::config::dir;
     use arti_client::config::TorClientConfigBuilder;
-    use itertools::{chain, EitherOrBoth, Itertools};
+    use arti_client::config::dir;
+    use itertools::{EitherOrBoth, Itertools, chain};
     use regex::Regex;
     use std::collections::HashSet;
     use std::fmt::Write as _;
@@ -558,9 +555,10 @@ mod test {
                 "logging.syslog",
                 "logging.time_granularity",
                 "path_rules.long_lived_ports",
-                "use_obsolete_software",
                 "circuit_timing.disused_circuit_timeout",
                 "storage.port_info_file",
+                "proxy.socket_send_buf_size",
+                "proxy.socket_recv_buf_size",
             ],
         );
 
@@ -831,7 +829,7 @@ mod test {
 
             // This tests that the example settings do not *contradict* the defaults.
             let results: ResolutionResults<ArtiCombinedConfig> =
-                tor_config::resolve_return_results(cfg).unwrap();
+                tor_config::resolve_return_results(cfg, &Default::default()).unwrap();
 
             assert_eq!(&results.value, &default, "{which:?} {uncommented:?}");
             assert_eq!(&results.value, &empty_config, "{which:?} {uncommented:?}");
@@ -930,9 +928,9 @@ example config file {which:?}, uncommented={uncommented:?}
     ///   3. Either add a trivial example for the affected key(s) (starting with just `#`)
     ///      or add the affected key(s) to `declared_config_exceptions`
     fn exhaustive_1(example_file: &str, which: WhichExample, deprecated: &[String]) {
+        use InExample::*;
         use serde_json::Value as JsValue;
         use std::collections::BTreeSet;
-        use InExample::*;
 
         let example = uncomment_example_settings(example_file);
         let example: toml::Value = toml::from_str(&example).unwrap();
@@ -1250,7 +1248,7 @@ example config file {which:?}, uncommented={uncommented:?}
 
         #[cfg(feature = "pt-client")]
         {
-            use arti_client::config::{pt::TransportConfig, BridgesConfig};
+            use arti_client::config::{BridgesConfig, pt::TransportConfig};
             use tor_config_path::CfgPath;
 
             let bridges_got: &BridgesConfig = cfg_got.0.as_ref();
@@ -1647,7 +1645,7 @@ example config file {which:?}, uncommented={uncommented:?}
         fn resolve_return_results<R: tor_config::load::Resolvable>(
             &self,
         ) -> Result<ResolutionResults<R>, ConfigResolveError> {
-            tor_config::load::resolve_return_results(self.parse())
+            tor_config::load::resolve_return_results(self.parse(), &Default::default())
         }
     }
 

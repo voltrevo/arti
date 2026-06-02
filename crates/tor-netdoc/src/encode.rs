@@ -52,7 +52,7 @@ use base64ct::{Base64, Base64Unpadded, Encoding};
 use educe::Educe;
 use itertools::Itertools;
 use paste::paste;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 use tor_bytes::EncodeError;
 use tor_error::internal;
 use void::Void;
@@ -416,7 +416,7 @@ pub trait ItemObjectEncodable {
 /// don't implement this trait.
 pub trait NetdocBuilder {
     /// Build the document into textual form.
-    fn build_sign<R: RngCore + CryptoRng>(self, rng: &mut R) -> Result<String, EncodeError>;
+    fn build_sign<R: Rng + CryptoRng>(self, rng: &mut R) -> Result<String, EncodeError>;
 }
 
 /// implement [`ItemValueEncodable`] for a particular tuple size

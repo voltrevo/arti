@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "arti"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "amplify",
  "anyhow",
@@ -303,7 +303,7 @@ dependencies = [
  "float-ord",
  "fs-mistrust",
  "futures",
- "rand 0.9.4",
+ "rand 0.10.1",
  "serde",
  "serde_json",
  "tokio",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "arti-client"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -336,7 +336,7 @@ dependencies = [
  "libc",
  "once_cell",
  "postage",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "serde_json",
@@ -390,10 +390,11 @@ version = "0.42.0"
 
 [[package]]
 name = "arti-relay"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "base64ct",
+ "cfg-if",
  "clap",
  "derive-deftly",
  "derive_more",
@@ -401,7 +402,8 @@ dependencies = [
  "fs-mistrust",
  "futures",
  "libc",
- "rand 0.9.4",
+ "metrics-exporter-prometheus",
+ "rand 0.10.1",
  "rustls",
  "safelog",
  "serde",
@@ -441,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "arti-rpc-client-core"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "assert_matches",
  "caret",
@@ -453,8 +455,8 @@ dependencies = [
  "mio",
  "paste",
  "percent-encoding",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
+ "rand 0.10.1",
+ "rand_chacha 0.10.0",
  "serde",
  "serde_json",
  "socketpair",
@@ -469,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "arti-rpcserver"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "arti-client",
  "async-trait",
@@ -483,7 +485,7 @@ dependencies = [
  "futures-await-test",
  "oneshot-fused-workaround",
  "pin-project",
- "rand 0.9.4",
+ "rand 0.10.1",
  "serde",
  "serde_json",
  "slotmap-careful",
@@ -516,7 +518,7 @@ dependencies = [
  "clap",
  "futures",
  "pin-project",
- "rand 0.9.4",
+ "rand 0.10.1",
  "tokio",
  "tor-basic-utils",
  "tor-config",
@@ -529,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "arti-ureq"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "arti-client",
  "async-std",
@@ -1997,7 +1999,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a93511fd122bc7b22e361806e84f1c31a53894f0564a4ba7f28e799104318c7"
 dependencies = [
  "heck",
- "indexmap 2.14.0",
+ "indexmap 1.9.3",
  "itertools 0.14.0",
  "proc-macro-crate",
  "proc-macro2",
@@ -2375,9 +2377,9 @@ dependencies = [
 
 [[package]]
 name = "enumset"
-version = "1.1.12"
+version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f96a4a12fe60ac746ae295a1a4ecb5bb02debc20856506c8635288065f142de"
+checksum = "839c4174b41e75c8f7306110b2c51996a293b8d1d850edd529011841d9fede7d"
 dependencies = [
  "enumset_derive",
 ]
@@ -2402,7 +2404,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "equix"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "arrayvec",
  "hashx",
@@ -2653,7 +2655,7 @@ dependencies = [
 
 [[package]]
 name = "fs-mistrust"
-version = "0.14.1"
+version = "0.14.2"
 dependencies = [
  "assert_matches",
  "derive_builder_fork_arti",
@@ -2665,6 +2667,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
+ "void",
  "walkdir",
 ]
 
@@ -2676,11 +2679,12 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fslock-guard"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
+ "libc",
  "test-temp-dir",
  "thiserror 2.0.18",
- "winapi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3051,7 +3055,7 @@ dependencies = [
 
 [[package]]
 name = "hashx"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "arrayvec",
  "blake2",
@@ -3059,7 +3063,7 @@ dependencies = [
  "fixed-capacity-vec",
  "hex",
  "hex-literal",
- "rand_core 0.9.5",
+ "rand_core 0.10.1",
  "thiserror 2.0.18",
 ]
 
@@ -3704,8 +3708,7 @@ version = "0.1.0"
 dependencies = [
  "base32",
  "clap",
- "rand 0.9.4",
- "rand_core 0.9.5",
+ "rand 0.10.1",
  "ssh-key-fork-arti",
  "tor-basic-utils",
  "tor-keymgr",
@@ -3946,9 +3949,9 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "0.24.5"
+version = "0.24.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff56c2e7dce6bd462e3b8919986a617027481b1dcc703175b58cf9dd98a2f071"
+checksum = "89550ee9f79e88fef3119de263694973a8adb26c21d75322164fb8c493039fe2"
 dependencies = [
  "portable-atomic",
  "rapidhash",
@@ -5200,6 +5203,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_chacha"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e6af7f3e25ded52c41df4e0b1af2d047e45896c2f3281792ed68a1c243daedb"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5245,12 +5258,12 @@ dependencies = [
 
 [[package]]
 name = "rand_jitter"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b16df48f071248e67b8fc5e866d9448d45c08ad8b672baaaf796e2f15e606ff0"
+checksum = "a02dd27aa28665e46e60168c8f355240c73b8a344d2557a92318849441ffda33"
 dependencies = [
  "libc",
- "rand_core 0.9.5",
+ "rand_core 0.10.1",
  "winapi",
 ]
 
@@ -5441,6 +5454,15 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "reseeding_rng"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35d8fa137e1f0bbc1139893fcf4fff5f099d76658e6da2b10fadd04f0cadc2d4"
+dependencies = [
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -7059,7 +7081,7 @@ dependencies = [
 
 [[package]]
 name = "tor-async-utils"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive-deftly",
  "educe",
@@ -7078,7 +7100,7 @@ dependencies = [
 
 [[package]]
 name = "tor-basic-utils"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive_more",
  "educe",
@@ -7087,8 +7109,8 @@ dependencies = [
  "itertools 0.14.0",
  "libc",
  "paste",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
+ "rand 0.10.1",
+ "rand_chacha 0.10.0",
  "serde",
  "serde-value",
  "serde_json",
@@ -7101,7 +7123,7 @@ dependencies = [
 
 [[package]]
 name = "tor-bytes"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "bytes",
  "derive-deftly",
@@ -7118,7 +7140,7 @@ dependencies = [
 
 [[package]]
 name = "tor-cell"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "bitflags",
@@ -7131,7 +7153,7 @@ dependencies = [
  "hex-literal",
  "itertools 0.14.0",
  "paste",
- "rand 0.9.4",
+ "rand 0.10.1",
  "smallvec",
  "thiserror 2.0.18",
  "tor-basic-utils",
@@ -7149,7 +7171,7 @@ dependencies = [
 
 [[package]]
 name = "tor-cert"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "base64ct",
  "caret",
@@ -7159,7 +7181,7 @@ dependencies = [
  "ecdsa",
  "hex-literal",
  "humantime",
- "rand 0.9.4",
+ "rand 0.10.1",
  "thiserror 2.0.18",
  "tor-basic-utils",
  "tor-bytes",
@@ -7172,13 +7194,13 @@ dependencies = [
 
 [[package]]
 name = "tor-cert-x509"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "digest 0.10.7",
  "ecdsa",
  "p256",
  "pem",
- "rand 0.9.4",
+ "rand 0.10.1",
  "rsa",
  "thiserror 2.0.18",
  "tor-basic-utils",
@@ -7190,7 +7212,7 @@ dependencies = [
 
 [[package]]
 name = "tor-chanmgr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "async-trait",
  "base64ct",
@@ -7208,7 +7230,7 @@ dependencies = [
  "oneshot-fused-workaround",
  "percent-encoding",
  "postage",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "serde_with",
@@ -7236,7 +7258,7 @@ dependencies = [
 
 [[package]]
 name = "tor-checkable"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "humantime",
  "signature",
@@ -7247,7 +7269,7 @@ dependencies = [
 
 [[package]]
 name = "tor-circmgr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "async-trait",
@@ -7266,7 +7288,7 @@ dependencies = [
  "once_cell",
  "oneshot-fused-workaround",
  "pin-project",
- "rand 0.9.4",
+ "rand 0.10.1",
  "retry-error",
  "safelog",
  "serde",
@@ -7301,7 +7323,7 @@ dependencies = [
 
 [[package]]
 name = "tor-config"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "assert_matches",
@@ -7338,10 +7360,10 @@ dependencies = [
 
 [[package]]
 name = "tor-config-path"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "assert_matches",
- "derive_builder_fork_arti",
+ "derive-deftly",
  "directories",
  "dirs",
  "rmp-serde",
@@ -7357,13 +7379,13 @@ dependencies = [
 
 [[package]]
 name = "tor-consdiff"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive_more",
  "digest 0.10.7",
  "hex",
  "imara-diff",
- "rand 0.9.4",
+ "rand 0.10.1",
  "static_assertions",
  "thiserror 2.0.18",
  "tor-basic-utils",
@@ -7374,7 +7396,7 @@ dependencies = [
 
 [[package]]
 name = "tor-dirclient"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "async-compression",
  "base64ct",
@@ -7404,7 +7426,7 @@ dependencies = [
 
 [[package]]
 name = "tor-dircommon"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "base64ct",
  "derive-deftly",
@@ -7424,7 +7446,7 @@ dependencies = [
 
 [[package]]
 name = "tor-dirmgr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7449,7 +7471,7 @@ dependencies = [
  "oneshot-fused-workaround",
  "paste",
  "postage",
- "rand 0.9.4",
+ "rand 0.10.1",
  "rusqlite",
  "safelog",
  "scopeguard",
@@ -7488,8 +7510,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-dirpublish"
+version = "0.43.0"
+dependencies = [
+ "async-trait",
+ "educe",
+ "event-listener 5.4.1",
+ "futures",
+ "postage",
+ "rand 0.10.1",
+ "safelog",
+ "thiserror 2.0.18",
+ "tor-basic-utils",
+ "tor-dirclient",
+ "tor-error",
+ "tor-linkspec",
+ "tor-rtcompat",
+ "tor-rtmock",
+ "tracing",
+ "web-time-compat",
+]
+
+[[package]]
 name = "tor-dirserver"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "bytes",
  "digest 0.10.7",
@@ -7506,7 +7550,7 @@ dependencies = [
  "lzma-rs",
  "r2d2",
  "r2d2_sqlite",
- "rand 0.9.4",
+ "rand 0.10.1",
  "retry-error",
  "rusqlite",
  "saturating-time",
@@ -7531,7 +7575,7 @@ dependencies = [
 
 [[package]]
 name = "tor-error"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "derive_more",
@@ -7562,7 +7606,7 @@ dependencies = [
 
 [[package]]
 name = "tor-general-addr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "arbitrary",
  "assert_matches",
@@ -7573,7 +7617,7 @@ dependencies = [
 
 [[package]]
 name = "tor-geoip"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive_more",
  "proptest",
@@ -7590,7 +7634,7 @@ checksum = "5baacfe724d837c0da5558fe5e544b0c99181001606b9eb066e4fd98a9b77952"
 
 [[package]]
 name = "tor-guardmgr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "base64ct",
@@ -7609,7 +7653,7 @@ dependencies = [
  "oneshot-fused-workaround",
  "pin-project",
  "postage",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "serde_json",
@@ -7639,7 +7683,7 @@ dependencies = [
 
 [[package]]
 name = "tor-hsclient"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "async-trait",
  "derive-deftly",
@@ -7651,7 +7695,7 @@ dependencies = [
  "itertools 0.14.0",
  "oneshot-fused-workaround",
  "postage",
- "rand 0.9.4",
+ "rand 0.10.1",
  "retry-error",
  "safelog",
  "slotmap-careful",
@@ -7688,7 +7732,7 @@ dependencies = [
 
 [[package]]
 name = "tor-hscrypto"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "arrayvec",
  "blake2",
@@ -7703,7 +7747,7 @@ dependencies = [
  "humantime",
  "itertools 0.14.0",
  "paste",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "signature",
@@ -7723,7 +7767,7 @@ dependencies = [
 
 [[package]]
 name = "tor-hsrproxy"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive-deftly",
  "futures",
@@ -7753,7 +7797,7 @@ dependencies = [
 
 [[package]]
 name = "tor-hsservice"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "arrayvec",
@@ -7779,8 +7823,8 @@ dependencies = [
  "once_cell",
  "oneshot-fused-workaround",
  "postage",
- "rand 0.9.4",
- "rand_core 0.9.5",
+ "rand 0.10.1",
+ "rand_core 0.10.1",
  "retry-error",
  "rmp-serde",
  "safelog",
@@ -7866,13 +7910,13 @@ dependencies = [
 
 [[package]]
 name = "tor-key-forge"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive-deftly",
  "derive_more",
  "downcast-rs",
  "paste",
- "rand 0.9.4",
+ "rand 0.10.1",
  "rsa",
  "signature",
  "ssh-key-fork-arti",
@@ -7887,7 +7931,7 @@ dependencies = [
 
 [[package]]
 name = "tor-keymgr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "arrayvec",
@@ -7904,7 +7948,7 @@ dependencies = [
  "inventory",
  "itertools 0.14.0",
  "paste",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "serde_json",
@@ -7932,7 +7976,7 @@ dependencies = [
 
 [[package]]
 name = "tor-linkspec"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "base64ct",
  "by_address",
@@ -7959,7 +8003,7 @@ dependencies = [
 
 [[package]]
 name = "tor-llcrypto"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "aes",
  "base64ct",
@@ -7978,12 +8022,13 @@ dependencies = [
  "hex",
  "hex-literal",
  "openssl",
- "rand 0.9.4",
- "rand_chacha 0.9.0",
+ "rand 0.10.1",
+ "rand_chacha 0.10.0",
+ "rand_core 0.10.1",
  "rand_core 0.6.4",
- "rand_core 0.9.5",
  "rand_jitter",
  "rdrand",
+ "reseeding_rng",
  "rsa",
  "safelog",
  "serde",
@@ -8005,7 +8050,7 @@ dependencies = [
 
 [[package]]
 name = "tor-log-ratelim"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "futures",
  "humantime",
@@ -8019,7 +8064,7 @@ dependencies = [
 
 [[package]]
 name = "tor-memquota"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "cfg-if",
  "derive-deftly",
@@ -8030,7 +8075,7 @@ dependencies = [
  "itertools 0.14.0",
  "paste",
  "pin-project",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "serde_json",
@@ -8054,7 +8099,7 @@ dependencies = [
 
 [[package]]
 name = "tor-memquota-cost"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive-deftly",
  "itertools 0.14.0",
@@ -8066,7 +8111,7 @@ dependencies = [
 
 [[package]]
 name = "tor-netdir"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "async-trait",
  "bitflags",
@@ -8080,7 +8125,7 @@ dependencies = [
  "itertools 0.14.0",
  "num_enum",
  "postage",
- "rand 0.9.4",
+ "rand 0.10.1",
  "serde",
  "strum",
  "thiserror 2.0.18",
@@ -8102,7 +8147,7 @@ dependencies = [
 
 [[package]]
 name = "tor-netdoc"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "anyhow",
@@ -8123,7 +8168,7 @@ dependencies = [
  "paste",
  "pem",
  "phf",
- "rand 0.9.4",
+ "rand 0.10.1",
  "saturating-time",
  "serde",
  "serde_json",
@@ -8156,7 +8201,7 @@ dependencies = [
 
 [[package]]
 name = "tor-persist"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "anyhow",
@@ -8188,7 +8233,7 @@ dependencies = [
 
 [[package]]
 name = "tor-proto"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "aes",
  "amplify",
@@ -8225,8 +8270,9 @@ dependencies = [
  "pin-project",
  "polyval 0.7.1",
  "postage",
+ "rand 0.10.1",
  "rand 0.9.4",
- "rand_core 0.9.5",
+ "rand_core 0.10.1",
  "regex",
  "safelog",
  "serde",
@@ -8271,7 +8317,7 @@ dependencies = [
 
 [[package]]
 name = "tor-protover"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "caret",
  "paste",
@@ -8283,7 +8329,7 @@ dependencies = [
 
 [[package]]
 name = "tor-ptmgr"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8315,7 +8361,7 @@ dependencies = [
 
 [[package]]
 name = "tor-relay-crypto"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive-deftly",
  "derive_more",
@@ -8332,9 +8378,9 @@ dependencies = [
 
 [[package]]
 name = "tor-relay-selection"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
- "rand 0.9.4",
+ "rand 0.10.1",
  "serde",
  "tor-basic-utils",
  "tor-geoip",
@@ -8345,7 +8391,7 @@ dependencies = [
 
 [[package]]
 name = "tor-rpc-connect"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "assert_matches",
  "base16ct 1.0.0",
@@ -8355,7 +8401,7 @@ dependencies = [
  "fs-mistrust",
  "fslock-guard",
  "hex-literal",
- "rand 0.9.4",
+ "rand 0.10.1",
  "safelog",
  "serde",
  "serde_json",
@@ -8375,7 +8421,7 @@ dependencies = [
 
 [[package]]
 name = "tor-rpcbase"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "assert-impl",
  "derive-deftly",
@@ -8398,8 +8444,9 @@ dependencies = [
 
 [[package]]
 name = "tor-rtcompat"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
+ "amplify",
  "arbitrary",
  "assert_matches",
  "async-io",
@@ -8411,6 +8458,7 @@ dependencies = [
  "blocking",
  "cfg-if",
  "coarsetime",
+ "derive_builder_fork_arti",
  "derive_more",
  "dyn-clone",
  "educe",
@@ -8450,7 +8498,7 @@ dependencies = [
 
 [[package]]
 name = "tor-rtmock"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "assert_matches",
@@ -8465,7 +8513,7 @@ dependencies = [
  "oneshot-fused-workaround",
  "pin-project",
  "priority-queue",
- "rand 0.9.4",
+ "rand 0.10.1",
  "slotmap-careful",
  "strum",
  "thiserror 2.0.18",
@@ -8481,7 +8529,7 @@ dependencies = [
 
 [[package]]
 name = "tor-socksproto"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "amplify",
  "anyhow",
@@ -8499,7 +8547,7 @@ dependencies = [
 
 [[package]]
 name = "tor-units"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "derive-deftly",
  "derive_more",

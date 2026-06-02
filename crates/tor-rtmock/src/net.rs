@@ -435,6 +435,7 @@ impl MockNetProvider {
 impl NetStreamProvider for MockNetProvider {
     type Stream = LocalStream;
     type Listener = MockNetListener;
+    type ListenOptions = tor_rtcompat::TcpListenOptions;
 
     async fn connect(&self, addr: &SocketAddr) -> IoResult<LocalStream> {
         let my_addr = self.get_origin_addr_for(addr)?;
@@ -451,7 +452,11 @@ impl NetStreamProvider for MockNetProvider {
         Ok(mine)
     }
 
-    async fn listen(&self, addr: &SocketAddr) -> IoResult<Self::Listener> {
+    async fn listen(
+        &self,
+        addr: &SocketAddr,
+        _options: &Self::ListenOptions,
+    ) -> IoResult<Self::Listener> {
         let addr = self.get_listener_addr(addr)?;
 
         let receiver = AsyncMutex::new(self.inner.net.add_listener(addr, None)?);
@@ -664,7 +669,10 @@ mod test {
     fn end_to_end() {
         test_with_all_runtimes!(|_rt| async {
             let (client1, client2) = client_pair();
-            let lis = client2.listen(&"0.0.0.0:99".parse().unwrap()).await?;
+            let listen_options = Default::default();
+            let lis = client2
+                .listen(&"0.0.0.0:99".parse().unwrap(), &listen_options)
+                .await?;
             let address = lis.local_addr()?;
 
             let (r1, r2): (IoResult<()>, IoResult<()>) = futures::join!(
@@ -736,7 +744,10 @@ mod test {
         test_with_all_runtimes!(|_rt| async {
             let (client1, client2) = client_pair();
 
-            let lis = client2.listen(&"0.0.0.0:99".parse().unwrap()).await?;
+            let listen_options = Default::default();
+            let lis = client2
+                .listen(&"0.0.0.0:99".parse().unwrap(), &listen_options)
+                .await?;
             let address = lis.local_addr()?;
             let mut incoming = lis.incoming();
 

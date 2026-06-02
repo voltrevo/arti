@@ -27,7 +27,7 @@
 //! circuit's upstream channel.  These cells are either RELAY cells or
 //! DESTROY cells.  DESTROY cells are handled immediately.
 //! RELAY cells are either for a particular stream, in which case they
-//! get forwarded to a RawCellStream object, or for no particular stream,
+//! get forwarded to a StreamReceiver object, or for no particular stream,
 //! in which case they are considered "meta" cells (like EXTENDED2)
 //! that should only get accepted if something is waiting for them.
 //!
@@ -90,9 +90,6 @@ use crate::stream::{StreamMpscReceiver, StreamMpscSender};
 
 pub use crate::crypto::binding::CircuitBinding;
 pub use path::{Path, PathEntry};
-
-/// The size of the buffer for communication between `ClientCirc` and its reactor.
-pub const CIRCUIT_BUFFER_SIZE: usize = 128;
 
 // TODO: export this from the top-level instead (it's not client-specific).
 pub use crate::circuit::CircParameters;

@@ -80,7 +80,7 @@ pub use key_specifier::{
     KeySpecifierComponent, KeySpecifierComponentViaDisplayFromStr, KeySpecifierPattern,
 };
 #[cfg(feature = "onion-service-cli-extra")]
-pub use raw::{RawEntryId, RawKeystoreEntry};
+pub use raw::RawEntryId;
 
 #[cfg(feature = "experimental-api")]
 pub use key_specifier::CertSpecifierPattern;

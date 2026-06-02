@@ -12,35 +12,31 @@
 
 use super::*;
 
-// Explicit parsing arrangements for document digest fields in `r` and `m` items.
+// Explicit parsing arrangements for document digest field in `m` items.
 //
 // https://spec.torproject.org/dir-spec/consensus-formats.html#item:r
 // https://spec.torproject.org/dir-spec/consensus-formats.html#item:m
 // https://spec.torproject.org/dir-spec/computing-consensus.html#flavor:microdesc
 //
 // The document digest moves about, and vote `m` items are even more exciting.
-// This is for the benefit of the `with` annotations for these two fields:
+// This is for the benefit of the `with` annotations for RouterStatus.m.
 //
-//  RouterStatus.r.doc_digest aka RouterStatusIntroItem.doc_digest
-//  RouterStatus.m
+// We need to make this an import that can be used with `deftly(netdoc(with = ))`.
+// `with` expects a path, not a type, so we can't use ns_type!.
 //
-// This would have been a bit easier if the various DocDigest types implemented parse2 traits,
-// but they're just byte arrays and such impls would imply that byte arrays are always
-// represented the same way in netdocs which is very far from being true.
-// TODO consider introducing newtypes for routerdesc and microdesc hashes?
+// (Normally when trying to parse an item whose single field implements ItemArgumentParseable
+// but not ItemValueParseable, we would use #[deftly(netdoc(single_arg))]
+// but here we can't do that because we can't have variety-dependent attributes.)
 ns_choose! { (
-    use doc_digest_parse2_real as doc_digest_parse2_r; // implemented here in rs/each_variety.rs
-    use Ignored as doc_digest_parse2_m;
-    use relay_flags::ConsensusRepr as VarietyRelayFlagsRepr;
+    use NotPresentEachValue as doc_digest_item_m;
 ) (
-    use NotPresent as doc_digest_parse2_r;
-    use doc_digest_parse2_real_item as doc_digest_parse2_m; // implemented in rs/md.rs
-    use relay_flags::ConsensusRepr as VarietyRelayFlagsRepr;
+    // doc_digest_item_m implemented in rs/md.rs
 ) (
-    use doc_digest_parse2_real as doc_digest_parse2_r; // implemented here in rs/each_variety.rs
-    use RouterStatusMdDigestsVote as doc_digest_parse2_m;
-    use relay_flags::NoImplicitRepr as VarietyRelayFlagsRepr;
+    use RouterStatusMdDigestsVote as doc_digest_item_m;
 ) }
+
+/// Type of the referenced document digest in form suitable for parsing and encoding
+type DocDigestB64 = FixedB64<DOC_DIGEST_LEN>;
 
 /// Intro item for a router status entry
 ///
@@ -62,8 +58,7 @@ pub struct RouterStatusIntroItem {
     /// Digest of the document for this relay (except md consensuses)
     // TODO SPEC rename in the spec from `digest` to "doc_digest"
     // TODO SPEC in md consensuses the referenced document digest is in a separate `m` item
-    #[deftly(netdoc(with = doc_digest_parse2_r))]
-    pub doc_digest: ns_type!(DocDigest, NotPresent, DocDigest),
+    pub doc_digest: ns_type!(DocDigestB64, NotPresent, DocDigestB64),
     /// Publication time.
     pub publication: ns_type!(
         IgnoredPublicationTimeSp,
@@ -105,8 +100,8 @@ pub struct RouterStatus {
     /// `r` item.
     // We call this field `m` rather than `doc_digest` because it's not always the doc digest.
     // TODO SPEC in all but md consensuses the referenced document digest is in the `r` intro item
-    #[deftly(netdoc(with = doc_digest_parse2_m))]
-    pub m: ns_type!(NotPresent, DocDigest, Vec<RouterStatusMdDigestsVote>),
+    #[deftly(netdoc(with = doc_digest_item_m))]
+    pub m: ns_type!(NotPresent, DocDigestB64, Vec<RouterStatusMdDigestsVote>),
 
     /// `a` --- Further router address(es) (IPv6)
     ///
@@ -120,7 +115,13 @@ pub struct RouterStatus {
     /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:s>
     #[deftly(netdoc(
         keyword = "s",
-        with = { relay_flags::ParserEncoder::<VarietyRelayFlagsRepr> },
+        with = {
+            relay_flags::ParserEncoder::<ns_type!(
+                relay_flags::ConsensusRepr,
+                relay_flags::ConsensusRepr,
+                relay_flags::NoImplicitRepr,
+            )>
+        },
     ))]
     pub flags: DocRelayFlags,
 
@@ -139,8 +140,8 @@ pub struct RouterStatus {
     /// `w` --- Bandwidth estimates
     ///
     /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:w>
-    #[deftly(netdoc(keyword = "w"))]
-    pub weight: RelayWeight,
+    #[deftly(netdoc(flatten))]
+    pub weight: RelayWeightsItem,
 }
 
 impl RouterStatus {
@@ -152,26 +153,5 @@ impl RouterStatus {
     /// in md routerstatus entries.
     pub fn doc_digest(&self) -> &DocDigest {
         ns_expr!(&self.r.doc_digest, &self.m, &self.r.doc_digest,)
-    }
-}
-
-/// Netdoc format helper module for referenced doc digest field in `r` and `m`
-///
-/// This field is present in `r` items, except for md consensuses, where it's in `m`.
-/// Hence the `_real`, which lets us swap it out for each variety.
-pub(crate) mod doc_digest_parse2_real {
-    use super::*;
-    use crate::parse2::ArgumentError as AE;
-    use crate::parse2::ArgumentStream;
-    use std::result::Result;
-
-    /// Parse a single argument
-    pub(crate) fn from_args<'s>(args: &mut ArgumentStream<'s>) -> Result<DocDigest, AE> {
-        let data = args
-            .next()
-            .ok_or(AE::Missing)?
-            .parse::<B64>()
-            .map_err(|_| AE::Invalid)?;
-        data.into_array().map_err(|_| AE::Invalid)
     }
 }

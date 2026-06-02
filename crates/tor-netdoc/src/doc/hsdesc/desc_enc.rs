@@ -8,7 +8,7 @@ use tor_llcrypto::d::Shake256 as KDF;
 use cipher::{KeyIvInit, StreamCipher};
 use digest::{ExtendableOutput, FixedOutput, Update, XofReader};
 #[cfg(any(test, feature = "hs-service"))]
-use rand::{CryptoRng, Rng};
+use rand::{CryptoRng, Rng, RngExt};
 use tor_llcrypto::pk::curve25519::PublicKey;
 use tor_llcrypto::pk::curve25519::StaticSecret;
 use tor_llcrypto::util::ct::CtByteArray;

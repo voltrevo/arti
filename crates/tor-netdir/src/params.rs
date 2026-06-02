@@ -407,6 +407,15 @@ pub struct NetParameters {
     pub extend_by_ed25519_id: BoundedInt32<0, 1> = (0)
         from "ExtendByEd25519ID",
 
+    /// How long (in days) a relay's ntor onion key is valid before it is rotated.
+    pub onion_key_rotation_days: BoundedInt32<1, 90> = (28)
+        from "onion-key-rotation-days",
+    /// How long (in days) after expiry a relay continues to use its old ntor key.
+    ///
+    /// Clamped at runtime to be at most `onion_key_rotation_days`.
+    pub onion_key_grace_period_days: BoundedInt32<1, 90> = (7)
+        from "onion-key-grace-period-days",
+
     /// If we have excluded so many possible guards that the
     /// available fraction is below this threshold, we should use a different
     /// guard sample.

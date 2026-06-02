@@ -71,8 +71,15 @@ impl BackwardHandler for Backward {
                     "Received inbound RELAY_EARLY cell".into(),
                 )));
             }
-            RelayCircChanMsg::Destroy(_) => {
-                debug!(circ_id=%circ_id, "Received inbound DESTROY cell");
+            RelayCircChanMsg::Destroy(d) => {
+                debug!(
+                    circ_id = %circ_id,
+                    reason = %d.reason(),
+                    "Received inbound DESTROY, circuit shutting down",
+                );
+
+                // We don't need to send a DESTROY cell down the channel,
+                // because that's handled implicitly by our Drop implementation
                 return Err(ReactorError::Shutdown);
             }
             RelayCircChanMsg::PaddingNegotiate(_) => {

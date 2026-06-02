@@ -239,7 +239,7 @@ struct Job {
 
 impl Job {
     /// Make a new unbootstrapped client for this job.
-    fn make_client<R: Runtime>(&self, runtime: R) -> Result<TorClient<R>> {
+    fn make_client<R: Runtime>(&self, runtime: R) -> Result<Arc<TorClient<R>>> {
         let (_arti, tcc) = tor_config::resolve::<ArtiCombinedConfig>(self.config.load()?)?;
         let client = TorClient::with_runtime(runtime)
             .config(tcc)
@@ -252,7 +252,7 @@ impl Job {
     async fn run_job_inner<R: Runtime, R2: Send + Sync + Clone + 'static>(
         &self,
         broken_tcp: rt::badtcp::BrokenTcpProvider<R2>,
-        client: TorClient<R>,
+        client: &TorClient<R>,
     ) -> Result<()> {
         if self.tcp_breakage.stage == BreakageStage::Bootstrap {
             self.tcp_breakage
@@ -305,7 +305,10 @@ impl Job {
         let outcome = client
             .clone()
             .runtime()
-            .timeout(self.timeout, self.run_job_inner(broken_tcp.clone(), client))
+            .timeout(
+                self.timeout,
+                self.run_job_inner(broken_tcp.clone(), &client),
+            )
             .await;
 
         let result = match (&self.expectation, outcome) {

@@ -1,6 +1,8 @@
 //! Support for cookie authentication within the RPC protocol.
 use fs_mistrust::Mistrust;
 use safelog::Sensitive;
+#[cfg(feature = "rpc-server")]
+use std::convert::Infallible;
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -75,7 +77,7 @@ impl Cookie {
     /// Create a new RPC cookie and store it at a provided path,
     /// overwriting any previous file at that location.
     #[cfg(feature = "rpc-server")]
-    pub fn create<R: rand::CryptoRng + rand::RngCore>(
+    pub fn create<R: rand::CryptoRng + rand::TryRng<Error = Infallible>>(
         path: &Path,
         rng: &mut R,
         mistrust: &Mistrust,
@@ -104,7 +106,7 @@ impl Cookie {
     }
 
     /// Create a new random cookie.
-    fn new<R: rand::CryptoRng + rand::RngCore>(rng: &mut R) -> Self {
+    fn new<R: rand::CryptoRng + rand::Rng>(rng: &mut R) -> Self {
         let mut cookie = Cookie {
             value: Default::default(),
         };
@@ -219,7 +221,7 @@ pub enum HexError {
 pub struct CookieAuthNonce(Sensitive<Zeroizing<[u8; COOKIE_NONCE_LEN]>>);
 impl CookieAuthNonce {
     /// Create a new random nonce.
-    pub fn new<R: rand::RngCore + rand::CryptoRng>(rng: &mut R) -> Self {
+    pub fn new<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self {
         let mut nonce = Self(Default::default());
         rng.fill_bytes(nonce.0.as_mut().as_mut());
         nonce

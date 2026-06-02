@@ -139,14 +139,14 @@ async fn run_proxy<R: ToplevelRuntime>(
 
     #[allow(unused_mut)]
     let mut reconfigurable_modules: Vec<Arc<dyn reload_cfg::ReconfigurableModule>> = vec![
-        Arc::new(client.clone()),
+        Arc::clone(&client) as _,
         Arc::new(reload_cfg::Application::new(arti_config.clone())),
     ];
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "onion-service-service")] {
             let onion_services =
-                onion_proxy::ProxySet::launch_new(&client, arti_config.onion_services.clone())?;
+                onion_proxy::ProxySet::launch_new(Arc::clone(&client), arti_config.onion_services.clone())?;
             let launched_onion_svc = !onion_services.is_empty();
             reconfigurable_modules.push(Arc::new(onion_services));
         } else {
@@ -185,6 +185,14 @@ async fn run_proxy<R: ToplevelRuntime>(
         }
     }
 
+    // The options that we'll use for our listening proxy sockets.
+    let mut listen_options = tor_rtcompat::TcpListenOptions::builder();
+    listen_options
+        .common()
+        .send_buffer_size(Some(arti_config.proxy().socket_send_buf_size.as_usize()))
+        .recv_buffer_size(Some(arti_config.proxy().socket_recv_buf_size.as_usize()));
+    let listen_options = listen_options.build()?;
+
     let mut proxy: Vec<PinnedFuture<Result<()>>> = Vec::new();
     let mut ports = Vec::new();
     if !socks_listen.is_empty() {
@@ -193,9 +201,16 @@ async fn run_proxy<R: ToplevelRuntime>(
         let socks_listen = socks_listen.clone();
         let listener_type = protocols.to_string();
 
-        let stream_proxy = proxy::bind_proxy(runtime, client, socks_listen, protocols, rpc_mgr)
-            .await
-            .with_context(|| format!("Unable to launch {listener_type} proxy"))?;
+        let stream_proxy = proxy::bind_proxy(
+            runtime,
+            client,
+            socks_listen,
+            listen_options,
+            protocols,
+            rpc_mgr,
+        )
+        .await
+        .with_context(|| format!("Unable to launch {listener_type} proxy"))?;
         let port_info = stream_proxy.port_info()?;
 
         ports.extend(port_info);

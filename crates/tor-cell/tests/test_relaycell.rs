@@ -7,6 +7,7 @@ use tor_cell::relaycell::{
     msg::{self, AnyRelayMsg},
 };
 
+use std::convert::Infallible;
 #[cfg(feature = "experimental-udp")]
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
@@ -18,20 +19,23 @@ use tor_cell::relaycell::udp::Address;
 const CELL_BODY_LEN: usize = 509;
 
 struct BadRng;
-impl rand::RngCore for BadRng {
-    fn next_u32(&mut self) -> u32 {
-        0xf0f0f0f0
+impl rand::TryRng for BadRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+        Ok(0xf0f0f0f0)
     }
-    fn next_u64(&mut self) -> u64 {
-        0xf0f0f0f0f0f0f0f0
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        Ok(0xf0f0f0f0f0f0f0f0)
     }
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
         dest.fill(0xf0);
+        Ok(())
     }
 }
 
 // I won't tell if you don't.
-impl rand::CryptoRng for BadRng {}
+impl rand::TryCryptoRng for BadRng {}
 
 fn decode(body: &str) -> Box<[u8; CELL_BODY_LEN]> {
     let mut body = body.to_string();
@@ -87,7 +91,7 @@ fn cell(version: RelayCellFormat, body: &str, id: Option<StreamId>, msg: AnyRela
 
 #[test]
 fn bad_rng() {
-    use rand::RngCore;
+    use rand::Rng;
     let mut rng = BadRng;
 
     assert_eq!(rng.next_u32(), 0xf0f0f0f0);

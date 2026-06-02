@@ -36,6 +36,21 @@ pub struct BridgeDesc {
     /// around a bit and clone it frequently.  If that doesn't actually happen,
     /// we can remove the Arc here.
     desc: Arc<RouterDesc>,
+
+    /// The RsaIdentity of the [`RouterDesc`] found in [`BridgeDesc::desc`].
+    // It is unfortunate that we have to store this in an extra field, but the
+    // alternatives are not satisfying either:
+    // * Include the [`RsaIdentity`] inside [`RouterDesc`] so we can return
+    //   a reference to it.
+    //     * This is not nice because it would involve `netdoc(skip)`.
+    // * Change [`tor_linkspec`] to use the values directly rather than
+    //   returning references to it.
+    //     * This is the more clean solution, especially because both types
+    //       implement [`Copy`] anyways.
+    //     * However, [`tor_linkspec`] and its traits and types are deeply
+    //       integrated into the codebase and changing them would mean lots of
+    //       fixes everywhere.
+    rsa_identity: RsaIdentity,
 }
 
 impl AsRef<RouterDesc> for BridgeDesc {
@@ -50,7 +65,8 @@ impl BridgeDesc {
     /// The provided `desc` must be a descriptor retrieved from the bridge
     /// itself.
     pub fn new(desc: Arc<RouterDesc>) -> Self {
-        Self { desc }
+        let rsa_identity = desc.rsa_identity();
+        Self { desc, rsa_identity }
     }
 }
 
@@ -60,7 +76,7 @@ impl tor_linkspec::HasRelayIdsLegacy for BridgeDesc {
     }
 
     fn rsa_identity(&self) -> &RsaIdentity {
-        self.desc.rsa_identity()
+        &self.rsa_identity
     }
 }
 
@@ -282,7 +298,7 @@ impl Universe for BridgeSet {
                 filter.permits(*bridge_conf)
                     && pre_existing.all_overlapping(*bridge_conf).is_empty()
             })
-            .choose_multiple(&mut rand::rng(), n)
+            .sample(&mut rand::rng(), n)
             .into_iter()
             .map(|bridge_config| {
                 let relay = self.relay_by_bridge(bridge_config);

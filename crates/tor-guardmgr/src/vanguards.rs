@@ -16,7 +16,6 @@ use futures::{FutureExt as _, future};
 use futures::{StreamExt as _, select_biased};
 use postage::stream::Stream as _;
 use postage::watch;
-use rand::RngCore;
 use tor_rtcompat::SpawnExt as _;
 
 use tor_async_utils::PostageWatchSenderExt as _;
@@ -261,7 +260,7 @@ impl<R: Runtime> VanguardMgr<R> {
     ///
     ///  If the path only contains the L1 guard (`G`), then the `RelayExclusion` should only
     ///  exclude `G`.
-    pub fn select_vanguard<'a, Rng: RngCore>(
+    pub fn select_vanguard<'a, Rng: rand::Rng>(
         &self,
         rng: &mut Rng,
         netdir: &'a NetDir,

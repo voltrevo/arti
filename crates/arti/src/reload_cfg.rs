@@ -4,15 +4,15 @@ use std::sync::Weak;
 use std::time::Duration;
 
 use anyhow::Context;
-use arti_client::config::Reconfigure;
 use arti_client::TorClient;
-use futures::{select_biased, FutureExt as _, Stream};
-use tor_config::file_watcher::{self, FileWatcherBuilder, FileEventSender, FileWatcher};
-use tor_config::{sources::FoundConfigFiles, ConfigurationSource, ConfigurationSources};
-use tor_rtcompat::Runtime;
-use tracing::{debug, error, info, instrument, warn};
-use tor_rtcompat::SpawnExt;
+use arti_client::config::Reconfigure;
 use futures::StreamExt;
+use futures::{FutureExt as _, Stream, select_biased};
+use tor_config::file_watcher::{self, FileEventSender, FileWatcher, FileWatcherBuilder};
+use tor_config::{ConfigurationSource, ConfigurationSources, sources::FoundConfigFiles};
+use tor_rtcompat::Runtime;
+use tor_rtcompat::SpawnExt;
+use tracing::{debug, error, info, instrument, warn};
 
 #[cfg(target_family = "unix")]
 use crate::process::sighup_stream;
@@ -73,22 +73,26 @@ pub(crate) fn watch_for_config_changes<R: Runtime>(
     }
 
     let rt = runtime.clone();
-    let () = runtime.clone().spawn(async move {
-        let res: anyhow::Result<()> = run_watcher(
-            rt,
-            sources,
-            modules,
-            watch_file,
-            sighup_stream,
-            Some(DEBOUNCE_INTERVAL)
-        ).await;
+    let () = runtime
+        .clone()
+        .spawn(async move {
+            let res: anyhow::Result<()> = run_watcher(
+                rt,
+                sources,
+                modules,
+                watch_file,
+                sighup_stream,
+                Some(DEBOUNCE_INTERVAL),
+            )
+            .await;
 
-        match res {
-            Ok(()) => debug!("Config watcher task exiting"),
-            // TODO: warn_report does not work on anyhow::Error.
-            Err(e) => error!("Config watcher task exiting: {}", tor_error::Report(e)),
-        }
-    }).context("failed to spawn task")?;
+            match res {
+                Ok(()) => debug!("Config watcher task exiting"),
+                // TODO: warn_report does not work on anyhow::Error.
+                Err(e) => error!("Config watcher task exiting: {}", tor_error::Report(e)),
+            }
+        })
+        .context("failed to spawn task")?;
 
     Ok(())
 }
@@ -125,14 +129,6 @@ async fn run_watcher<R: Runtime>(
                 };
 
                 info!("Received SIGHUP");
-
-                watcher = reload_configuration(
-                    runtime.clone(),
-                    watcher,
-                    &sources,
-                    &modules,
-                    tx.clone()
-                ).await?;
             },
             event = rx.next().fuse() => {
                 if let Some(debounce_interval) = debounce_interval {
@@ -148,15 +144,11 @@ async fn run_watcher<R: Runtime>(
                     // call recv() in the outer loop.
                 }
                 debug!("Config reload event {:?}: reloading configuration.", event);
-                watcher = reload_configuration(
-                    runtime.clone(),
-                    watcher,
-                    &sources,
-                    &modules,
-                    tx.clone()
-                ).await?;
             },
         }
+
+        watcher =
+            reload_configuration(runtime.clone(), watcher, &sources, &modules, tx.clone()).await?;
     }
 
     Ok(())
@@ -172,7 +164,6 @@ async fn reload_configuration<R: Runtime>(
     modules: &[Weak<dyn ReconfigurableModule>],
     tx: FileEventSender,
 ) -> anyhow::Result<Option<FileWatcher>> {
-
     let found_files = if watcher.is_some() {
         let mut new_watcher = FileWatcher::builder(runtime.clone());
         let found_files = prepare(&mut new_watcher, sources)
@@ -194,12 +185,11 @@ async fn reload_configuration<R: Runtime>(
             if watch && watcher.is_none() {
                 info!("Starting watching over configuration.");
                 let mut new_watcher = FileWatcher::builder(runtime.clone());
-                let _found_files = prepare(&mut new_watcher, sources).context(
-                    "FS watch: failed to rescan config and re-establish watch: {}",
-                )?;
-                let new_watcher = new_watcher.start_watching(tx.clone()).context(
-                    "FS watch: failed to rescan config and re-establish watch: {}",
-                )?;
+                let _found_files = prepare(&mut new_watcher, sources)
+                    .context("FS watch: failed to rescan config and re-establish watch: {}")?;
+                let new_watcher = new_watcher
+                    .start_watching(tx.clone())
+                    .context("FS watch: failed to rescan config and re-establish watch: {}")?;
                 watcher = Some(new_watcher);
             } else if !watch && watcher.is_some() {
                 info!("Stopped watching over configuration.");
@@ -337,14 +327,14 @@ mod test {
     use crate::ArtiConfigBuilder;
 
     use super::*;
-    use futures::channel::mpsc;
     use futures::SinkExt as _;
-    use tor_config::sources::MustRead;
+    use futures::channel::mpsc;
+    use postage::watch;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
-    use test_temp_dir::{test_temp_dir, TestTempDir};
-    use postage::watch;
+    use test_temp_dir::{TestTempDir, test_temp_dir};
     use tor_async_utils::PostageWatchSenderExt;
+    use tor_config::sources::MustRead;
 
     /// Filename for config1
     const CONFIG_NAME1: &str = "config1.toml";
@@ -370,14 +360,21 @@ mod test {
     /// Create a test reconfigurable module.
     ///
     /// Returns the module and a channel on which the new configs received by the module are sent.
-    async fn create_module(
-    ) -> (Arc<dyn ReconfigurableModule>, watch::Receiver<ArtiCombinedConfig>) {
+    async fn create_module() -> (
+        Arc<dyn ReconfigurableModule>,
+        watch::Receiver<ArtiCombinedConfig>,
+    ) {
         let (tx, mut rx) = watch::channel();
         // Read the initial value from the postage::watch stream
         // (the first observed value on this test stream is always the default config)
         let _: ArtiCombinedConfig = rx.next().await.unwrap();
 
-        (Arc::new(TestModule { tx: Arc::new(Mutex::new(tx)) }), rx)
+        (
+            Arc::new(TestModule {
+                tx: Arc::new(Mutex::new(tx)),
+            }),
+            rx,
+        )
     }
 
     /// Write `data` to file `name` within `dir`.
@@ -400,7 +397,7 @@ mod test {
     fn watch_single_file() {
         tor_rtcompat::test_with_one_runtime!(|rt| async move {
             let temp_dir = test_temp_dir!();
-            let mut config_builder =  ArtiConfigBuilder::default();
+            let mut config_builder = ArtiConfigBuilder::default();
             config_builder.application().watch_configuration(true);
 
             let cfg_file = write_config(&temp_dir, CONFIG_NAME1, &config_builder);
@@ -416,16 +413,20 @@ mod test {
             // loop is entered
             let (mut sighup_tx, sighup_rx) = mpsc::unbounded();
             let runtime = rt.clone();
-            let () = rt.spawn(async move {
-                run_watcher(
-                    runtime,
-                    cfg_sources,
-                    vec![Arc::downgrade(&module)],
-                    true,
-                    sighup_rx,
-                    None,
-                ).await.unwrap();
-            }).unwrap();
+            let () = rt
+                .spawn(async move {
+                    run_watcher(
+                        runtime,
+                        cfg_sources,
+                        vec![Arc::downgrade(&module)],
+                        true,
+                        sighup_rx,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                })
+                .unwrap();
 
             sighup_tx.send(()).await.unwrap();
 
@@ -440,7 +441,6 @@ mod test {
             // The reconfigurable modules should've been reloaded in response to the config change
             let config = rx.next().await.unwrap();
             assert_eq!(config.0, config_builder.build().unwrap());
-
         });
     }
 
@@ -450,14 +450,14 @@ mod test {
     fn watch_multiple() {
         tor_rtcompat::test_with_one_runtime!(|rt| async move {
             let temp_dir = test_temp_dir!();
-            let mut config_builder1 =  ArtiConfigBuilder::default();
+            let mut config_builder1 = ArtiConfigBuilder::default();
             config_builder1.application().watch_configuration(true);
 
             let _: PathBuf = write_config(&temp_dir, CONFIG_NAME1, &config_builder1);
             let mut cfg_sources = ConfigurationSources::new_empty();
             cfg_sources.push_source(
                 ConfigurationSource::Dir(temp_dir.as_path_untracked().to_path_buf()),
-                MustRead::MustRead
+                MustRead::MustRead,
             );
 
             let (module, mut rx) = create_module().await;
@@ -465,16 +465,20 @@ mod test {
             // loop is entered
             let (mut sighup_tx, sighup_rx) = mpsc::unbounded();
             let runtime = rt.clone();
-            let () = rt.spawn(async move {
-                run_watcher(
-                    runtime,
-                    cfg_sources,
-                    vec![Arc::downgrade(&module)],
-                    true,
-                    sighup_rx,
-                    None,
-                ).await.unwrap();
-            }).unwrap();
+            let () = rt
+                .spawn(async move {
+                    run_watcher(
+                        runtime,
+                        cfg_sources,
+                        vec![Arc::downgrade(&module)],
+                        true,
+                        sighup_rx,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                })
+                .unwrap();
 
             config_builder1.logging().log_sensitive_information(true);
             let _: PathBuf = write_config(&temp_dir, CONFIG_NAME1, &config_builder1);
@@ -483,7 +487,7 @@ mod test {
             let config = rx.next().await.unwrap();
             assert_eq!(config.0, config_builder1.build().unwrap());
 
-            let mut config_builder2 =  ArtiConfigBuilder::default();
+            let mut config_builder2 = ArtiConfigBuilder::default();
             config_builder2.application().watch_configuration(true);
             // Write another config file...
             config_builder2.system().max_files(0_u64);
@@ -496,7 +500,9 @@ mod test {
             // Now write a new config file to the watched dir
             config_builder2.logging().console("foo".to_string());
             let mut config_builder_combined2 = config_builder_combined.clone();
-            config_builder_combined2.logging().console("foo".to_string());
+            config_builder_combined2
+                .logging()
+                .console("foo".to_string());
             let config3: PathBuf = write_config(&temp_dir, CONFIG_NAME3, &config_builder2);
             let config = rx.next().await.unwrap();
             assert_eq!(config.0, config_builder_combined2.build().unwrap());

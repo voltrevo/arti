@@ -199,7 +199,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
     use tor_basic_utils::test_rng::testing_rng;
     use web_time_compat::InstantExt;
 

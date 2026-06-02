@@ -35,6 +35,8 @@ use super::TransportImplHelper;
 #[cfg(feature = "pt-client")]
 use async_trait::async_trait;
 #[cfg(feature = "pt-client")]
+use safelog::sensitive as sv;
+#[cfg(feature = "pt-client")]
 use tor_error::bad_api_usage;
 #[cfg(feature = "pt-client")]
 use tor_linkspec::{ChannelMethod, HasChanMethod, OwnedChanTarget};
@@ -456,10 +458,16 @@ impl<R: NetStreamProvider + Send + Sync> TransportImplHelper for ExternalProxyPl
             }
         };
 
+        let into_err = |e: ProxyError| crate::Error::Connect {
+            addresses: vec![(sv(pt_target.to_string()), e.into())],
+        };
         let protocol =
-            settings_to_protocol(self.proxy_version, encode_settings(pt_target.settings()))?;
+            settings_to_protocol(self.proxy_version, encode_settings(pt_target.settings()))
+                .map_err(into_err)?;
         let stream =
-            connect_via_proxy(&self.runtime, &self.proxy_addr, &protocol, pt_target.addr()).await?;
+            connect_via_proxy(&self.runtime, &self.proxy_addr, &protocol, pt_target.addr())
+                .await
+                .map_err(into_err)?;
 
         Ok((pt_target.into(), stream))
     }

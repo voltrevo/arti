@@ -39,6 +39,7 @@ define_list_builder_helper! {
     built: StaticKeyProvider = build_static(keys)?;
     default = vec![];
     item_build: |value| Ok(value.clone());
+    item_apply_defaults: |_| Ok::<_, tor_config::ConfigBuildError>(());
     #[serde(try_from = "StaticKeyProvider", into = "StaticKeyProvider")]
 }
 

@@ -23,7 +23,7 @@ use std::fmt::{Display, Write as _};
 use std::time::Duration;
 
 use itertools::Itertools;
-use rand::Rng;
+use rand::RngExt;
 use slotmap_careful::Key;
 use tracing_test::traced_test;
 

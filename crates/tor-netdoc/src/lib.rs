@@ -74,7 +74,7 @@ pub use derive_deftly;
 #[doc(hidden)]
 pub use util::batching_split_before;
 
-pub use err::{BuildError, Error, NetdocErrorKind, Pos};
+pub use err::{BuildError, Error, ExpectedConstantString, NetdocErrorKind, Pos};
 
 pub use encode::NetdocBuilder;
 

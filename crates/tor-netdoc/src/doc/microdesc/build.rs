@@ -10,7 +10,7 @@ use crate::types::policy::PortPolicy;
 use crate::{BuildError as Error, BuildResult as Result, Error as ParseError};
 use tor_llcrypto::pk::{curve25519, ed25519};
 
-use rand::Rng;
+use rand::RngExt;
 
 /// A builder object used to construct a microdescriptor.
 ///

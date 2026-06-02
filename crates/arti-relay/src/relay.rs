@@ -6,7 +6,6 @@ use std::sync::{Arc, Weak};
 
 use anyhow::Context;
 use tokio::task::JoinSet;
-use tor_proto::RelayChannelAuthMaterial;
 use tracing::debug;
 #[cfg(unix)]
 use tracing::warn;
@@ -27,7 +26,7 @@ use tor_rtcompat::{NetStreamProvider, Runtime};
 use crate::client::RelayClient;
 use crate::config::TorRelayConfig;
 use crate::tasks::channel::build_circ_net_params;
-use crate::tasks::crypto::get_ntor_keys;
+use crate::tasks::crypto::InitKeyMaterial;
 
 /// An initialized but unbootstrapped relay.
 ///
@@ -49,7 +48,6 @@ use crate::tasks::crypto::get_ntor_keys;
 ///
 /// Time will tell if this ends up being a bad design decision in practice, and we can always change
 /// it later.
-#[derive(Clone)]
 pub(crate) struct InertTorRelay {
     /// The configuration options for the relay.
     config: TorRelayConfig,
@@ -75,7 +73,11 @@ pub(crate) struct InertTorRelay {
     /// Location on disk where we store persistent data.
     state_mgr: FsStateMgr,
 
-    /// Key manager holding all relay keys and certificates.
+    /// Key manager. The ownership is shared between the crypto task and the main task
+    /// [`TorRelay`].
+    ///
+    // NOTE: In a future world, would be great if this wouldn't be an Arc<> and we could move it to
+    // the crypto task so nobody has access to it. For now, this is the compromise for simplicity.
     keymgr: Arc<KeyMgr>,
 }
 
@@ -128,10 +130,10 @@ impl InertTorRelay {
     /// Connect the [`InertTorRelay`] to the Tor network.
     pub(crate) async fn init<R: Runtime>(self, runtime: R) -> anyhow::Result<TorRelay<R>> {
         // Attempt to generate any missing keys/cert from the KeyMgr.
-        let auth_material = crate::tasks::crypto::try_generate_keys(&runtime, &self.keymgr)
+        let init_key_material = crate::tasks::crypto::init_keys(&runtime, Arc::clone(&self.keymgr))
             .context("Failed to generate keys")?;
 
-        TorRelay::init(runtime, self, auth_material).await
+        TorRelay::init(runtime, self, init_key_material).await
     }
 
     /// Create the [key manager](KeyMgr).
@@ -196,7 +198,7 @@ impl<R: Runtime> TorRelay<R> {
     async fn init(
         runtime: R,
         inert: InertTorRelay,
-        auth_material: RelayChannelAuthMaterial,
+        init_key_material: InitKeyMaterial,
     ) -> anyhow::Result<Self> {
         let memquota = MemoryQuotaTracker::new(&runtime, inert.config.system.memory.clone())
             .context("Failed to initialize memquota tracker")?;
@@ -204,7 +206,7 @@ impl<R: Runtime> TorRelay<R> {
         // Init the channel manager.
         let config = ChanMgrConfig::new(inert.config.channel.clone())
             .with_my_addrs(inert.config.relay.advertise.all_addr())
-            .with_auth_material(Arc::new(auth_material));
+            .with_auth_material(Arc::new(init_key_material.chan_auth_keys));
         let chanmgr = Arc::new(
             ChanMgr::new(
                 runtime.clone(),
@@ -235,12 +237,10 @@ impl<R: Runtime> TorRelay<R> {
             .context("Failed to build circuit parameters for CREATE* request handler")?;
 
         // A handler that will process CREATE* requests on channels.
-        let ntor_keys = get_ntor_keys(&inert.keymgr)
-            .context("Failed to get ntor keys for CREATE* request handler")?;
         let create_request_handler = CreateRequestHandler::new(
             Arc::downgrade(&chanmgr) as Weak<_>,
             circ_net_params,
-            ntor_keys,
+            init_key_material.ntor_keys,
         );
         let create_request_handler = Arc::new(create_request_handler);
 
@@ -258,9 +258,12 @@ impl<R: Runtime> TorRelay<R> {
             .set_create_request_handler(Arc::clone(&create_request_handler))
             .context("Failed to set the CREATE* request handler")?;
 
+        // We don't use any custom options on the listening socket.
+        let listen_options = Default::default();
+
         // An iterator of `listen()` futures with some extra error handling.
         let or_listeners = inert.config.relay.listen.addrs().map(async |addr| {
-            match runtime.listen(addr).await {
+            match runtime.listen(addr, &listen_options).await {
                 Ok(x) => Some(Ok(x)),
                 // If we don't support the address family (typically IPv6), only warn.
                 #[cfg(unix)]
@@ -359,21 +362,20 @@ impl<R: Runtime> TorRelay<R> {
             }
         });
 
-        // Start the key rotation tasks.
+        // Start the crypto task.
         task_handles.spawn({
-            let runtime = self.runtime.clone();
-            let keymgr = self.keymgr.clone();
-            let chanmgr = self.chanmgr.clone();
-            let create_request_handler = Arc::clone(&self.create_request_handler);
+            let reactor = crate::tasks::crypto::Reactor::new(
+                self.runtime.clone(),
+                self.chanmgr.clone(),
+                self.create_request_handler.clone(),
+                self.keymgr,
+                self.client.dirmgr().clone(),
+            )?;
             async {
-                crate::tasks::crypto::rotate_keys_task(
-                    runtime,
-                    keymgr,
-                    chanmgr,
-                    create_request_handler,
-                )
-                .await
-                .context("Failed to run key rotation task")
+                reactor
+                    .run()
+                    .await
+                    .context("Failed to run key rotation task")
             }
         });
 
@@ -409,10 +411,5 @@ impl<R: Runtime> TorRelay<R> {
 
         // We can never get here since a `Void` cannot be constructed.
         void::unreachable(void);
-    }
-
-    /// Access the relay's key manager.
-    pub(crate) fn keymgr(&self) -> &Arc<KeyMgr> {
-        &self.keymgr
     }
 }

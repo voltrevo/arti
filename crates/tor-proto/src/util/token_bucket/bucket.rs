@@ -453,7 +453,7 @@ mod test {
 
     use super::*;
 
-    use rand::Rng;
+    use rand::RngExt;
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct MillisTimestamp(u64);

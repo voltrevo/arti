@@ -1,2 +1,0 @@
-BREAKING: Removed flatten().
-

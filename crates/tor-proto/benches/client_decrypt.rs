@@ -1,5 +1,5 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main, measurement::Measurement};
-use rand::Rng;
+use rand::RngExt;
 
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
 use criterion::measurement::WallTime as Meas;

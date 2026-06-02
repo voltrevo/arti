@@ -9,7 +9,7 @@ use crate::Result;
 use super::{
     CongestionControlAlgorithm, CongestionSignals, CongestionWindow, State,
     params::{Algorithm, FixedWindowParams},
-    rtt::RoundtripTimeEstimator,
+    rtt::{ClockStall, RoundtripTimeEstimator},
     sendme::{self, WindowParams},
 };
 
@@ -65,6 +65,7 @@ impl CongestionControlAlgorithm for FixedWindow {
         _state: &mut State,
         _rtt: &mut RoundtripTimeEstimator,
         _signals: CongestionSignals,
+        _clock_stall: ClockStall,
     ) -> Result<()> {
         self.sendwindow.put()
     }

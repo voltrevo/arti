@@ -20,6 +20,7 @@
 //!   stopping mid-download, the receive buffer was 6,116,738 bytes and the send buffer was
 //!   2,631,062 bytes. This sums to around 8.7 MB of stream data buffered in the kernel, which is
 //!   significantly higher than the current consensus value of `cc_xoff_client`.
+//!   NOTE: Arti's proxy sockets now use fixed-size `DEFAULT_{SEND,RECV}_BUF_SIZE` kernel buffers.
 //!
 //! This means that the total number of bytes buffered before an XOFF is sent can be much larger
 //! than `cc_xoff_client`.
@@ -224,6 +225,25 @@ impl FlowCtrlHooks for XonXoffFlowCtrl {
         trace!("Want to send an XOFF");
 
         Ok(Some(Xoff::new(FlowCtrlVersion::V0)))
+    }
+
+    fn inbound_queue_max_len(&self) -> usize {
+        // Congestion control doesn't have an upper limit for the number of in-flight
+        // cells that the other end might send,
+        // so we need to expect any number of cells on this stream.
+        //
+        // Since dealing with mpsc queues that may be bounded or unbounded is a pain (requires a
+        // bunch of enum wrappers), we'll set a very high bound.
+        // This bound should be high enough that we'll never reach it in practice
+        // (and if we do, it's surely a bug or an attack),
+        // but not too high as to cause `futures_channel::mpsc::channel()` to panic.
+        //
+        // Here we choose a max of 2_000_000 messages,
+        // which is approx 1000 MB of stream data (assuming packed cells).
+        //
+        // TODO(arti#2540): We should use an unbounded queue for XON/XOFF flow control,
+        // and should return `None` here.
+        2_000_000
     }
 }
 

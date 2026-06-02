@@ -229,7 +229,7 @@ impl<R: Runtime> TorClientBuilder<R> {
     /// Use [`create_unbootstrapped_async`](Self::create_unbootstrapped_async)
     /// if that is not what you want.
     #[instrument(skip_all, level = "trace")]
-    pub fn create_unbootstrapped(&self) -> Result<TorClient<R>> {
+    pub fn create_unbootstrapped(&self) -> Result<Arc<TorClient<R>>> {
         let timeout = self.local_resource_timeout_or(Duration::from_millis(0))?;
         let give_up_at = Instant::get() + timeout;
         let mut first_attempt = true;
@@ -251,7 +251,7 @@ impl<R: Runtime> TorClientBuilder<R> {
     /// delay a short while (currently 500 msec) for local resources (such as lock files) to be available.
     /// Set `local_resource_timeout` to 0 if you do not want this behavior.
     #[instrument(skip_all, level = "trace")]
-    pub async fn create_unbootstrapped_async(&self) -> Result<TorClient<R>> {
+    pub async fn create_unbootstrapped_async(&self) -> Result<Arc<TorClient<R>>> {
         // TODO: This code is largely duplicated from create_unbootstrapped above.  It might be good
         // to have a single shared implementation to handle both the sync and async cases, but I am
         // concerned that doing so would just add a lot of complexity.
@@ -298,7 +298,7 @@ impl<R: Runtime> TorClientBuilder<R> {
         now: F,
         give_up_at: Instant,
         first_attempt: bool,
-    ) -> StdResult<Result<TorClient<R>>, Duration>
+    ) -> StdResult<Result<Arc<TorClient<R>>>, Duration>
     where
         F: FnOnce() -> Instant,
     {
@@ -316,11 +316,11 @@ impl<R: Runtime> TorClientBuilder<R> {
 
         let dirstore = self.dirstore.clone();
 
-        let result: Result<TorClient<R>> = TorClient::create_inner(
+        let result: Result<Arc<TorClient<R>>> = TorClient::create_impl(
             self.runtime.clone(),
             &self.config,
             self.bootstrap_behavior,
-            self.dirmgr_builder.as_ref(),
+            Arc::clone(&self.dirmgr_builder),
             dirmgr_extensions,
             statemgr,
             dirstore,
@@ -352,7 +352,7 @@ impl<R: Runtime> TorClientBuilder<R> {
     }
 
     /// Create a TorClient from this builder, and try to bootstrap it.
-    pub async fn create_bootstrapped(&self) -> Result<TorClient<R>> {
+    pub async fn create_bootstrapped(&self) -> Result<Arc<TorClient<R>>> {
         let r = self.create_unbootstrapped_async().await?;
         r.bootstrap().await?;
         Ok(r)

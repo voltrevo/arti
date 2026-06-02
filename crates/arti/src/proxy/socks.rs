@@ -3,6 +3,7 @@
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, BufReader};
 use safelog::sensitive;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
 use tracing::{debug, instrument, warn};
 
 #[allow(unused)]
@@ -30,7 +31,7 @@ cfg_if::cfg_if! {
         ///
         /// TODO RPC: This is quite ugly; we should do something better.
         /// At least, we should never expose this outside the socks module.
-        type ConnTarget<R> = TorClient<R>;
+        type ConnTarget<R> = Arc<TorClient<R>>;
     }
 }
 
@@ -179,7 +180,11 @@ fn interpret_socks_auth(auth: &SocksAuth) -> Result<AuthInterpretation> {
         },
         _ => ProvidedIsolation::LegacySocks(auth.clone()),
     };
-    tracing::debug!("socks auth {:?} -> isolation {:?}", sensitive(&auth), sensitive(&isolation));
+    tracing::debug!(
+        "socks auth {:?} -> isolation {:?}",
+        sensitive(&auth),
+        sensitive(&isolation)
+    );
 
     Ok(AuthInterpretation {
         #[cfg(feature = "rpc")]
@@ -221,7 +226,7 @@ impl<R: Runtime> super::ProxyContext<R> {
 
         let client = self.tor_client.clone();
         #[cfg(feature = "rpc")]
-        let client = ConnTarget::Client(Box::new(client));
+        let client = ConnTarget::Client(Arc::clone(&client));
 
         Ok((prefs, client))
     }

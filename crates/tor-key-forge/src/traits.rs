@@ -1,7 +1,7 @@
 //! All the traits of this crate.
 
 use downcast_rs::{Downcast, impl_downcast};
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 use ssh_key::{
     Algorithm, AlgorithmName,
     private::{Ed25519Keypair, Ed25519PrivateKey, KeypairData, OpaqueKeypair},
@@ -23,9 +23,9 @@ use crate::{
 use std::result::Result as StdResult;
 
 /// A random number generator for generating [`EncodableItem`]s.
-pub trait KeygenRng: RngCore + CryptoRng + EntropicRng {}
+pub trait KeygenRng: Rng + CryptoRng + EntropicRng {}
 
-impl<T> KeygenRng for T where T: RngCore + CryptoRng + EntropicRng {}
+impl<T> KeygenRng for T where T: Rng + CryptoRng + EntropicRng {}
 
 /// A trait for generating fresh keys.
 pub trait Keygen {

@@ -6,7 +6,7 @@ mod outer;
 
 use crate::NetdocBuilder;
 use crate::doc::hsdesc::{IntroAuthType, IntroPointDesc};
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 use tor_bytes::EncodeError;
 use tor_cell::chancell::msg::HandshakeType;
 use tor_cert::{CertEncodeError, CertType, CertifiedKey, Ed25519Cert, EncodedEd25519Cert};
@@ -120,7 +120,7 @@ impl<'a> ClientAuth<'a> {
     /// If `auth_clients` is empty list, there will be no authorized clients.
     ///
     /// This returns `None` if the list of `auth_clients` is `None`.
-    fn new<R: RngCore + CryptoRng>(
+    fn new<R: Rng + CryptoRng>(
         auth_clients: Option<&'a [curve25519::PublicKey]>,
         rng: &mut R,
     ) -> Option<ClientAuth<'a>> {
@@ -130,7 +130,7 @@ impl<'a> ClientAuth<'a> {
         };
 
         // Generate a new `N_hs_desc_enc` descriptor_cookie key for this descriptor.
-        let descriptor_cookie = rand::Rng::random::<[u8; HS_DESC_ENC_NONCE_LEN]>(rng);
+        let descriptor_cookie = rand::RngExt::random::<[u8; HS_DESC_ENC_NONCE_LEN]>(rng);
 
         let secret = curve25519::StaticSecret::random_from_rng(rng);
         let ephemeral_key = HsSvcDescEncKeypair {
@@ -147,7 +147,7 @@ impl<'a> ClientAuth<'a> {
 }
 
 impl<'a> NetdocBuilder for HsDescBuilder<'a> {
-    fn build_sign<R: RngCore + CryptoRng>(self, rng: &mut R) -> Result<String, EncodeError> {
+    fn build_sign<R: Rng + CryptoRng>(self, rng: &mut R) -> Result<String, EncodeError> {
         /// The superencrypted field must be padded to the nearest multiple of 10k bytes
         ///
         /// rend-spec-v3 2.5.1.1
@@ -256,7 +256,7 @@ pub fn create_desc_sign_key_cert(
 impl<'a> HsDesc<'a> {
     /// Encrypt the specified plaintext using the algorithm described in section
     /// `[HS-DESC-ENCRYPTION-KEYS]` of rend-spec-v3.txt.
-    fn encrypt_field<R: RngCore + CryptoRng>(
+    fn encrypt_field<R: Rng + CryptoRng>(
         &self,
         rng: &mut R,
         plaintext: &[u8],
@@ -338,7 +338,7 @@ mod test {
         }
     }
 
-    pub(super) fn create_intro_point_descriptor<R: RngCore + CryptoRng>(
+    pub(super) fn create_intro_point_descriptor<R: Rng + CryptoRng>(
         rng: &mut R,
         link_specifiers: &[LinkSpec],
     ) -> IntroPointDesc {
@@ -357,9 +357,7 @@ mod test {
     }
 
     /// Create a new curve25519 public key.
-    pub(super) fn create_curve25519_pk<R: RngCore + CryptoRng>(
-        rng: &mut R,
-    ) -> curve25519::PublicKey {
+    pub(super) fn create_curve25519_pk<R: Rng + CryptoRng>(rng: &mut R) -> curve25519::PublicKey {
         let ephemeral_key = curve25519::EphemeralSecret::random_from_rng(rng);
         (&ephemeral_key).into()
     }

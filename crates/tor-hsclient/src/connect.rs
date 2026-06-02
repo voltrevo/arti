@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use educe::Educe;
 use futures::{AsyncRead, AsyncWrite};
 use itertools::Itertools;
-use rand::Rng;
+use rand::RngExt;
 use tor_bytes::Writeable;
 use tor_cell::relaycell::hs::IntroduceAckStatus;
 use tor_cell::relaycell::hs::intro_payload::{self, IntroduceHandshakePayload};

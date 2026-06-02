@@ -13,7 +13,11 @@ use tor_llcrypto::rng::EntropicRng;
 /// Note: `blind_id_kp` is the blinded hidden service signing keypair used to sign descriptor
 /// signing keys (KP_hs_blind_id, KS_hs_blind_id).
 #[allow(clippy::too_many_arguments)]
-pub(super) fn build_sign<Rng: RngCore + CryptoRng, KeyRng: RngCore + EntropicRng, R: Runtime>(
+pub(super) fn build_sign<
+    Rng: rand::Rng + CryptoRng,
+    KeyRng: rand::Rng + EntropicRng,
+    R: Runtime,
+>(
     keymgr: &Arc<KeyMgr>,
     pow_manager: &Arc<PowManager<R>>,
     config: &Arc<OnionServiceConfigPublisherView>,

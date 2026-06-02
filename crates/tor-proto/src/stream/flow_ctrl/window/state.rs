@@ -7,8 +7,8 @@ use tor_cell::relaycell::{RelayCmd, RelayMsg, UnparsedRelayMsg};
 use crate::congestion::sendme::{
     self, StreamRecvWindow, StreamSendWindow, cmd_counts_towards_windows,
 };
-use crate::stream::RECV_WINDOW_INIT;
 use crate::stream::flow_ctrl::state::{FlowCtrlHooks, HalfStreamFlowCtrlHooks};
+use crate::stream::{RECV_WINDOW_INIT, STREAM_READER_BUFFER};
 use crate::{Error, Result};
 
 #[cfg(doc)]
@@ -73,6 +73,12 @@ impl FlowCtrlHooks for WindowFlowCtrl {
     fn maybe_send_xoff(&mut self, _buffer_len: usize) -> Result<Option<Xoff>> {
         let msg = "XOFF messages cannot be sent with window flow control";
         Err(Error::CircProto(msg.into()))
+    }
+
+    fn inbound_queue_max_len(&self) -> usize {
+        // SENDME-window flow control sets a maximum number of inflight DATA cells,
+        // so there's an upper limit to the number of cells we typically expect on the stream
+        STREAM_READER_BUFFER
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "fs-mistrust"
-version = "0.14.1"
+version = "0.14.2"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -22,6 +22,7 @@ derive_builder = { version = "0.11", package = "derive_builder_fork_arti" }
 dirs = { version = "6", optional = true }
 serde = { version = "1.0.103", features = ["derive"], optional = true }
 thiserror = "2"
+void = "1"
 walkdir = { version = "2", optional = true }
 
 [dev-dependencies]

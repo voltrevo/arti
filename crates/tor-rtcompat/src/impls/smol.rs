@@ -5,6 +5,9 @@
 /// Types used for networking (smol implementation).
 pub(crate) mod net {
     use super::SmolRuntime;
+    use crate::network::TcpListenOptions;
+    #[cfg(unix)]
+    use crate::network::UnixListenOptions;
     use crate::{impls, traits};
     use async_trait::async_trait;
     use futures::stream::{self, Stream};
@@ -75,18 +78,23 @@ pub(crate) mod net {
     impl traits::NetStreamProvider<SocketAddr> for SmolRuntime {
         type Stream = TcpStream;
         type Listener = TcpListener;
+        type ListenOptions = TcpListenOptions;
 
         #[instrument(skip_all, level = "trace")]
         async fn connect(&self, addr: &SocketAddr) -> IoResult<Self::Stream> {
             TcpStream::connect(addr).await
         }
 
-        async fn listen(&self, addr: &SocketAddr) -> IoResult<Self::Listener> {
+        async fn listen(
+            &self,
+            addr: &SocketAddr,
+            options: &Self::ListenOptions,
+        ) -> IoResult<Self::Listener> {
             // Use an implementation that's the same across all runtimes.
             // The socket is already non-blocking, so `Async` doesn't need to set as non-blocking
             // again. If it *were* to be blocking, then I/O operations would block in async
             // contexts, which would lead to deadlocks.
-            Ok(Async::new_nonblocking(impls::tcp_listen(addr)?)?.into())
+            Ok(Async::new_nonblocking(impls::tcp_listen(addr, options)?)?.into())
         }
     }
 
@@ -95,6 +103,7 @@ pub(crate) mod net {
     impl traits::NetStreamProvider<unix::SocketAddr> for SmolRuntime {
         type Stream = UnixStream;
         type Listener = UnixListener;
+        type ListenOptions = UnixListenOptions;
 
         #[instrument(skip_all, level = "trace")]
         async fn connect(&self, addr: &unix::SocketAddr) -> IoResult<Self::Stream> {
@@ -104,7 +113,14 @@ pub(crate) mod net {
             UnixStream::connect(path).await
         }
 
-        async fn listen(&self, addr: &unix::SocketAddr) -> IoResult<Self::Listener> {
+        async fn listen(
+            &self,
+            addr: &unix::SocketAddr,
+            options: &Self::ListenOptions,
+        ) -> IoResult<Self::Listener> {
+            // Will fail to compile if we add options without handling them here.
+            let UnixListenOptions {} = options;
+
             let path = addr
                 .as_pathname()
                 .ok_or(crate::unix::UnsupportedAfUnixAddressType)?;

@@ -144,8 +144,8 @@ impl History {
         let mut observations = iter
             .take(TIME_HISTORY_LEN) // limit number of bins
             .flat_map(|(dur, n)| std::iter::repeat_n(dur, n as usize))
-            .choose_multiple(&mut rng, TIME_HISTORY_LEN);
-        // IteratorRand::choose_multiple doesn't guarantee anything about the order of its output.
+            .sample(&mut rng, TIME_HISTORY_LEN);
+        // IteratorRand::sample doesn't guarantee anything about the order of its output.
         observations.shuffle(&mut rng);
 
         let mut result = History::new_empty();
@@ -1026,14 +1026,14 @@ mod test {
     }
 
     #[test]
-    fn validate_iterator_choose_multiple() {
-        // The documentation for IteratorRandom::choose_multiple says that it
+    fn validate_iterator_sample() {
+        // The documentation for IteratorRandom::sample says that it
         // returns fewer than N elements if the iterators has fewer than N elements.
         // But rand has changed behavior in the past, so let's make sure this doesn't
         // change in the future.
         use rand::seq::IteratorRandom as _;
         let mut rng = testing_rng();
-        let mut ten_elements = (1..=10).choose_multiple(&mut rng, 100);
+        let mut ten_elements = (1..=10).sample(&mut rng, 100);
         ten_elements.sort();
         assert_eq!(ten_elements.len(), 10);
         assert_eq!(ten_elements, (1..=10).collect::<Vec<_>>());

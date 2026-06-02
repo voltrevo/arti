@@ -17,6 +17,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
+use tor_chanmgr::ProxyProtocol;
 use tor_config_path::CfgPathResolver;
 use tor_error::internal;
 use tor_linkspec::PtTransportName;
@@ -209,9 +210,9 @@ impl<R: Runtime> PtReactor<R> {
                             }
                         }
                         // We don't, so time to spawn one.
-                        let config = {
+                        let (config, outbound_proxy) = {
                             let state = self.state.read().expect("ptmgr state poisoned");
-                            state.configured.get(&pt).cloned()
+                            (state.configured.get(&pt).cloned(), state.outbound_proxy.clone())
                         };
 
                         let Some(config) = config else {
@@ -237,7 +238,8 @@ impl<R: Runtime> PtReactor<R> {
                                 self.rt.clone(),
                                 self.state_dir.clone(),
                                 config.clone(),
-                                Arc::clone(&self.path_resolver)
+                                Arc::clone(&self.path_resolver),
+                                outbound_proxy,
                             )
                             .map(|result| (config.protocols, result))
                         );
@@ -257,6 +259,7 @@ async fn spawn_from_config<R: Runtime>(
     state_dir: PathBuf,
     cfg: ManagedTransportOptions,
     path_resolver: Arc<CfgPathResolver>,
+    outbound_proxy: Option<ProxyProtocol>,
 ) -> Result<PluggableClientTransport, PtError> {
     // FIXME(eta): I really think this expansion should happen at builder validation time...
 
@@ -285,8 +288,11 @@ async fn spawn_from_config<R: Runtime>(
         .build()
         .expect("PtCommonParameters constructed incorrectly");
 
+    // The PT spec defines `TOR_PT_PROXY` as a URI, so we only render the
+    // structured `ProxyProtocol` to a string at this boundary.
     let pt_client_params = PtClientParameters::builder()
         .transports(cfg.protocols)
+        .proxy_uri(outbound_proxy.as_ref().map(ToString::to_string))
         .build()
         .expect("PtClientParameters constructed incorrectly");
 

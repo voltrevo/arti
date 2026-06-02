@@ -78,13 +78,13 @@ impl ArtiRpcSession {
     /// The session receives a new isolated TorClient, based on `client_root`.
     pub(super) fn new<R: Runtime>(
         auth: &RpcAuthentication,
-        client_root: &TorClient<R>,
+        client_root: &Arc<TorClient<R>>,
         arti_state: &Arc<RpcVisibleArtiState>,
         listener_info: &RpcConnInfo,
     ) -> Arc<Self> {
         let _ = auth; // This is currently unused; any authentication gives the same result.
         let client = client_root.isolated_client();
-        let session = arti_rpcserver::RpcSession::new_with_client(Arc::new(client));
+        let session = arti_rpcserver::RpcSession::new_with_client(client);
         if listener_info.allow_superuser == SuperuserPermission::Allowed {
             session.provide_superuser_permission(Arc::new(RpcSuperuser::new(client_root.clone())) as _);
         }

@@ -20,16 +20,20 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::iter::FromIterator;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use itertools::Itertools;
 
 use crate::AnonymizedRequest;
+use crate::body::RequestBody;
 use crate::err::RequestError;
 
 /// Declare an inaccessible public type.
 pub(crate) mod sealed {
     use tor_circmgr::ClientDirTunnel;
+
+    use crate::body::RequestBody;
 
     use super::{AnonymizedRequest, Result};
 
@@ -41,14 +45,7 @@ pub(crate) mod sealed {
     pub trait RequestableInner: Send + Sync {
         /// Build an [`http::Request`] from this Requestable, if
         /// it is well-formed.
-        //
-        // TODO: This API is a bit troublesome in how it takes &self and
-        // returns a Request<String>.  First, most Requestables don't actually have
-        // a body to send, and for them having an empty String in their body is a
-        // bit silly.  Second, taking a reference to self but returning an owned
-        // String means that we will often have to clone an internal string owned by
-        // this Requestable instance.
-        fn make_request(&self) -> Result<http::Request<String>>;
+        fn make_request(&self) -> Result<http::Request<RequestBody>>;
 
         /// Return true if partial response bodies are potentially useful.
         ///
@@ -99,6 +96,23 @@ pub struct DisplayRequestable<'a, R: Requestable>(&'a R);
 impl<'a, R: Requestable> std::fmt::Debug for DisplayRequestable<'a, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0.make_request())
+    }
+}
+
+impl sealed::RequestableInner for Arc<dyn Requestable> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
+        let r: &dyn Requestable = self.as_ref();
+        r.make_request()
+    }
+
+    fn partial_response_body_ok(&self) -> bool {
+        let r: &dyn Requestable = self.as_ref();
+        r.partial_response_body_ok()
+    }
+
+    fn anonymized(&self) -> AnonymizedRequest {
+        let r: &dyn Requestable = self.as_ref();
+        r.anonymized()
     }
 }
 
@@ -241,7 +255,7 @@ impl Default for ConsensusRequest {
 }
 
 impl sealed::RequestableInner for ConsensusRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         // Build the URL.
         let mut uri = "/tor/status-vote/current/consensus".to_string();
         match self.flavor {
@@ -275,7 +289,7 @@ impl sealed::RequestableInner for ConsensusRequest {
             req = req.header("X-Or-Diff-From-Consensus", &ids);
         }
 
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -333,7 +347,7 @@ impl AuthCertRequest {
 }
 
 impl sealed::RequestableInner for AuthCertRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         if self.ids.is_empty() {
             return Err(RequestError::EmptyRequest);
         }
@@ -356,7 +370,7 @@ impl sealed::RequestableInner for AuthCertRequest {
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
 
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -407,7 +421,7 @@ impl MicrodescRequest {
 }
 
 impl sealed::RequestableInner for MicrodescRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         let d_encode_b64 = |d: &[u8; 32]| Base64Unpadded::encode_string(&d[..]);
         let ids = digest_list_stringify(&self.digests, d_encode_b64, "-")
             .ok_or(RequestError::EmptyRequest)?;
@@ -416,7 +430,7 @@ impl sealed::RequestableInner for MicrodescRequest {
 
         let req = add_common_headers(req, self.anonymized());
 
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -487,7 +501,7 @@ impl RouterDescRequest {
 
 #[cfg(feature = "routerdesc")]
 impl sealed::RequestableInner for RouterDescRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         let mut uri = "/tor/server/".to_string();
 
         match self.requested_descriptors {
@@ -505,7 +519,7 @@ impl sealed::RequestableInner for RouterDescRequest {
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
 
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -555,12 +569,12 @@ impl RoutersOwnDescRequest {
 
 #[cfg(feature = "routerdesc")]
 impl sealed::RequestableInner for RoutersOwnDescRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         let uri = "/tor/server/authority";
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
 
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -627,7 +641,7 @@ impl ExtraInfoRequest {
 
 #[cfg(feature = "routerdesc")]
 impl sealed::RequestableInner for ExtraInfoRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         let mut uri = "/tor/extra/".to_string();
 
         match &self.requested_extra_infos {
@@ -642,7 +656,7 @@ impl sealed::RequestableInner for ExtraInfoRequest {
 
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -708,14 +722,14 @@ impl HsDescDownloadRequest {
 
 #[cfg(feature = "hs-client")]
 impl sealed::RequestableInner for HsDescDownloadRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
+    fn make_request(&self) -> Result<http::Request<RequestBody>> {
         let hsid = Base64Unpadded::encode_string(self.hsid.as_ref());
         // We hardcode version 3 here; if we ever have a v4 onion service
         // descriptor, it will need a different kind of Request.
         let uri = format!("/tor/hs/3/{}", hsid);
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
-        Ok(req.body(String::new())?)
+        Ok(req.body(RequestBody::default())?)
     }
 
     fn partial_response_body_ok(&self) -> bool {
@@ -731,50 +745,93 @@ impl sealed::RequestableInner for HsDescDownloadRequest {
     }
 }
 
-/// A request to upload a hidden service descriptor
-///
-/// rend-spec-v3 2.2.6
-#[derive(Debug, Clone)]
-#[cfg(feature = "hs-service")]
-pub struct HsDescUploadRequest(String);
+/// Define a request type for uploading a document.
+#[allow(unused)]
+macro_rules! upload_request {
+    {
+        $(
+            $(#[$m:meta])*
+            pub struct $t:ident (
+                // Does this request require anonymity?
+                // This should be a variant of AnonymizedRequest.
+                $anonymity:ident,
+                // To what URI at the server should the document be posted?
+                // This should begin with "/tor">
+                $uri:expr,
+                // Total maximum length of the _response_ that we'll accept.
+                // If the response is larger than this, we'll abort the request.
+                //
+                // Note that expected response body for a POST is typically _empty_,
+                // but this needs to be nonzero in order to account for
+                // the status line and headers.
+                $max_response_len:expr
+            )
+        );*
+        $(;)?
+    } => {
+        $(
+            $(#[$m])*
+            #[derive(Clone, Debug)]
+            pub struct $t(Arc<str>);
 
-#[cfg(feature = "hs-service")]
-impl HsDescUploadRequest {
-    /// Construct a request for uploading a single onion service descriptor.
-    pub fn new(hsdesc: String) -> Self {
-        HsDescUploadRequest(hsdesc)
+            impl $t {
+                /// Create a new upload request
+                pub fn new(document: Arc<str>) -> Self {
+                    Self(document)
+                }
+            }
+
+            impl sealed::RequestableInner for $t {
+                fn make_request(&self) -> Result<http::Request<RequestBody>> {
+                    /// The upload URI.
+                    const URI: &str = $uri;
+
+                    let req = http::Request::builder().method("POST").uri(URI);
+                    let req = add_common_headers(req, self.anonymized());
+                    Ok(req.body(RequestBody::from(Arc::clone(&self.0)))?)
+                }
+
+                fn partial_response_body_ok(&self) -> bool {
+                    false
+                }
+
+                fn max_response_len(&self) -> usize {
+                    $max_response_len
+                }
+
+                fn anonymized(&self) -> AnonymizedRequest {
+                    AnonymizedRequest::$anonymity
+                }
+            }
+         )*
     }
 }
 
 #[cfg(feature = "hs-service")]
-impl sealed::RequestableInner for HsDescUploadRequest {
-    fn make_request(&self) -> Result<http::Request<String>> {
-        /// The upload URI.
-        const URI: &str = "/tor/hs/3/publish";
+upload_request! {
 
-        let req = http::Request::builder().method("POST").uri(URI);
-        let req = add_common_headers(req, self.anonymized());
-        Ok(req.body(self.0.clone())?)
-    }
-
-    fn partial_response_body_ok(&self) -> bool {
-        false
-    }
-
-    fn max_response_len(&self) -> usize {
-        // We expect the response _body_ to be empty, but the max_response_len
-        // is not zero because it represents the _total_ length of the response
-        // (which includes the length of the status line and headers).
-        //
-        // A real Tor POST response will always be less than that length, which
+    /// A request to upload a hidden service descriptor
+    ///
+    /// rend-spec-v3 2.2.6
+    pub struct HsDescUploadRequest(
+        Anonymized,
+        "/tor/hs/3/publish",
+        // A real Tor POST _response_ will always be less than this length, which
         // will fit into 3 DATA messages at most. (The reply will be a single
         // HTTP line, followed by a Date header.)
+        // Do not increase this limit without thinking about side channels!
+        //
+        // (Note that the body will be empty, but we need to allow some space
+        // to account for the status line and headers.)
         1024
-    }
+    )
+}
 
-    fn anonymized(&self) -> AnonymizedRequest {
-        AnonymizedRequest::Anonymized
-    }
+#[cfg(feature = "relay")]
+upload_request! {
+    /// A request to upload a router descriptor and optional extra-info document.
+    pub struct UploadRouterDesc(Direct, "/tor/", 4096);
+
 }
 
 /// Encodings that all Tor clients support.
@@ -845,7 +902,7 @@ mod test {
         assert!(req.partial_response_body_ok());
         assert_eq!(req.max_response_len(), 16 << 10);
 
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
 
         assert_eq!(
             req,
@@ -859,7 +916,7 @@ mod test {
         let req2: MicrodescRequest = vec![*d1, *d2].into_iter().collect();
         let ds: Vec<_> = req2.digests().collect();
         assert_eq!(ds, vec![d1, d2]);
-        let req2 = crate::util::encode_request(&req2.make_request()?);
+        let req2 = crate::util::request_to_string(&req2.make_request()?);
         assert_eq!(req, req2);
 
         Ok(())
@@ -891,7 +948,7 @@ mod test {
         let keys: Vec<_> = req.keys().collect();
         assert_eq!(keys, vec![&key1, &key2]);
 
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
 
         assert_eq!(
             req,
@@ -902,7 +959,7 @@ mod test {
         );
 
         let req2: AuthCertRequest = vec![key1, key2].into_iter().collect();
-        let req2 = crate::util::encode_request(&req2.make_request()?);
+        let req2 = crate::util::request_to_string(&req2.make_request()?);
         assert_eq!(req, req2);
 
         Ok(())
@@ -930,7 +987,7 @@ mod test {
         assert_eq!(req.authority_ids().next(), Some(&d1));
         assert_eq!(req.last_consensus_date(), Some(d3));
 
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
 
         assert_eq!(
             req,
@@ -943,7 +1000,7 @@ mod test {
 
         // Request without authorities
         let req = ConsensusRequest::default();
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
         assert_eq!(
             req,
             format!(
@@ -962,7 +1019,7 @@ mod test {
         assert!(req.partial_response_body_ok());
         assert_eq!(req.max_response_len(), 1 << 26);
 
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
 
         assert_eq!(
             req,
@@ -993,7 +1050,7 @@ mod test {
         assert!(req.partial_response_body_ok());
         assert_eq!(req.max_response_len(), 16 << 10);
 
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
 
         assert_eq!(
             req,
@@ -1010,7 +1067,7 @@ mod test {
             RequestedDescs::AllDescriptors => Vec::new(),
         };
         assert_eq!(ds, vec![d1, d2]);
-        let req2 = crate::util::encode_request(&req2.make_request()?);
+        let req2 = crate::util::request_to_string(&req2.make_request()?);
         assert_eq!(req, req2);
         Ok(())
     }
@@ -1020,7 +1077,7 @@ mod test {
     fn test_extra_info_request() -> Result<()> {
         let req = ExtraInfoRequest::from_iter([[0; 20], [1; 20], [2; 20]]);
         assert_eq!(
-            crate::util::encode_request(&req.make_request()?),
+            crate::util::request_to_string(&req.make_request()?),
             format!(
                 "GET /tor/extra/d/{}+{}+{} HTTP/1.0\r\naccept-encoding: {}\r\n\r\n",
                 hex::encode_upper([0; 20]),
@@ -1032,7 +1089,7 @@ mod test {
 
         let req = ExtraInfoRequest::all();
         assert_eq!(
-            crate::util::encode_request(&req.make_request()?),
+            crate::util::request_to_string(&req.make_request()?),
             format!(
                 "GET /tor/extra/all HTTP/1.0\r\naccept-encoding: {}\r\n\r\n",
                 all_encodings()
@@ -1052,7 +1109,7 @@ mod test {
         assert!(!req.partial_response_body_ok());
         assert_eq!(req.max_response_len(), 50 * 1000);
 
-        let req = crate::util::encode_request(&req.make_request()?);
+        let req = crate::util::request_to_string(&req.make_request()?);
 
         assert_eq!(
             req,

@@ -26,7 +26,6 @@
 use std::time::{Duration, SystemTime};
 
 use crate::{Error, HsDirs, Result, params::NetParameters};
-use time::{OffsetDateTime, UtcOffset};
 use tor_hscrypto::time::TimePeriod;
 use tor_netdoc::doc::netstatus::{MdConsensus, SharedRandVal};
 
@@ -62,9 +61,6 @@ const VOTING_PERIODS_IN_OFFSET: u32 = 12;
 ///
 /// We use this to compute an SRV lifetime if one of the SRV values is missing.
 const VOTING_PERIODS_IN_SRV_ROUND: u32 = 24;
-
-/// One day.
-const ONE_DAY: Duration = Duration::new(86400, 0);
 
 impl HsDirParams {
     /// Return the time period for which these parameters are valid.
@@ -124,7 +120,7 @@ impl HsDirParams {
         consensus: &MdConsensus,
         params: &NetParameters,
     ) -> Result<HsDirs<HsDirParams>> {
-        let srvs = extract_srvs(consensus);
+        let srvs = extract_srvs(consensus)?;
         let tp_length: Duration = params.hsdir_timeperiod_length.try_into().map_err(|_| {
             // Note that this error should be impossible:
             // The type of hsdir_timeperiod_length() is IntegerMinutes<BoundedInt32<30, 14400>>...
@@ -226,27 +222,28 @@ fn find_srv_for_time(info: &[SrvInfo], when: SystemTime) -> Option<&SrvInfo> {
 
 /// Return every SRV from a consensus, along with a duration over which it is
 /// most recent SRV.
-fn extract_srvs(consensus: &MdConsensus) -> Vec<SrvInfo> {
+fn extract_srvs(consensus: &MdConsensus) -> Result<Vec<SrvInfo>> {
     let mut v = Vec::new();
-    let consensus_ts = consensus.lifetime().valid_after();
     let srv_interval = srv_interval(consensus);
 
     if let Some(cur) = consensus.shared_rand_cur() {
         let ts_begin = cur
             .timestamp()
-            .unwrap_or_else(|| start_of_day_containing(consensus_ts));
+            .map(Ok)
+            .unwrap_or_else(|| start_of_sr_round(consensus))?;
         let ts_end = ts_begin + srv_interval;
         v.push((*cur.value(), ts_begin..ts_end));
     }
     if let Some(prev) = consensus.shared_rand_prev() {
         let ts_begin = prev
             .timestamp()
-            .unwrap_or_else(|| start_of_day_containing(consensus_ts) - ONE_DAY);
+            .map(Ok)
+            .unwrap_or_else(|| start_of_sr_round(consensus).map(|t| t - srv_interval))?;
         let ts_end = ts_begin + srv_interval;
         v.push((*prev.value(), ts_begin..ts_end));
     }
 
-    v
+    Ok(v)
 }
 
 /// Return the length of time for which a single SRV value is valid.
@@ -270,16 +267,33 @@ fn srv_interval(consensus: &MdConsensus) -> Duration {
     consensus.lifetime().voting_period() * VOTING_PERIODS_IN_SRV_ROUND
 }
 
-/// Return the length of the voting period in the consensus.
+/// Return the start time of the current SR protocol run
+/// of the specified `consensus`.
 ///
-/// (The "voting period" is the length of time between between one consensus and the next.)
+/// If a full SR protocol run is 24 hours, this function returns
+/// the start of the UTC day containing the `valid-after` timestamp
+/// of the consensus.
 ///
-/// Return a time at the start of the UTC day containing `t`.
-fn start_of_day_containing(t: SystemTime) -> SystemTime {
-    OffsetDateTime::from(t)
-        .to_offset(UtcOffset::UTC)
-        .replace_time(time::macros::time!(00:00))
-        .into()
+/// Corresponds to C Tor's `sr_state_get_start_time_of_current_protocol_run()`.
+fn start_of_sr_round(consensus: &MdConsensus) -> Result<SystemTime> {
+    let t = consensus.lifetime().valid_after();
+    let beginning_of_curr_round = t
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|_| Error::InvalidConsensus("consensus valid-after is before Unix epoch?!"))?
+        .as_secs();
+    let voting_interval = consensus.lifetime().voting_period().as_secs();
+
+    // The voting_interval is always going to be greater than 0,
+    // because the Lifetime's constructor enforces that
+    // valid_after < fresh_until < valid_until.
+    debug_assert!(voting_interval > 0);
+
+    let curr_round_slot =
+        (beginning_of_curr_round / voting_interval) % u64::from(VOTING_PERIODS_IN_SRV_ROUND);
+    let time_elapsed_since_start_of_run = curr_round_slot * voting_interval;
+
+    let offset = Duration::from_secs(beginning_of_curr_round - time_elapsed_since_start_of_run);
+    Ok(SystemTime::UNIX_EPOCH + offset)
 }
 
 #[cfg(test)]
@@ -345,19 +359,41 @@ mod test {
     }
 
     #[test]
-    fn start_of_day() {
-        assert_eq!(
-            start_of_day_containing(t("1985-10-25T07:00:00Z")),
-            t("1985-10-25T00:00:00Z")
-        );
-        assert_eq!(
-            start_of_day_containing(t("1985-10-25T00:00:00Z")),
-            t("1985-10-25T00:00:00Z")
-        );
-        assert_eq!(
-            start_of_day_containing(t("1985-10-25T23:59:59.999Z")),
-            t("1985-10-25T00:00:00Z")
-        );
+    fn invalid_lifetime() {
+        let lifetimes = [
+            // (valid_after, fresh_until, valid_until)
+            //
+            // Invalid because valid_after >= fresh_until
+            (
+                "2015-04-20T00:00:00Z",
+                "2015-04-20T00:00:00Z",
+                "2015-04-22T00:00:00Z",
+            ),
+            (
+                "2015-04-21T00:00:00Z",
+                "2015-04-20T00:00:00Z",
+                "2015-04-22T00:00:00Z",
+            ),
+            // Invalid because fresh_until >= valid_until
+            (
+                "2015-04-20T00:00:00Z",
+                "2015-04-22T00:00:00Z",
+                "2015-04-22T00:00:00Z",
+            ),
+            (
+                "2015-04-20T00:00:00Z",
+                "2015-04-23T00:00:00Z",
+                "2015-04-22T00:00:00Z",
+            ),
+        ];
+
+        for (valid_after, fresh_until, valid_until) in lifetimes {
+            let err = Lifetime::new(t(valid_after), t(fresh_until), t(valid_until))
+                .unwrap_err()
+                .netdoc_error_kind();
+
+            assert_eq!(err, tor_netdoc::NetdocErrorKind::InvalidLifetime);
+        }
     }
 
     #[test]
@@ -400,7 +436,7 @@ mod test {
     #[test]
     fn srvs_extract_and_find() {
         let consensus = example_consensus_builder().testing_consensus().unwrap();
-        let srvs = extract_srvs(&consensus);
+        let srvs = extract_srvs(&consensus).unwrap();
         assert_eq!(
             srvs,
             vec![
@@ -425,7 +461,7 @@ mod test {
             .shared_rand_cur(7, SRV2.into(), Some(t("1985-10-25T06:00:05Z")))
             .testing_consensus()
             .unwrap();
-        let srvs = extract_srvs(&consensus);
+        let srvs = extract_srvs(&consensus).unwrap();
         assert_eq!(
             srvs,
             vec![
@@ -578,5 +614,82 @@ mod test {
             params.offset_within_srv_period(after_srv_period).unwrap(),
             SrvPeriodOffset::from((25 * 60 + 19) * 60)
         );
+    }
+
+    #[test]
+    fn start_of_sr_protocol_run() {
+        let test_cases = [
+            // (valid_after, fresh_until, expected_sr_start, expected_srv_interval)
+            //
+            // Voting interval = 1h
+            // The start of the current SR run is always the start
+            // of the day of valid-after of the consensus.
+            // An SRV protocol run takes 1h * 24 rounds = 24h
+            (
+                "2015-04-20T00:00:00Z",
+                "2015-04-20T01:00:00Z",
+                "2015-04-20T00:00:00Z",
+                "24 hours",
+            ),
+            (
+                "2015-04-20T22:00:00Z",
+                "2015-04-20T23:00:00Z",
+                "2015-04-20T00:00:00Z",
+                "24 hours",
+            ),
+            (
+                "2015-04-19T23:00:00Z",
+                "2015-04-20T00:00:00Z",
+                "2015-04-19T00:00:00Z",
+                "24 hours",
+            ),
+            // Voting interval = 10s
+            // An SRV protocol run takes 10s * 24 rounds = 4 mins
+            (
+                "2015-04-20T00:15:30Z",
+                "2015-04-20T00:15:40Z",
+                "2015-04-20T00:12:00Z",
+                "4 minutes",
+            ),
+            // Voting interval = 20s
+            // An SRV protocol run takes 20s * 24 rounds = 8 mins
+            (
+                "2015-04-20T00:15:00Z",
+                "2015-04-20T00:15:20Z",
+                "2015-04-20T00:08:00Z",
+                "8 minutes",
+            ),
+            (
+                "2015-04-20T00:15:30Z",
+                "2015-04-20T00:15:50Z",
+                "2015-04-20T00:08:10Z",
+                "8 minutes",
+            ),
+        ];
+
+        for (valid_after, fresh_until, expected_start, expected_interval) in test_cases {
+            let lifetime = Lifetime::new(
+                t(valid_after),
+                t(fresh_until),
+                // The valid-until doesn't matter for the purposes of this test
+                t("2020-10-25T10:00:00Z"),
+            )
+            .unwrap();
+
+            let consensus = example_consensus_builder()
+                .lifetime(lifetime)
+                .testing_consensus()
+                .unwrap();
+            let sr_start = start_of_sr_round(&consensus).unwrap();
+
+            assert_eq!(
+                t(expected_start),
+                sr_start,
+                "{expected_start} != {} (valid-after = {valid_after}, fresh-until = {fresh_until})",
+                humantime::format_rfc3339(sr_start)
+            );
+
+            assert_eq!(d(expected_interval), srv_interval(&consensus));
+        }
     }
 }

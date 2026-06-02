@@ -60,6 +60,7 @@ mod coarse_time;
 mod compound;
 mod dyn_time;
 pub mod general;
+mod network;
 mod opaque;
 pub mod scheduler;
 mod timer;
@@ -79,6 +80,7 @@ pub use traits::{
 
 pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};
 pub use dyn_time::DynTimeProvider;
+pub use network::{CommonListenOptions, TcpListenOptions, UnixListenOptions};
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 
 /// Traits used to describe TLS connections and objects that can
@@ -519,7 +521,9 @@ mod test {
         let localhost = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0);
         let rt1 = runtime.clone();
 
-        let listener = runtime.block_on(rt1.listen(&(SocketAddr::from(localhost))))?;
+        let listen_options = Default::default();
+        let listener =
+            runtime.block_on(rt1.listen(&(SocketAddr::from(localhost)), &listen_options))?;
         let addr = listener.local_addr()?;
 
         runtime.block_on(async {
@@ -587,8 +591,9 @@ mod test {
         let localhost = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0);
         let rt1 = runtime.clone();
 
+        let listen_options = Default::default();
         let listener = runtime
-            .block_on(rt1.listen(&SocketAddr::from(localhost)))
+            .block_on(rt1.listen(&SocketAddr::from(localhost), &listen_options))
             .unwrap();
         let addr = listener.local_addr().unwrap();
         let mut stream = listener.incoming();
@@ -717,7 +722,8 @@ mod test {
 
         let msg = b"Derse Reviles Him And Outlaws Frogs Wherever They Can";
         runtime.block_on(async move {
-            let listener = runtime.listen(&localhost).await.unwrap();
+            let listen_options = Default::default();
+            let listener = runtime.listen(&localhost, &listen_options).await.unwrap();
             let address = listener.local_addr().unwrap();
 
             let h1 = runtime

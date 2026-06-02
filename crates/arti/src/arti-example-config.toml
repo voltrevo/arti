@@ -61,6 +61,16 @@
 # https://spec.torproject.org/http-connect.html
 #enable_http_connect = true
 
+# The socket buffer sizes (`SO_SNDBUF` and `SO_RCVBUF`) to use for
+# SOCKS and HTTP CONNECT sockets.
+#
+# The defaults are intended to work well for all use cases.
+# If you find that you need to change these options,
+# you may want to open an issue at
+# https://gitlab.torproject.org/tpo/core/arti/-/work_items.
+#socket_send_buf_size = "128 KB"
+#socket_recv_buf_size = "128 KB"
+
 # Configure logging
 [logging]
 
@@ -840,17 +850,3 @@
 # Setting this option to anything other than "auto" or "disabled" when
 # the `vanguards` feature is disabled is a configuration error.
 #mode = "auto"
-
-# Support for overriding Arti's behavior when a required or recommended protocol is missing.
-#
-# Ordinarily, Arti will exit when the consensus says that some protocol is required,
-# and Arti does not support that protocol.  You can override this behavior
-# by listing that protocol here.
-#
-# It is almost always better to upgrade Arti than to use this feature.
-#
-#[use_obsolete_software]
-#
-# A space-separated list of protocols. Protocols have names like "Cons=4" or "Relay=3".
-#
-#ignore_missing_required_protocols = ""

@@ -188,7 +188,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
-    use rand::Rng;
+    use rand::RngExt;
     use tor_basic_utils::test_rng;
 
     #[allow(clippy::nonminimal_bool)]

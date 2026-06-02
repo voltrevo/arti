@@ -3,6 +3,304 @@
 This file describes changes in Arti through the current release.  Once Arti
 is more mature, we may switch to using a separate changelog for each crate.
 
+# Arti 2.4.0 — 1 June 2026
+
+Arti 2.4.0 continues our work on relay and directory authority development,
+and brings us even closer to a working middle relay.
+
+This release also includes a number of important
+bug fixes in our onion service client implementation,
+and a number of breaking changes in the `arti-client` APIs.
+
+As usual, there are also many small changes and improvements which are detailed below.
+
+### Breaking changes
+
+- In `arti-client`, all `TorClient` constructors now return `Arc<TorClient>`,
+  `TorClient` no longer implements `Clone`,
+  `set_stream_prefs` has been removed, and
+  `clone_with_prefs` has been renamed to `with_prefs`.
+  ([!3990])
+- In `arti-client`, the `use_obsolete_software` option has been removed. ([!3995])
+- In `arti-client`, several `experimental-api` methods are now fallible. ([!4011])
+
+### Major features
+- The `flowctl-cc` feature is now marked as stable. ([#2419], [!4014])
+
+### Major bugfixes
+
+- Numerous fixes to the onion service client timeout calculations.
+  ([#2482], [!3940])
+- Fixed a bug where window-based flow control was wrongly being applied
+  to XON/XOFF flow control half-streams. ([#2195], [#2505], [!3941])
+- Fixed a bug causing onion service clients to fail to refetch the service
+  descriptor after introduction failure ([#966], [!3925]).
+
+### Breaking changes in lower-level crates
+
+- Removed `flatten()` from `tor-basic-utils`.
+  `Result::flatten()` provides the same functionality,
+  and has been available in the standard library since Rust 1.89.
+  ([be10d98832cb5ff1])
+- In `tor-netdoc`, `RouterDesc` has been reworked,
+  and several of its functions have been renamed,
+  and now have a different signature.
+  ([!3966], [!3978], [!3976], [!4010], [!4007], [!4003])
+- In `tor-netdoc`, `netstatus::Preamble*` now contain new `SharedRandStatuses`,
+  not individual fields, and `DigestName` `Ord` implementation was corrected
+  to always sort by string representation. ([!3948])
+- In `tor-netdoc`,  `Footer` is renamed to `ConsensusFooterFields`,
+  `Footer.weights` is renamed to `ConsensusFooterFields.bandwidth_weights`,
+  `SignatureGroup` contains `DirectorySignaturesHashesAccu` instead of hash fields,
+  `RouterStatus.weight` contains the new `RelayWeightsItem`. ([!3985], [!3991])
+- In `tor-netdoc`, many undocumented features were removed, and various public APIs
+  have been reworked or removed.
+- In `tor-chanmgr`, the Error type has been refactored; the `ChannelBuild`
+  variant has been renamed to `Connect`, its members have changed,
+  and `Proxy` has been removed. ([!3932])
+- In `tor-config`, `resolve_return_results` now takes a `ConfigResolveOptions`.
+  ([!4001])
+- In `tor-dirclient`, our methods take `RequestBody` instead of `String. ([!3924])
+- In `tor-keymgr`, `KeystoreEntryResult` was removed. ([!3997])
+- In `tor-proto`, `CIRCUIT_BUFFER_SIZE` is no longer public. ([!4009])
+- In `tor-rtcompat`, the `NetStreamProvider` trait has a new `ListenOptions` associated type,
+  the `NetStreamProvider::listen()` trait method requires an additional argument,
+  and the `Runtime` trait requirements has changed. ([!3957])
+- In `tor-key-forge`, `KeygenRng` now has `Rng` as a supertrait.
+- In `tor-config`, `ResolutionResults` is no longer `UnwindSafe` or
+  `RefUnwindSafe`.
+- In `tor-ptmgr`, `PtMgr::new` and `PtMgr::reconfigure` APIs have changed.
+
+
+### Relay development
+
+- New `tor-dirpublish` crate for documents that need to be uploaded
+  to multiple places. ([#2499], [!3924])
+- Fixed a bug causing Arti to miscalculate SRV lifetimes in test networks
+  configured to use a voting interval != 1h. ([#2458], [#2522], [!2458])
+- Added a bare-bones metrics exporter and related configuration. ([!3980])
+- Reworked the key management task to function as a reactor,
+  and to read the ntor key lifetime and grace period from the consensus.
+  ([#2548], [!3919], [!4028])
+- Added logging and tests for DESTROY and TRUNCATE cell handling.
+  ([!4008])
+- Updated the spec to reflect the changes we are making
+  to DESTROY and TRUNCATE handling. ([torspec!490])
+
+### Directory authority development
+
+- Added a note on how votes are computed. ([!3963])
+- In `tor-netdoc`, the `encode` feature is now deprecated;
+  the functionality is now available without enabling a cargo feature.
+  Various empty, undocumented features have been removed. ([#2942], [!3972])
+- Added a new implementation for parsing signature items,
+  and improved the document hashing logic. ([!3937])
+- Completed the vote preamble and authority section enough
+  for consensus calculations. ([!3948])
+- Updated docs and derived various traits for many `tor-netdoc` types,
+  in preparation for implementing router descriptor parsing.
+  ([!3959])
+- Added new elliptic curve certificates types that can be encoded
+  in router descriptors. ([!3939])
+- Implemented encoding for referenced doc digest in rs entries.
+  ([!3989])
+- Added new `bandwidth`, `family_cert`, `master_key_ed25519` fields
+  to `RouterDesc`. ([!4005], [!4007], [!4002])
+- Implemented most of the remaining structural parts of `NetworkStatus`.
+  ([!3985])
+- `CertifiedKey` and `UnrecognizedKey` now derive `Eq` and `PartialEq`.
+  ([!4021])
+- Added support for encoding the `w` line in routerstatus. ([!3991])
+- Added support for encoding votes' `m` items. ([!3998])
+
+### RPC development
+
+- Assigned appropriate `ClientErrorAction`s to a number of new `std::io::ErrorKind`s.
+  ([!3945])
+- The `TorClient` constructors now return `Arc<TorClient>`,
+  which will enable our RPC implementation to hold weak references to it.
+  ([#2469], [!3990])
+- Configuration refactoring, in preparation for future RPC-related
+  configuration changes. ([#2533], [!3979], [!4001])
+
+### Documentation
+
+- Clarified documentation for the `raw_entry_id()` API in `tor-keymgr`. ([f60f19db])
+- Removed outdated references to the old `RawCellStream` API. ([!4036])
+
+### Infrastructure
+
+- Updated our `build-repro` CI job to use Rust 1.95. ([!3968])
+- Temporarily disabled the (currently broken) `cargo-fuzz` test in CI. ([!3984])
+- Enabled `RUST_BACKTRACE` for all CI jobs. ([!3999])
+
+### Cleanups, minor features, and bugfixes
+
+- Resolved various internal TODOs that were previously blocked
+  on updating our MSRV. ([!3943])
+- Updated a TODO comment to mention the MSRV required to fix it.
+  ([59c89908866e6b55])
+- Updated dependencies. ([!3960])
+- Updated to the latest list of Tor fallback directories. ([!3964])
+- Updated `fslock-guard` to use the `File::lock` API introduced in Rust 1.89,
+  and migrated all our crates to use it instead of `fslock`. ([#2106], [!3954])
+- Deduplicated the hex encoding logic of two of our byte-array types. ([!3947])
+- Set the optimization level for `num-bigint-dig` to 2 for our `dev` builds,
+  speeding up our former slowest test case by a factor of 20. ([!3973])
+- Internal error handling refactoring in the `BeginStream` implementation
+  of the circuit reactor. ([!3975])
+- Upgraded our [`rand`] dependency to 0.10. ([!3969], [!3987])
+- Worked around a clippy bug wrongly reporting some functions as unreachable.
+  ([!3982])
+- Connection failures are no longer all reported as proxy errors.
+  ([#2459], [!3932])
+- Replaced a clippy expectation with an `allow`, to resolve a warning. ([!3983])
+- In `tor-netdoc`, the `Constructor` macro now enforces non-exhaustiveness.
+  ([!3986])
+- Upgraded our [`metrics`] dependency to 0.24.6. ([!3992])
+- Fixed bug causing the `fs-mistrust` tests to fail on systems with musl libc.
+  ([!3996])
+- Upgraded our [`enumset`] dependency to 1.1.13. ([!4004])
+- Removed several unused raw key entry APIs from `tor-keymgr`. ([!3997])
+- Fixed a bug where arti failed to check for clock stalls/jumps before
+  performing congestion window updates. ([#2504], [!3967])
+- In `tor-proto`, we now determine the stream inbound message queue capacity
+  at runtime, based on what type of flow control we negotiated.
+  ([#2536], [!3981], [!4009])
+- Added support for setting socket buffer sizes (`SO_SNDBUF` and `SO_RCVBUF`),
+  and updated `arti` to use 128 KB socket buffers for its proxy sockets.
+  ([#2500], [!3957])
+- Removed support for running without the protocol support required
+  by the consensus. ([#1960], [!3995])
+- Fixed cancellation safety issue in `get_or_launch(). ([#1716], [!3946])
+- When launching a managed PT proxy, we now include the setting
+  for `outbound_proxy` in its environment. ([!4017])
+- Fixed a couple of clippy warnings. ([!4019])
+- Refactored `TorClient` into a typestate, which will make it easier to
+  verify that we aren't connecting to the network when we aren't bootstrapping,
+  that bootstrap-only functionality is not accidentally allowed
+  on an unboostrapped client, and will enable us to reconfigure
+  additional options on not-yet-running clients. ([!4011])
+- We no longer use `futures_codec` as an alias for `asynchronous_codec`.
+  ([#1690], [!4026])
+- `fslock-guard` now uses the `windows-sys` crate instead of `winapi`,
+  which is unmaintained. ([!3974])
+- `KeystoreEntry::new()` is now available as an experimental api
+   in `tor-keymgr`. ([!3288])
+- `fslock-guard` now has custom code for handling file locking on Android,
+  to work around it not being supported yet by the standard library APIs.
+  ([#2544], [!4030])
+
+### Acknowledgments
+
+Thanks to everybody who's contributed to this release, including
+Aaron Dewes, Andrew Kloet, Boris Nagaev, Neel Chauhan, Nihal, syphyr.
+
+Also, our deep thanks to
+the [Bureau of Democracy, Human Rights, and Labor],
+and our [other sponsors]
+for funding the development of Arti!
+
+[!2458]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/2458
+[!3288]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3288
+[!3919]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3919
+[!3924]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3924
+[!3925]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3925
+[!3932]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3932
+[!3937]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3937
+[!3939]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3939
+[!3940]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3940
+[!3941]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3941
+[!3943]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3943
+[!3945]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3945
+[!3946]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3946
+[!3947]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3947
+[!3948]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3948
+[!3954]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3954
+[!3957]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3957
+[!3959]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3959
+[!3960]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3960
+[!3963]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3963
+[!3964]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3964
+[!3966]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3966
+[!3967]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3967
+[!3968]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3968
+[!3969]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3969
+[!3972]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3972
+[!3973]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3973
+[!3974]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3974
+[!3975]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3975
+[!3976]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3976
+[!3978]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3978
+[!3979]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3979
+[!3980]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3980
+[!3981]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3981
+[!3982]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3982
+[!3983]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3983
+[!3984]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3984
+[!3985]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3985
+[!3986]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3986
+[!3987]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3987
+[!3989]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3989
+[!3990]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3990
+[!3991]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3991
+[!3992]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3992
+[!3995]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3995
+[!3996]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3996
+[!3997]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3997
+[!3998]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3998
+[!3999]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3999
+[!4001]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4001
+[!4002]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4002
+[!4003]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4003
+[!4004]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4004
+[!4005]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4005
+[!4007]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4007
+[!4008]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4008
+[!4009]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4009
+[!4010]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4010
+[!4011]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4011
+[!4014]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4014
+[!4017]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4017
+[!4019]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4019
+[!4021]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4021
+[!4026]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4026
+[!4028]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4028
+[!4030]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4030
+[!4036]: https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4036
+[#1690]: https://gitlab.torproject.org/tpo/core/arti/-/issues/1690
+[#1716]: https://gitlab.torproject.org/tpo/core/arti/-/issues/1716
+[#1960]: https://gitlab.torproject.org/tpo/core/arti/-/issues/1960
+[#2106]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2106
+[#2195]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2195
+[#2419]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2419
+[#2458]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2458
+[#2459]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2459
+[#2469]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2469
+[#2482]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2482
+[#2499]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2499
+[#2500]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2500
+[#2504]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2504
+[#2505]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2505
+[#2522]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2522
+[#2533]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2533
+[#2536]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2536
+[#2544]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2544
+[#2548]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2548
+[#2942]: https://gitlab.torproject.org/tpo/core/arti/-/issues/2942
+[#966]: https://gitlab.torproject.org/tpo/core/arti/-/issues/966
+[59c89908866e6b55]: https://gitlab.torproject.org/tpo/core/arti/-/commit/59c89908866e6b55eea158aeae05493a3ee424d6
+[Bureau of Democracy, Human Rights, and Labor]: https://www.state.gov/bureaus-offices/under-secretary-for-civilian-security-democracy-and-human-rights/bureau-of-democracy-human-rights-and-labor/
+[`enumset`]: https://crates.io/crates/enumset
+[`metrics`]: https://crates.io/crates/metrics
+[`rand`]: https://crates.io/crates/rand
+[be10d98832cb5ff1]: https://gitlab.torproject.org/tpo/core/arti/-/commit/be10d98832cb5ff160fddd1c4e9533c102dc0a4c
+[f60f19db]: https://gitlab.torproject.org/tpo/core/arti/-/commit/f60f19dbb928b74b70fd6b1c6fe8f63d580db4f6
+[other sponsors]: https://www.torproject.org/about/sponsors/
+[torspec!490]: https://gitlab.torproject.org/tpo/core/torspec/-/merge_requests/490
+
+
+
 # Arti 2.3.0 — 7 May 2026
 
 Arti 2.3.0 continues development on relay, directory authority, and RPC functionality.

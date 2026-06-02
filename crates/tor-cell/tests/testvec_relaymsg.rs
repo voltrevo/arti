@@ -478,7 +478,7 @@ fn test_data() {
     );
 
     // Try creating a data cell from too much data.
-    use rand::RngCore;
+    use rand::Rng;
     let mut b = vec![0_u8; 3000];
     testing_rng().fill_bytes(&mut b[..]);
     let d = msg::Data::new(&b[..]);

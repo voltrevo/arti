@@ -12,7 +12,7 @@ pub use responder::MaybeVerifiableRelayResponderChannel;
 
 use digest::Digest;
 use futures::{AsyncRead, AsyncWrite};
-use rand::Rng;
+use rand::RngExt;
 use safelog::Sensitive;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;

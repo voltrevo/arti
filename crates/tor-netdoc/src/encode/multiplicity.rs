@@ -45,6 +45,9 @@
 use super::*;
 use crate::types::RetainedOrderVec;
 
+#[cfg(doc)]
+use crate::parse2;
+
 /// Helper type that allows us to select an impl of `MultiplicityMethods`
 ///
 /// **For use by macros**.
@@ -82,6 +85,19 @@ pub struct SingletonMultiplicitySelector<Field>(PhantomData<fn(Field)>);
 // update the documentation in the `NetdocEncodable` and `ItemValueEncodable` derives.
 pub trait MultiplicityMethods<'f>: Copy + Sized {
     /// The value for each thing.
+    ///
+    /// Should match the corresponding
+    /// [`parse2::multiplicity::ItemSetMethods::Each`],
+    /// [`parse2::multiplicity::ArgumentSetMethods::Each`],
+    /// for consistency, and for the benefit of `with =` attributes referring to type names.
+    //
+    // For example, if these Each types don't match, then if you want to say
+    //  `with = ns_type( Each, SomethingSpecial, ... )`
+    // so that the plain consensus just uses the normal parsing, it doesn't
+    // work, because `Each` has to match both `parse2::multiplicity::ItemSetSelector::Each`
+    // and `encode::MultiplicityMethods::Each`, or the derived parsing code gets type errors.
+    //
+    // Having them different is anomalous, anyway.
     type Each: Sized + 'f;
 
     /// The input type: the type of the field in the netdoc or item struct.
@@ -186,6 +202,10 @@ impl<'f, T: 'f> MultiplicityMethods<'f> for SingletonMultiplicitySelector<T> {
 /// Each impl allows us to visit an optional element.
 pub trait OptionalityMethods: Copy + Sized {
     /// The possibly-present element.
+    ///
+    /// Should match the corresponding
+    /// [`parse2::multiplicity::ObjectSetMethods::Each`].
+    /// (See [`MultiplicityMethods::Each`] for rationale.)
     type Each: Sized + 'static;
 
     /// The input type: the type of the field in the item struct.

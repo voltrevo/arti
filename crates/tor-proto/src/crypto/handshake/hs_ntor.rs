@@ -154,7 +154,7 @@ impl HsNtorClientState {
     /// INTRODUCE1 bodies that can be sent to an introduction point.
     pub fn new<R>(rng: &mut R, service_info: HsNtorServiceInfo) -> Self
     where
-        R: rand::RngCore + rand::CryptoRng,
+        R: rand::Rng + rand::CryptoRng,
     {
         let x = curve25519::StaticSecret::random_from_rng(rng);
         Self::new_no_keygen(service_info, x)
@@ -318,7 +318,7 @@ pub fn server_receive_intro<R>(
     msg: &[u8],
 ) -> Result<(HsNtorHkdfKeyGenerator, Vec<u8>, Vec<u8>)>
 where
-    R: rand::RngCore + rand::CryptoRng,
+    R: rand::Rng + rand::CryptoRng,
 {
     let y = curve25519::StaticSecret::random_from_rng(rng);
     server_receive_intro_no_keygen(&y, k_hss_ntor, auth_key, subcredential, intro_header, msg)

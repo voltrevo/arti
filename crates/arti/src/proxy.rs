@@ -17,7 +17,7 @@ use futures::stream::StreamExt;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tor_basic_utils::error_sources::ErrorSources;
-use tor_rtcompat::{NetStreamProvider, SpawnExt};
+use tor_rtcompat::{NetStreamProvider, SpawnExt, TcpListenOptions};
 use tracing::{debug, error, info, instrument, warn};
 
 #[allow(unused)]
@@ -292,7 +292,7 @@ mod socks_and_rpc {}
 /// Information used to implement a proxy listener.
 struct ProxyContext<R: Runtime> {
     /// A TorClient to use (by default) to anonymize requests.
-    tor_client: TorClient<R>,
+    tor_client: Arc<TorClient<R>>,
     /// If present, an RpcMgr to use when for attaching requests to RPC
     /// sessions.
     #[cfg(feature = "rpc")]
@@ -364,7 +364,7 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
 #[must_use]
 pub(crate) struct StreamProxy<R: Runtime> {
     /// A tor client to use when relaying traffic.
-    tor_client: TorClient<R>,
+    tor_client: Arc<TorClient<R>>,
     /// The listeners that we've actually bound to.
     listeners: Vec<<R as NetStreamProvider>::Listener>,
     /// The protocols we respond to.
@@ -385,8 +385,9 @@ pub(crate) struct StreamProxy<R: Runtime> {
 #[instrument(skip_all, level = "trace")]
 pub(crate) async fn bind_proxy<R: Runtime>(
     runtime: R,
-    tor_client: TorClient<R>,
+    tor_client: Arc<TorClient<R>>,
     listen: Listen,
+    listen_options: TcpListenOptions,
     protocols: ListenProtocols,
     rpc_mgr: Option<Arc<RpcMgr>>,
 ) -> Result<StreamProxy<R>> {
@@ -404,7 +405,7 @@ pub(crate) async fn bind_proxy<R: Runtime>(
         Ok(addrgroups) => {
             for addrgroup in addrgroups {
                 for addr in addrgroup {
-                    match runtime.listen(&addr).await {
+                    match runtime.listen(&addr, &listen_options).await {
                         Ok(listener) => {
                             let bound_addr = listener.local_addr()?;
                             info!("Listening on {:?}", bound_addr);
@@ -477,7 +478,7 @@ impl<R: Runtime> StreamProxy<R> {
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 #[instrument(skip_all, level = "trace")]
 pub(crate) async fn run_proxy_with_listeners<R: Runtime>(
-    tor_client: TorClient<R>,
+    tor_client: Arc<TorClient<R>>,
     listeners: Vec<<R as tor_rtcompat::NetStreamProvider>::Listener>,
     protocols: ListenProtocols,
     rpc_mgr: Option<Arc<RpcMgr>>,
@@ -607,7 +608,7 @@ fn extract_proto_err<'a>(
 }
 
 /// Report an error that occurred within a single proxy task.
-#[expect(clippy::cognitive_complexity)]
+#[allow(clippy::cognitive_complexity)] // warning depends on cfg
 fn report_proxy_error(e: &anyhow::Error) {
     use tor_proto::Error as PE;
     // TODO: In the long run it might be a good idea to use an ErrorKind here if we can get one.

@@ -26,7 +26,7 @@ use tor_llcrypto::util::ct::ct_lookup;
 use cipher::{KeyIvInit, StreamCipher};
 
 use crate::crypto::handshake::KeyGenerator;
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, Rng};
 use subtle::{Choice, ConstantTimeEq};
 use tor_cell::relaycell::extend::{CircRequestExt, CircResponseExt};
 use tor_llcrypto::cipher::aes::Aes256Ctr;
@@ -239,7 +239,7 @@ impl super::ClientHandshake for NtorV3Client {
     ///
     /// On success, return a state object that will be used to complete the handshake, along
     /// with the message to send.
-    fn client1<R: RngCore + CryptoRng, M: Borrow<[CircRequestExt]>>(
+    fn client1<R: Rng + CryptoRng, M: Borrow<[CircRequestExt]>>(
         rng: &mut R,
         key: &NtorV3PublicKey,
         extensions: &M,
@@ -282,7 +282,7 @@ impl super::ServerHandshake for NtorV3Server {
     type ClientAuxData = [CircRequestExt];
     type ServerAuxData = Vec<CircResponseExt>;
 
-    fn server<R: RngCore + CryptoRng, REPLY: super::AuxDataReply<Self>, T: AsRef<[u8]>>(
+    fn server<R: Rng + CryptoRng, REPLY: super::AuxDataReply<Self>, T: AsRef<[u8]>>(
         rng: &mut R,
         reply_fn: &mut REPLY,
         key: &[Self::KeyType],
@@ -343,7 +343,7 @@ impl NtorV3SecretKey {
 
     /// Generate a key using the given `rng`, suitable for testing.
     #[cfg(test)]
-    pub(crate) fn generate_for_test<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
+    pub(crate) fn generate_for_test<R: Rng + CryptoRng>(rng: &mut R) -> Self {
         let mut id = [0_u8; 32];
         // Random bytes will work for testing, but aren't necessarily actually a valid id.
         rng.fill_bytes(&mut id);
@@ -404,7 +404,7 @@ impl KeyGenerator for NtorV3KeyGenerator {
 /// Given a secure `rng`, a relay's public key, a secret message to send,
 /// and a shared verification string, generate a new handshake state
 /// and a message to send to the relay.
-fn client_handshake_ntor_v3<R: RngCore + CryptoRng>(
+fn client_handshake_ntor_v3<R: Rng + CryptoRng>(
     rng: &mut R,
     relay_public: &NtorV3PublicKey,
     client_msg: &[u8],
@@ -485,7 +485,7 @@ where
 ///
 /// On success, return the server handshake message to send, and an XofReader
 /// to use in generating circuit keys.
-fn server_handshake_ntor_v3<RNG: CryptoRng + RngCore, REPLY: MsgReply>(
+fn server_handshake_ntor_v3<RNG: CryptoRng + Rng, REPLY: MsgReply>(
     rng: &mut RNG,
     reply_fn: &mut REPLY,
     message: &[u8],

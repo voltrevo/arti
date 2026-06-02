@@ -1850,6 +1850,7 @@ define_list_builder_helper! {
     built: GuardRestrictionList = restrictions;
     default = vec![];
     item_build: |restriction| Ok(restriction.clone());
+    item_apply_defaults: |_| Ok::<_, tor_config::ConfigBuildError>(());
 }
 
 define_list_builder_accessors! {

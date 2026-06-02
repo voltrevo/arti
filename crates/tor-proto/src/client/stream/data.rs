@@ -1,4 +1,4 @@
-//! Declare DataStream, a type that wraps RawCellStream so as to be useful
+//! Declare DataStream, a type that wraps DataReader and DataWriter so as to be useful
 //! for byte-oriented communication.
 
 use crate::{Error, Result};

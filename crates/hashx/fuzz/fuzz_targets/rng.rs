@@ -22,7 +22,8 @@ use arbitrary::Arbitrary;
 use core::cell::Cell;
 use core::num::NonZeroU64;
 use libfuzzer_sys::fuzz_target;
-use rand::RngCore;
+use rand::TryRng;
+use std::convert::Infallible;
 use std::sync::Arc;
 
 // Test a fixed number of hash inputs, to keep the time spent on each
@@ -107,23 +108,25 @@ fn test_instance_rust(op: &Arc<Op>, option: hashx::RuntimeOption) -> TestResult 
         op: op.clone(),
     };
 
-    impl RngCore for RngWrapper {
-        fn next_u64(&mut self) -> u64 {
-            let original_value = self.inner.next_u64();
+    impl TryRng for RngWrapper {
+        type Error = Infallible;
+
+        fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+            let original_value = self.inner.try_next_u64()?;
             let result = if self.counter < self.op.rng_values.len() {
                 self.op.rng_values[self.counter]
             } else {
                 original_value
             };
             self.counter += 1;
-            result
+            Ok(result)
         }
 
-        fn next_u32(&mut self) -> u32 {
+        fn try_next_u32(&mut self) -> Result<u32, Infallible> {
             unreachable!();
         }
 
-        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), Infallible> {
             unreachable!();
         }
     }

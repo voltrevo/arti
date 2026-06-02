@@ -96,12 +96,16 @@ impl NetStreamListener<general::SocketAddr> for Listener {
 
 /// Use `provider` to launch a `NetStreamListener` at `address`, and wrap that listener
 /// as a `Listener`.
-async fn abstract_listener_on<ADDR, P>(provider: &P, address: &ADDR) -> IoResult<Listener>
+async fn abstract_listener_on<ADDR, P>(
+    provider: &P,
+    address: &ADDR,
+    options: &P::ListenOptions,
+) -> IoResult<Listener>
 where
     P: NetStreamProvider<ADDR>,
     general::SocketAddr: From<ADDR>,
 {
-    let lis = provider.listen(address).await?;
+    let lis = provider.listen(address, options).await?;
     let local_addr = general::SocketAddr::from(lis.local_addr()?);
     let streams = lis.incoming().map(|result| {
         result.map(|(socket, addr)| (Stream(Box::pin(socket)), general::SocketAddr::from(addr)))
@@ -120,6 +124,9 @@ where
 {
     type Stream = Stream;
     type Listener = Listener;
+    // TODO: If unix sockets ever support `CommonListenOptions`,
+    // we could accept these common options and convert to the appropriate type.
+    type ListenOptions = ();
 
     #[instrument(skip_all, level = "trace")]
     async fn connect(&self, addr: &general::SocketAddr) -> IoResult<Stream> {
@@ -133,11 +140,15 @@ where
             )),
         }
     }
-    async fn listen(&self, addr: &general::SocketAddr) -> IoResult<Listener> {
+    async fn listen(
+        &self,
+        addr: &general::SocketAddr,
+        _options: &Self::ListenOptions,
+    ) -> IoResult<Listener> {
         use general::SocketAddr as G;
         match addr {
-            G::Inet(a) => abstract_listener_on(self, a).await,
-            G::Unix(a) => abstract_listener_on(self, a).await,
+            G::Inet(a) => abstract_listener_on(self, a, &Default::default()).await,
+            G::Unix(a) => abstract_listener_on(self, a, &Default::default()).await,
             other => Err(IoError::new(
                 IoErrorKind::InvalidInput,
                 UnsupportedAddress(other.clone()),

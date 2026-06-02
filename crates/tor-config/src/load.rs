@@ -48,15 +48,15 @@
 //! use derive_builder::Builder;
 //! use tor_config::{impl_standard_builder, resolve, ConfigBuildError, ConfigurationSources};
 //! use tor_config::load::TopLevel;
+//! use tor_config::derive::prelude::*;
 //! use serde::{Deserialize, Serialize};
+//! use derive_deftly::Deftly;
 //!
-//! #[derive(Debug, Clone, Builder, Eq, PartialEq)]
-//! #[builder(build_fn(error = "ConfigBuildError"))]
-//! #[builder(derive(Debug, Serialize, Deserialize))]
+//! #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
+//! #[derive_deftly(TorConfig)]
 //! struct EmbedderConfig {
 //!     // ....
 //! }
-//! impl_standard_builder! { EmbedderConfig }
 //! impl TopLevel for EmbedderConfig {
 //!     type Builder = EmbedderConfigBuilder;
 //! }
@@ -67,6 +67,9 @@
 //! # struct TorClientConfig { }
 //! # impl_standard_builder! { TorClientConfig }
 //! # impl TopLevel for TorClientConfig { type Builder = TorClientConfigBuilder; }
+//! # impl tor_config::load::ConfigBuilder for TorClientConfigBuilder {
+//! #     fn apply_defaults(&mut self) -> Result<(), ConfigBuildError> { Ok(()) }
+//! # }
 //! #
 //! # #[derive(Debug, Clone, Builder, Eq, PartialEq)]
 //! # #[builder(build_fn(error = "ConfigBuildError"))]
@@ -74,6 +77,10 @@
 //! # struct ArtiConfig { }
 //! # impl_standard_builder! { ArtiConfig }
 //! # impl TopLevel for ArtiConfig { type Builder = ArtiConfigBuilder; }
+//! # impl tor_config::load::ConfigBuilder for ArtiConfigBuilder {
+//! #     fn apply_defaults(&mut self) -> Result<(), ConfigBuildError> { Ok(()) }
+//! # }
+
 //!
 //! let cfg_sources = ConfigurationSources::new_empty(); // In real program, use from_cmdline
 //! let cfg = cfg_sources.load()?;
@@ -136,6 +143,27 @@ pub trait Builder {
     ///
     /// Often shadows an inherent `build` method
     fn build(&self) -> Result<Self::Built, ConfigBuildError>;
+}
+
+/// A [`Builder`] as generated and used by our configuration system.
+//
+// (This is a separate type from Builder since we also implement Builder for some
+// non-configuration builders.)
+pub trait ConfigBuilder: Builder {
+    /// Modify `self` by replacing any options that haven't been set with their defaults.
+    ///
+    /// Also, resolves deprecated settings:
+    /// When a deprecated setting is provided, and the modern version is not,
+    /// `apply_defaults` derives the modern value from the deprecated value,
+    /// and writes it into the modern field.
+    /// (If both a deprecated setting, and its modern form, are set
+    /// on entry to `apply_defaults`, the deprecated form is ignored.)
+    ///
+    /// It is not necessary to call this method
+    /// if all you want to do with this builder
+    /// is to call [`build()`](Builder::build) on it:
+    /// `build()` also takes defaults into account.
+    fn apply_defaults(&mut self) -> Result<(), ConfigBuildError>;
 }
 
 /// Collection of configuration settings that can be deserialized and then built
@@ -249,6 +277,10 @@ pub struct ResolveContext {
     ///
     /// Empty is used to disable this feature.
     unrecognized: UnrecognizedKeys,
+
+    /// If present, a [`ConfigurationTree`] to receive all recognized or defaulted
+    /// settings from the input tree.
+    output_tree: Option<ConfigurationTree>,
 }
 
 /// Keys we have *not* recognized so far
@@ -315,19 +347,46 @@ enum PathEntry {
     MapEntry(String),
 }
 
+/// A set of options to use for resolving a configuration tree.
+///
+/// These options should not affect the actual configuration objects returned
+/// by [`resolve_return_results`], though they may affect other elements
+/// of [`ResolutionResults`].
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct ConfigResolveOptions {
+    /// If true, we should keep track of which deprecated keys were used.
+    want_disfavoured: bool,
+
+    /// If true, we should return an output_tree value containing the
+    /// all the settings that we used to build the configuration,
+    /// including the default values for any settings that were not present
+    /// in the input.
+    pub want_output_tree: bool,
+}
+
+impl Default for ConfigResolveOptions {
+    fn default() -> Self {
+        Self {
+            want_disfavoured: true,
+            want_output_tree: false,
+        }
+    }
+}
+
 /// Deserialize and build overall configuration from config sources
 ///
 /// Inner function used by all the `resolve_*` family
 fn resolve_inner<T>(
     input: ConfigurationTree,
-    want_disfavoured: bool,
+    options: &ConfigResolveOptions,
 ) -> Result<ResolutionResults<T>, ConfigResolveError>
 where
     T: Resolvable,
 {
     let mut deprecated = BTreeSet::new();
 
-    if want_disfavoured {
+    if options.want_disfavoured {
         T::enumerate_deprecated_keys(&mut |l: &[&str]| {
             for key in l {
                 match input.0.find_value(key) {
@@ -342,10 +401,16 @@ where
 
     let mut lc = ResolveContext {
         input,
-        unrecognized: if want_disfavoured {
+        unrecognized: if options.want_disfavoured {
             UK::AllKeys
         } else {
             UK::These(BTreeSet::new())
+        },
+
+        output_tree: if options.want_output_tree {
+            Some(ConfigurationTree::default())
+        } else {
+            None
         },
     };
 
@@ -374,6 +439,7 @@ where
         value,
         unrecognized,
         deprecated,
+        output_tree: lc.output_tree,
     })
 }
 
@@ -393,11 +459,16 @@ pub fn resolve<T>(input: ConfigurationTree) -> Result<T, ConfigResolveError>
 where
     T: Resolvable,
 {
+    let options: ConfigResolveOptions = ConfigResolveOptions {
+        want_disfavoured: true,
+        want_output_tree: false,
+    };
     let ResolutionResults {
         value,
         unrecognized,
         deprecated,
-    } = resolve_inner(input, true)?;
+        ..
+    } = resolve_inner(input, &options)?;
     for depr in deprecated {
         warn!("deprecated configuration key: {}", &depr);
     }
@@ -410,14 +481,15 @@ where
 /// Deserialize and build overall configuration, reporting unrecognized keys in the return value
 pub fn resolve_return_results<T>(
     input: ConfigurationTree,
+    options: &ConfigResolveOptions,
 ) -> Result<ResolutionResults<T>, ConfigResolveError>
 where
     T: Resolvable,
 {
-    resolve_inner(input, true)
+    resolve_inner(input, options)
 }
 
-/// Results of a successful `resolve_return_disfavoured`
+/// Results of a successful [`resolve_return_results`].
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ResolutionResults<T> {
@@ -429,6 +501,12 @@ pub struct ResolutionResults<T> {
 
     /// Any config keys which were found, but have been declared deprecated
     pub deprecated: Vec<DisfavouredKey>,
+
+    /// If present, a [`ConfigurationTree`] with all recognized settings and defaulted settings
+    /// from the original input.
+    ///
+    /// This will be `None` unless `want_output_tree` was set in [`ConfigResolveOptions`].
+    pub output_tree: Option<ConfigurationTree>,
 }
 
 /// Deserialize and build overall configuration, silently ignoring unrecognized config keys
@@ -436,7 +514,11 @@ pub fn resolve_ignore_warnings<T>(input: ConfigurationTree) -> Result<T, ConfigR
 where
     T: Resolvable,
 {
-    Ok(resolve_inner(input, false)?.value)
+    let options: ConfigResolveOptions = ConfigResolveOptions {
+        want_disfavoured: false,
+        want_output_tree: false,
+    };
+    Ok(resolve_inner(input, &options)?.value)
 }
 
 /// Wrapper around T that collects ignored keys as we deserialize it.
@@ -470,10 +552,10 @@ where
 impl<T> Resolvable for T
 where
     T: TopLevel,
-    T::Builder: Builder<Built = Self>,
+    T::Builder: Builder<Built = Self> + ConfigBuilder + Clone + serde::Serialize,
 {
     fn resolve(input: &mut ResolveContext) -> Result<T, ConfigResolveError> {
-        let deser = input.input.clone();
+        let deser = &input.input;
         let builder: Result<T::Builder, _> = {
             // If input.unrecognized.is_empty() then we don't bother tracking the
             // unrecognized keys since we would intersect with the empty set.
@@ -498,7 +580,15 @@ where
                 }
             }
         };
-        let built = builder.map_err(crate::ConfigError::from_cfg_err)?.build()?;
+        let builder = builder.map_err(crate::ConfigError::from_cfg_err)?;
+
+        if let Some(output_tree) = input.output_tree.as_mut() {
+            let mut with_defaults = builder.clone();
+            with_defaults.apply_defaults()?;
+            output_tree.merge_from(&with_defaults)?;
+        }
+
+        let built = builder.build()?;
         Ok(built)
     }
 
@@ -712,8 +802,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::*;
-    use derive_builder::Builder;
-    use serde::{Deserialize, Serialize};
+    use derive_deftly::Deftly;
 
     fn parse_test_set(l: &[&str]) -> BTreeSet<DisfavouredKey> {
         l.iter()
@@ -793,29 +882,25 @@ mod test {
         chk(r#"[10].bar"#, &[AI(10), me("bar")]); // weird
     }
 
-    #[derive(Debug, Clone, Builder, Eq, PartialEq)]
-    #[builder(build_fn(error = "ConfigBuildError"))]
-    #[builder(derive(Debug, Serialize, Deserialize))]
+    #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
+    #[derive_deftly(TorConfig)]
     struct TestConfigA {
-        #[builder(default)]
+        #[deftly(tor_config(default))]
         a: String,
     }
-    impl_standard_builder! { TestConfigA }
     impl TopLevel for TestConfigA {
         type Builder = TestConfigABuilder;
     }
 
-    #[derive(Debug, Clone, Builder, Eq, PartialEq)]
-    #[builder(build_fn(error = "ConfigBuildError"))]
-    #[builder(derive(Debug, Serialize, Deserialize))]
+    #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
+    #[derive_deftly(TorConfig)]
     struct TestConfigB {
-        #[builder(default)]
+        #[deftly(tor_config(default))]
         b: String,
 
-        #[builder(default)]
+        #[deftly(tor_config(default))]
         old: bool,
     }
-    impl_standard_builder! { TestConfigB }
     impl TopLevel for TestConfigB {
         type Builder = TestConfigBBuilder;
         const DEPRECATED_KEYS: &'static [&'static str] = &["old"];
@@ -840,7 +925,7 @@ mod test {
         let _: (TestConfigA, TestConfigB) = resolve_ignore_warnings(cfg.clone()).unwrap();
 
         let resolved: ResolutionResults<(TestConfigA, TestConfigB)> =
-            resolve_return_results(cfg).unwrap();
+            resolve_return_results(cfg, &Default::default()).unwrap();
         let (a, b) = resolved.value;
 
         let mk_strings =
@@ -858,14 +943,12 @@ mod test {
         let _ = TestConfigB::builder();
     }
 
-    #[derive(Debug, Clone, Builder, Eq, PartialEq)]
-    #[builder(build_fn(error = "ConfigBuildError"))]
-    #[builder(derive(Debug, Serialize, Deserialize))]
+    #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
+    #[derive_deftly(TorConfig)]
     struct TestConfigC {
-        #[builder(default)]
+        #[deftly(tor_config(default))]
         c: u32,
     }
-    impl_standard_builder! { TestConfigC }
     impl TopLevel for TestConfigC {
         type Builder = TestConfigCBuilder;
     }
@@ -894,14 +977,14 @@ mod test {
         {
             // First try "A", then "C".
             let res1: Result<ResolutionResults<(TestConfigA, TestConfigC)>, _> =
-                resolve_return_results(cfg.clone());
+                resolve_return_results(cfg.clone(), &Default::default());
             assert!(res1.is_err());
             assert!(matches!(res1, Err(ConfigResolveError::Deserialize(_))));
         }
         {
             // Now the other order: first try "C", then "A".
             let res2: Result<ResolutionResults<(TestConfigC, TestConfigA)>, _> =
-                resolve_return_results(cfg.clone());
+                resolve_return_results(cfg.clone(), &Default::default());
             assert!(res2.is_err());
             assert!(matches!(res2, Err(ConfigResolveError::Deserialize(_))));
         }
@@ -909,6 +992,7 @@ mod test {
         let mut ctx = ResolveContext {
             input: cfg,
             unrecognized: UnrecognizedKeys::AllKeys,
+            output_tree: None,
         };
         let _res3 = TestConfigA::resolve(&mut ctx);
         // After resolving A, some fields are unrecognized.

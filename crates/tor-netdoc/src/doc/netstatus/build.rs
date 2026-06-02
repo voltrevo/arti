@@ -4,8 +4,8 @@
 //! support signing or encoding.)
 
 use super::{
-    ConsensusAuthorityEntry, ConsensusFlavor, DirSource, Footer, Lifetime, NetParams, ProtoStatus,
-    ProtoStatuses, SharedRandStatus, SharedRandVal,
+    ConsensusAuthorityEntry, ConsensusFlavor, ConsensusFooterFields, DirSource, Lifetime,
+    NetParams, ProtoStatus, ProtoStatuses, SharedRandStatus, SharedRandStatuses, SharedRandVal,
 };
 
 use crate::types::relay_flags::DocRelayFlags;

@@ -165,54 +165,6 @@ fn default_dns_resolve_ptr_timeout() -> Duration {
     Duration::new(10, 0)
 }
 
-/// Configuration for overriding the status of our software.
-///
-/// # Issues
-///
-/// We only check these configuration values when we receive a new consensus,
-/// or when we're starting up.  Therefore, if you change these values,
-/// they won't have any effect until the next consensus is received.
-#[derive(Debug, Clone, Deftly, Eq, PartialEq)]
-#[derive_deftly(TorConfig)]
-pub struct SoftwareStatusOverrideConfig {
-    /// A list of protocols to pretend that we have,
-    /// when checking whether our software is obsolete.
-    //
-    // We make this type a String in the builder, to avoid exposing Protocols in our API.
-    //
-    // NOTE: Emulating the old behavior for this was pretty tricky, but we are slated to
-    // (possibly) deprecate this option entirely.
-    #[deftly(tor_config(
-        no_magic,
-        field(ty = "String"),
-        setter(skip),
-        try_build = "Self::parse_protos",
-        extend_with = "extend_with_replace"
-    ))]
-    pub(crate) ignore_missing_required_protocols: tor_protover::Protocols,
-}
-
-impl SoftwareStatusOverrideConfigBuilder {
-    /// Helper: Parse the ignore_missing_required_protocols field.
-    fn parse_protos(&self) -> Result<tor_protover::Protocols, ConfigBuildError> {
-        use std::str::FromStr as _;
-
-        tor_protover::Protocols::from_str(&self.ignore_missing_required_protocols).map_err(|e| {
-            ConfigBuildError::Invalid {
-                field: "ignore_missing_required_protocols".to_string(),
-                problem: e.to_string(),
-            }
-        })
-    }
-
-    /// Set a list of protocols that we pretend that we have
-    /// when checking whether our software is obsolete.
-    pub fn ignore_missing_required_protocols(&mut self, s: impl AsRef<str>) -> &mut Self {
-        self.ignore_missing_required_protocols = s.as_ref().to_string();
-        self
-    }
-}
-
 /// Configuration for where information should be stored on disk.
 ///
 /// By default, cache information will be stored in `${ARTI_CACHE}`, and
@@ -247,7 +199,7 @@ pub struct StorageConfig {
     //
     // (This consistency rule is not current always followed by every component.)
     #[deftly(tor_config(default = "default_cache_dir()", setter(into)))]
-    cache_dir: CfgPath,
+    pub(crate) cache_dir: CfgPath,
 
     /// Location on disk for less-sensitive persistent state information.
     // Usage note: see the note for `cache_dir`, above.
@@ -670,10 +622,6 @@ pub struct TorClientConfig {
     // vanguards are disabled.
     #[deftly(tor_config(sub_builder))]
     pub(crate) vanguards: vanguards::VanguardConfig,
-
-    /// Support for running with known-obsolete versions.
-    #[deftly(tor_config(sub_builder))]
-    pub(crate) use_obsolete_software: SoftwareStatusOverrideConfig,
 
     /// Resolves paths in this configuration.
     ///

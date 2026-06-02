@@ -109,7 +109,7 @@ pub mod curve25519 {
 
     impl EphemeralSecret {
         /// Return a new random ephemeral secret key.
-        pub fn random_from_rng<R: rand_core::RngCore + rand_core::CryptoRng>(csprng: R) -> Self {
+        pub fn random_from_rng<R: rand_core::Rng + rand_core::CryptoRng>(csprng: R) -> Self {
             Self(x25519_dalek::EphemeralSecret::random_from_rng(
                 RngCompat::new(csprng),
             ))
@@ -121,7 +121,7 @@ pub mod curve25519 {
     }
     impl StaticSecret {
         /// Return a new random static secret key.
-        pub fn random_from_rng<R: rand_core::RngCore + rand_core::CryptoRng>(csprng: R) -> Self {
+        pub fn random_from_rng<R: rand_core::Rng + rand_core::CryptoRng>(csprng: R) -> Self {
             Self(x25519_dalek::StaticSecret::random_from_rng(RngCompat::new(
                 csprng,
             )))

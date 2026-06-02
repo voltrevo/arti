@@ -63,6 +63,7 @@ members = [
     "crates/tor-guardmgr",
     "crates/tor-circmgr",
     "crates/tor-dirclient",
+    "crates/tor-dirpublish",
     "crates/tor-dirmgr",
     "crates/tor-dirserver",
     "crates/tor-hsclient",
@@ -101,6 +102,15 @@ members = [
 # one of those.
 # See https://doc.rust-lang.org/cargo/reference/workspaces.html#virtual-workspace
 resolver = "3"
+
+[profile.dev.package.num-bigint-dig]
+# Even for testing, we want to optimize num-bigint-dig.
+# Otherwise, RSA key generation in our tests takes a
+# ridiculous amount of time.
+#
+# When we upgrade to rsa 0.10.* we should revisit this;
+# a new crypto library may be in use.
+opt-level = 2
 
 [profile.release]
 # For release builds, we want the most tuned Arti we can get;
@@ -155,3 +165,4 @@ opt-level = 1
 # Inherits release build settings, but adds full debug symbols.
 debug = 2
 strip = "none"
+

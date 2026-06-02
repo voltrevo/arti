@@ -149,7 +149,7 @@ async fn isolated_client<R: Runtime>(
     _method: Box<IsolatedClient>,
     ctx: Arc<dyn rpc::Context>,
 ) -> Result<rpc::SingleIdResponse, rpc::RpcError> {
-    let new_client = Arc::new(client.isolated_client());
+    let new_client = client.isolated_client();
     let client_id = ctx.register_owned(new_client);
     Ok(rpc::SingleIdResponse::from(client_id))
 }

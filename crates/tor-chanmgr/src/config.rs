@@ -424,6 +424,13 @@ pub struct ChannelConfig {
     pub(crate) outbound_proxy: Option<ProxyProtocol>,
 }
 
+impl ChannelConfig {
+    /// Return the outbound proxy configured for this channel, if any.
+    pub fn outbound_proxy(&self) -> Option<&ProxyProtocol> {
+        self.outbound_proxy.as_ref()
+    }
+}
+
 #[cfg(feature = "testing")]
 impl ChannelConfig {
     /// The padding level (accessor for testing)

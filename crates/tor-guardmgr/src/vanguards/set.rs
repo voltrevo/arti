@@ -4,7 +4,7 @@ use std::cmp;
 use std::time::{Duration, SystemTime};
 
 use derive_deftly::Deftly;
-use rand::{RngCore, seq::IndexedRandom as _};
+use rand::seq::IndexedRandom as _;
 use serde::{Deserialize, Serialize};
 
 use tor_basic_utils::RngExt as _;
@@ -165,7 +165,7 @@ impl VanguardSets {
     }
 
     /// Replenish a single `VanguardSet` with however many vanguards it is short of.
-    fn replenish_set<R: Runtime, Rng: RngCore>(
+    fn replenish_set<R: Runtime, Rng: rand::Rng>(
         runtime: &R,
         rng: &mut Rng,
         netdir: &NetDir,
@@ -206,7 +206,7 @@ impl VanguardSets {
     ///
     /// Each selected vanguard will have a random lifetime
     /// between `min_lifetime` and `max_lifetime`.
-    fn add_n_vanguards<R: Runtime, Rng: RngCore>(
+    fn add_n_vanguards<R: Runtime, Rng: rand::Rng>(
         runtime: &R,
         rng: &mut Rng,
         netdir: &NetDir,
@@ -247,7 +247,7 @@ impl VanguardSets {
 //
 // Note: the lifetimes of the vanguards (both L2 and L3) are selected
 // from the max(X,X) distribution.
-fn select_lifetime<Rng: RngCore>(
+fn select_lifetime<Rng: rand::Rng>(
     rng: &mut Rng,
     min_lifetime: Duration,
     max_lifetime: Duration,
@@ -270,7 +270,7 @@ impl VanguardSet {
     ///
     /// See [`VanguardMgr::select_vanguard`](crate::vanguards::VanguardMgr::select_vanguard)
     /// for more information.
-    pub(super) fn pick_relay<'a, R: RngCore>(
+    pub(super) fn pick_relay<'a, R: rand::Rng>(
         &self,
         rng: &mut R,
         netdir: &'a NetDir,

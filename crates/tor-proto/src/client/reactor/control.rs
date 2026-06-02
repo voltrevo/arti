@@ -7,7 +7,7 @@ use super::{
 };
 use crate::Result;
 use crate::circuit::celltypes::CreateResponse;
-use crate::circuit::circhop::HopSettings;
+use crate::circuit::circhop::{HopSettings, ReactorStreamComponents};
 #[cfg(feature = "circ-padding-manual")]
 use crate::client::circuit::padding;
 use crate::client::circuit::path;
@@ -16,17 +16,13 @@ use crate::client::{HopLocation, TargetHop};
 use crate::crypto::binding::CircuitBinding;
 use crate::crypto::cell::{InboundClientLayer, OutboundClientLayer};
 use crate::crypto::handshake::ntor_v3::{NtorV3Client, NtorV3PublicKey};
+use crate::memquota::StreamAccount;
 use crate::stream::cmdcheck::AnyCmdChecker;
-use crate::stream::flow_ctrl::state::StreamRateLimit;
-use crate::stream::flow_ctrl::xon_xoff::reader::DrainRateRequest;
-use crate::stream::queue::StreamQueueSender;
 use crate::streammap;
-use crate::util::notify::NotifySender;
 use crate::util::skew::ClockSkew;
 use crate::util::tunnel_activity::TunnelActivity;
 #[cfg(test)]
 use crate::{circuit::UniqId, client::circuit::CircParameters, crypto::cell::HopNum};
-use postage::watch;
 use tor_cell::chancell::msg::HandshakeType;
 use tor_cell::relaycell::flow_ctrl::XonKbpsEwma;
 use tor_cell::relaycell::msg::{AnyRelayMsg, Sendme};
@@ -48,7 +44,6 @@ use super::{Circuit, ConfluxLinkResultChannel};
 use oneshot_fused_workaround as oneshot;
 
 use crate::crypto::handshake::ntor::NtorPublicKey;
-use crate::stream::StreamMpscReceiver;
 use tor_linkspec::{EncodedLinkSpec, OwnedChanTarget};
 
 use std::result::Result as StdResult;
@@ -112,21 +107,15 @@ pub(crate) enum CtrlMsg {
         hop: TargetHop,
         /// The message to send.
         message: AnyRelayMsg,
-        /// A channel to send messages on this stream down.
-        ///
-        /// This sender shouldn't ever block, because we use congestion control and only send
-        /// SENDME cells once we've read enough out of the other end. If it *does* block, we
-        /// can assume someone is trying to send us more cells than they should, and abort
-        /// the stream.
-        sender: StreamQueueSender,
-        /// A channel to receive messages to send on this stream from.
-        rx: StreamMpscReceiver<AnyRelayMsg>,
-        /// A [`Stream`](futures::Stream) that provides updates to the rate limit for sending data.
-        rate_limit_notifier: watch::Sender<StreamRateLimit>,
-        /// Notifies the stream reader when it should send a new drain rate.
-        drain_rate_requester: NotifySender<DrainRateRequest>,
+        /// The stream account to use for anything we allocate for the purpose of this stream.
+        memquota: StreamAccount,
         /// Oneshot channel to notify on completion, with the allocated stream ID.
-        done: ReactorResultChannel<(StreamId, HopLocation, RelayCellFormat)>,
+        done: ReactorResultChannel<(
+            StreamId,
+            HopLocation,
+            RelayCellFormat,
+            ReactorStreamComponents,
+        )>,
         /// A `CmdChecker` to keep track of which message types are acceptable.
         cmd_checker: AnyCmdChecker,
     },
@@ -453,10 +442,7 @@ impl<'a> ControlHandler<'a> {
             CtrlMsg::BeginStream {
                 hop,
                 message,
-                sender,
-                rx,
-                rate_limit_notifier,
-                drain_rate_requester,
+                memquota,
                 done,
                 cmd_checker,
             } => {
@@ -490,19 +476,29 @@ impl<'a> ControlHandler<'a> {
                     }
                 };
 
-                let cell = circ.begin_stream(
+                let result = circ.begin_stream(
                     hop_num,
                     message,
-                    sender,
-                    rx,
-                    rate_limit_notifier,
-                    drain_rate_requester,
+                    &self.reactor.runtime,
                     cmd_checker,
-                )?;
+                    &memquota,
+                );
+
+                let (cell, stream_id, stream_components) = match result {
+                    Ok((cell, stream_id, receiver)) => (cell, stream_id, receiver),
+                    Err(e) => {
+                        // don't care if receiver goes away.
+                        let _ = done.send(Err(e.clone()));
+                        return Err(e);
+                    }
+                };
+
                 Ok(Some(RunOnceCmdInner::BeginStream {
-                    leg: leg_id,
                     cell,
+                    stream_id,
                     hop: hop_location,
+                    leg: leg_id,
+                    stream_components,
                     done,
                 }))
             }

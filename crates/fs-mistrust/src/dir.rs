@@ -590,8 +590,8 @@ mod test {
             .open("f1-link", OpenOptions::new().read(true))
             .unwrap_err();
         assert!(
-            matches!(e, Error::Io { ref err, .. } if err.to_string().contains("symbolic")), // Error is ELOOP.
-            "{e:?}"
+            matches!(e, Error::Io { ref err, .. } if err.raw_os_error() == Some(libc::ELOOP)),
+            "Expected ELOOP, but got: {e:?}"
         );
     }
 }

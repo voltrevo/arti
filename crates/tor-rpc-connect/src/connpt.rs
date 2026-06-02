@@ -449,11 +449,15 @@ impl ConnectAddress<Resolved> {
         R: NetStreamProvider<general::SocketAddr>,
     {
         use crate::ConnectError;
+
+        // We don't use any custom options on the listening socket.
+        let listen_options = Default::default();
+
         match self {
             ConnectAddress::InetAuto(auto) => {
                 let bind_one =
                      async |addr: &general::SocketAddr| -> Result<(R::Listener, String), crate::ConnectError>  {
-                        let listener = runtime.listen(addr).await?;
+                        let listener = runtime.listen(addr, &listen_options).await?;
                         let local_addr = listener.local_addr()?.try_to_string().ok_or_else(|| ConnectError::Internal("Can't represent auto socket as string!".into()))?;
                         Ok((listener,local_addr))
                     };
@@ -478,7 +482,7 @@ impl ConnectAddress<Resolved> {
                 }))
             }
             ConnectAddress::Socket(addr) => {
-                let listener = runtime.listen(addr.as_ref()).await?;
+                let listener = runtime.listen(addr.as_ref(), &listen_options).await?;
                 Ok((listener, addr.as_str().to_owned()))
             }
         }

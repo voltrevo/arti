@@ -4,28 +4,30 @@
 //! generation process. The program generator consumes u8 and u32 values that
 //! use a shared u64 generator, implemented using SipHash1,3.
 //!
-//! We use the [`RngCore`] trait for this underlying u64 generator,
+//! We use the [`Rng`] trait for this underlying u64 generator,
 //! allowing substitute random number generators for testing or for special
 //! purposes that don't require compatibility with HashX proper.
 //!
 //! The stateful u8 and u32 layer comes from this module's [`RngBuffer`].
 //! It's important for the u8 and u32 queues to share a common generator.
 //! The order of dequeueing u8 items vs u32 items intentionally modifies the
-//! assignment of particular u64 [`RngCore`] values to the two queues.
+//! assignment of particular u64 [`Rng`] values to the two queues.
+
+use std::convert::Infallible;
 
 use crate::siphash::{SipState, siphash13_ctr};
 use arrayvec::ArrayVec;
-use rand_core::RngCore;
+use rand_core::{Rng, TryRng};
 
-/// Wrap a [`RngCore`] implementation for fast `u8` and `u32` output.
+/// Wrap a [`Rng`] implementation for fast `u8` and `u32` output.
 ///
 /// This maintains small queues for each data type: up to one `u32` and up to
 /// 7 bytes. The queueing behavior matches conventions required by HashX:
 /// The underlying `u64` values are always generated lazily, and component
 /// values are extracted in big endian order.
 #[derive(Debug)]
-pub(crate) struct RngBuffer<'a, T: RngCore> {
-    /// Inner [`RngCore`] implementation
+pub(crate) struct RngBuffer<'a, T: Rng> {
+    /// Inner [`Rng`] implementation
     inner: &'a mut T,
     /// Buffer of remaining u8 values from breaking up a u64
     u8_vec: ArrayVec<u8, 7>,
@@ -33,8 +35,8 @@ pub(crate) struct RngBuffer<'a, T: RngCore> {
     u32_opt: Option<u32>,
 }
 
-impl<'a, T: RngCore> RngBuffer<'a, T> {
-    /// Construct a new empty buffer around a [`RngCore`] implementation.
+impl<'a, T: Rng> RngBuffer<'a, T> {
+    /// Construct a new empty buffer around a [`Rng`] implementation.
     ///
     /// No actual random numbers will be generated until the first call to
     /// [`Self::next_u8`] or [`Self::next_u32`].
@@ -50,7 +52,7 @@ impl<'a, T: RngCore> RngBuffer<'a, T> {
     /// Request 32 bits from the buffered random number generator.
     ///
     /// If we have buffered data stored, returns that. If not,
-    /// requests 64 bits from the [`RngCore`] and saves half for later.
+    /// requests 64 bits from the [`Rng`] and saves half for later.
     #[inline(always)]
     pub(crate) fn next_u32(&mut self) -> u32 {
         let previous = self.u32_opt;
@@ -70,7 +72,7 @@ impl<'a, T: RngCore> RngBuffer<'a, T> {
     /// Request 8 bits from the buffered random number generator.
     ///
     /// If we have buffered data stored, returns that. If not,
-    /// requests 64 bits from the [`RngCore`] and saves 7 bytes for later.
+    /// requests 64 bits from the [`Rng`] and saves 7 bytes for later.
     #[inline(always)]
     pub(crate) fn next_u8(&mut self) -> u8 {
         let value = self.u8_vec.pop();
@@ -92,7 +94,7 @@ impl<'a, T: RngCore> RngBuffer<'a, T> {
 
 /// HashX-style random number generator built on SipHash1,3
 ///
-/// This is an implementation of [`RngCore`] using SipHash1,3 as
+/// This is an implementation of [`Rng`] using SipHash1,3 as
 /// the 64-bit PRNG layer needed by HashX's program generator.
 #[derive(Debug, Clone)]
 pub struct SipRand {
@@ -119,22 +121,24 @@ impl SipRand {
     }
 }
 
-impl RngCore for SipRand {
+impl TryRng for SipRand {
+    type Error = Infallible;
+
     /// Generate a full 64-bit random result using SipHash1,3.
-    fn next_u64(&mut self) -> u64 {
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
         let value = siphash13_ctr(self.key, self.counter);
         self.counter += 1;
-        value
+        Ok(value)
     }
 
     /// Return a 32-bit value by discarding the upper half of a 64-bit result.
-    fn next_u32(&mut self) -> u32 {
-        self.next_u64() as u32
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+        Ok(self.next_u64() as u32)
     }
 
     /// Fill `dest` with random data.
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        rand_core::impls::fill_bytes_via_next(self, dest);
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
+        rand_core::utils::fill_bytes_via_next_word(dest, || Ok::<u64, Infallible>(self.next_u64()))
     }
 }
 

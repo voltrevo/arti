@@ -1,4 +1,4 @@
-//! Wrap [tor_cell::chancell::codec::ChannelCodec] for use with the futures_codec
+//! Wrap [tor_cell::chancell::codec::ChannelCodec] for use with the asynchronous_codec
 //! crate.
 
 use digest::Digest;
@@ -10,7 +10,6 @@ use tor_cell::chancell::{
 use tor_error::internal;
 use tor_llcrypto as ll;
 
-use asynchronous_codec as futures_codec;
 use bytes::BytesMut;
 
 use crate::{channel::msg::LinkVersion, util::err::Error as ChanError};
@@ -192,7 +191,7 @@ impl ChannelCellHandler {
 // If someone wants to contribute a more elegant solution that wouldn't require us to duplicate
 // code for each restricted message set, by all means, go for it :).
 
-impl futures_codec::Decoder for ChannelCellHandler {
+impl asynchronous_codec::Decoder for ChannelCellHandler {
     type Item = AnyChanCell;
     type Error = ChanError;
 
@@ -207,7 +206,7 @@ impl futures_codec::Decoder for ChannelCellHandler {
     }
 }
 
-impl futures_codec::Encoder for ChannelCellHandler {
+impl asynchronous_codec::Encoder for ChannelCellHandler {
     type Item<'a> = AnyChanCell;
     type Error = ChanError;
 
@@ -272,7 +271,7 @@ impl From<ChannelType> for NewChannelHandler {
     }
 }
 
-impl futures_codec::Decoder for NewChannelHandler {
+impl asynchronous_codec::Decoder for NewChannelHandler {
     type Item = msg::Versions;
     type Error = ChanError;
 
@@ -355,7 +354,7 @@ impl futures_codec::Decoder for NewChannelHandler {
     }
 }
 
-impl futures_codec::Encoder for NewChannelHandler {
+impl asynchronous_codec::Encoder for NewChannelHandler {
     type Item<'a> = msg::Versions;
     type Error = ChanError;
 
@@ -455,7 +454,7 @@ impl HandshakeChannelHandler {
     }
 }
 
-impl futures_codec::Encoder for HandshakeChannelHandler {
+impl asynchronous_codec::Encoder for HandshakeChannelHandler {
     type Item<'a> = AnyChanCell;
     type Error = ChanError;
 
@@ -476,7 +475,7 @@ impl futures_codec::Encoder for HandshakeChannelHandler {
     }
 }
 
-impl futures_codec::Decoder for HandshakeChannelHandler {
+impl asynchronous_codec::Decoder for HandshakeChannelHandler {
     type Item = AnyChanCell;
     type Error = ChanError;
 
@@ -517,7 +516,7 @@ impl OpenChannelHandler {
     }
 }
 
-impl futures_codec::Encoder for OpenChannelHandler {
+impl asynchronous_codec::Encoder for OpenChannelHandler {
     type Item<'a> = AnyChanCell;
     type Error = ChanError;
 
@@ -526,7 +525,7 @@ impl futures_codec::Encoder for OpenChannelHandler {
     }
 }
 
-impl futures_codec::Decoder for OpenChannelHandler {
+impl asynchronous_codec::Decoder for OpenChannelHandler {
     type Item = AnyChanCell;
     type Error = ChanError;
 
@@ -554,7 +553,7 @@ pub(crate) mod test {
     use crate::channel::msg::LinkVersion;
     use crate::channel::{ChannelType, new_frame};
 
-    use super::{ChannelCellHandler, OpenChannelHandler, futures_codec};
+    use super::{ChannelCellHandler, OpenChannelHandler};
     use tor_cell::chancell::{AnyChanCell, ChanCmd, ChanMsg, CircId, msg};
 
     /// Helper type for reading and writing bytes to/from buffers.
@@ -612,12 +611,14 @@ pub(crate) mod test {
         }
     }
 
-    fn new_client_open_frame(mbuf: MsgBuf) -> futures_codec::Framed<MsgBuf, ChannelCellHandler> {
+    fn new_client_open_frame(
+        mbuf: MsgBuf,
+    ) -> asynchronous_codec::Framed<MsgBuf, ChannelCellHandler> {
         let open_handler = ChannelCellHandler::Open(OpenChannelHandler::new(
             LinkVersion::V5,
             ChannelType::ClientInitiator,
         ));
-        futures_codec::Framed::new(mbuf, open_handler)
+        asynchronous_codec::Framed::new(mbuf, open_handler)
     }
 
     #[test]

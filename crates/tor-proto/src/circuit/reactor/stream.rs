@@ -7,11 +7,8 @@ use crate::congestion::{CongestionControl, sendme};
 use crate::memquota::{CircuitAccount, SpecificAccount as _, StreamAccount};
 use crate::stream::CloseStreamBehavior;
 use crate::stream::cmdcheck::StreamStatus;
-use crate::stream::flow_ctrl::state::StreamRateLimit;
-use crate::stream::queue::stream_queue;
 use crate::streammap;
 use crate::util::err::ReactorError;
-use crate::util::notify::NotifySender;
 use crate::{Error, HopNum};
 
 #[cfg(any(feature = "hs-service", feature = "relay"))]
@@ -25,14 +22,12 @@ use tor_cell::relaycell::msg::{AnyRelayMsg, Begin, End, EndReason};
 use tor_cell::relaycell::{AnyRelayMsgOuter, RelayCellFormat, StreamId, UnparsedRelayMsg};
 use tor_error::into_internal;
 use tor_log_ratelim::log_ratelim;
-use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 use tor_rtcompat::{DynTimeProvider, Runtime, SleepProvider as _};
 
 use derive_deftly::Deftly;
 use futures::SinkExt;
 use futures::channel::mpsc;
 use futures::{FutureExt as _, StreamExt as _, future, select_biased};
-use postage::watch;
 use tracing::debug;
 
 use std::pin::Pin;
@@ -40,11 +35,6 @@ use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::time::Duration;
-
-/// Size of the buffer for communication between a StreamTarget and the reactor.
-///
-// TODO(tuning): figure out if this is a good size for this buffer
-const CIRCUIT_BUFFER_SIZE: usize = 128;
 
 /// Trait for customizing the behavior of the stream reactor.
 ///
@@ -419,44 +409,16 @@ impl StreamReactor {
         let memquota =
             StreamAccount::new(&self.memquota).map_err(|e| ReactorError::Err(e.into()))?;
 
-        let (sender, receiver) = stream_queue(
-            #[cfg(not(feature = "flowctl-cc"))]
-            crate::stream::STREAM_READER_BUFFER,
-            &memquota,
-            &self.time_provider,
-        )
-        .map_err(|e| ReactorError::Err(e.into()))?;
-
-        let (msg_tx, msg_rx) = MpscSpec::new(CIRCUIT_BUFFER_SIZE)
-            .new_mq(self.time_provider.clone(), memquota.as_raw_account())
-            .map_err(|e| ReactorError::Err(e.into()))?;
-
-        let (rate_limit_tx, rate_limit_rx) = watch::channel_with(StreamRateLimit::MAX);
-
-        // A channel for the reactor to request a new drain rate from the reader.
-        // Typically this notification will be sent after an XOFF is sent so that the reader can
-        // send us a new drain rate when the stream data queue becomes empty.
-        let mut drain_rate_request_tx = NotifySender::new_typed();
-        let drain_rate_request_rx = drain_rate_request_tx.subscribe();
-
         let cmd_checker = InboundDataCmdChecker::new_connected();
-        self.hop.add_ent_with_id(
-            sender,
-            msg_rx,
-            rate_limit_tx,
-            drain_rate_request_tx,
-            sid,
-            cmd_checker,
-        )?;
+        let stream_components =
+            self.hop
+                .add_ent_with_id(&self.time_provider, sid, cmd_checker, &memquota)?;
 
         let outcome = Pin::new(&mut handler.incoming_sender).try_send(StreamReqInfo {
             req,
             stream_id: sid,
             hop: None,
-            msg_tx,
-            receiver,
-            rate_limit_stream: rate_limit_rx,
-            drain_rate_request_stream: drain_rate_request_rx,
+            stream_components,
             memquota,
             relay_cell_format: self.hop.relay_cell_format(),
         });

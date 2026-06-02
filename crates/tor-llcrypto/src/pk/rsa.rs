@@ -224,7 +224,7 @@ impl KeyPair {
     /// This is hardcoded to generate a 1024-bit keypair, since this only exists to support the RSA
     /// keys that we require for backwards compatibility (which are all 1024 bit), and we don't
     /// anticipate adding anything new that uses RSA in the future.
-    pub fn generate<R: rand_core::RngCore + rand_core::CryptoRng>(
+    pub fn generate<R: rand_core::Rng + rand_core::CryptoRng>(
         csprng: &mut R,
     ) -> Result<Self, tor_error::Bug> {
         // It's maybe a bit strange to return tor_error::Bug here, but I think it makes sense: The

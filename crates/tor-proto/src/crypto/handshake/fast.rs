@@ -8,7 +8,7 @@ use crate::crypto::ll::kdf::{Kdf, LegacyKdf};
 use crate::util::ct::bytes_eq;
 use crate::{Error, Result};
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 use tor_bytes::SecretBuf;
 use tor_error::into_internal;
 
@@ -35,7 +35,7 @@ impl super::ClientHandshake for CreateFastClient {
     type ClientAuxData = ();
     type ServerAuxData = ();
 
-    fn client1<R: RngCore + CryptoRng, M: Borrow<()>>(
+    fn client1<R: Rng + CryptoRng, M: Borrow<()>>(
         rng: &mut R,
         _key: &Self::KeyType,
         _client_aux_data: &M,
@@ -80,7 +80,7 @@ impl super::ServerHandshake for CreateFastServer {
     type ClientAuxData = ();
     type ServerAuxData = ();
 
-    fn server<R: RngCore + CryptoRng, REPLY: super::AuxDataReply<Self>, T: AsRef<[u8]>>(
+    fn server<R: Rng + CryptoRng, REPLY: super::AuxDataReply<Self>, T: AsRef<[u8]>>(
         rng: &mut R,
         reply_fn: &mut REPLY,
         _key: &[Self::KeyType],
