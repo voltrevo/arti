@@ -29,7 +29,7 @@ variables:
   FF_TIMESTAMPS: "true"
   # Pinned CI image for most Rust tests
   # Using "amd64/" single-arch variant to work around https://gitlab.torproject.org/tpo/tpa/team/-/issues/41621.
-  RECENT_RUST_IMAGE: "docker.io/amd64/rust:1.94.1-trixie"
+  RECENT_RUST_IMAGE: "docker.io/amd64/rust:1.96.0-trixie"
   # Profile to use when building the arti bins that we use for integration tests.
   # When changing this, also update ARTI_CI_PROFILE_PATH, below.
   ARTI_CI_PROFILE: quicktest
@@ -40,8 +40,8 @@ variables:
   # For static website deployment job
   SITE_URL: arti.torproject.org
   # Pinned chutney version.
-  # main @ 2026-04-08
-  CHUTNEY_COMMIT: "9ca2446f4837c1730d31cf9be8ebb7865ebe8fc3"
+  # main @ 2026-06-15
+  CHUTNEY_COMMIT: "8e7ad77631b5c5113d513b658b2f822debcd18bd"
   # Rust doesn't do backtraces on panic by default, but we do want them in CI
   RUST_BACKTRACE: 1
 
@@ -441,6 +441,8 @@ check-api-surface:
   needs: []
   stage: test
   image: docker.io/rustlang/rust:nightly
+  # See #2616.
+  allow_failure: true
   script:
     - maint/common/apt-install jq
     - ./maint/check-api-surface-arti
@@ -556,7 +558,7 @@ coverage:
 minimal-versions:
   stage: test
   # Using "amd64/" single-arch variant to work around https://gitlab.torproject.org/tpo/tpa/team/-/issues/41621.
-  image: docker.io/amd64/rust:1.89
+  image: docker.io/amd64/rust:1.91
   needs: []
   script:
     - rustup install nightly
@@ -571,7 +573,7 @@ minimal-versions:
     TARGET: UNDEFINED--BUG-IN-CI-YAML
   # If you upgrade this image, also change the one in maint/docker-reproducible-build.
   # Using "amd64/" single-arch variant to work around https://gitlab.torproject.org/tpo/tpa/team/-/issues/41621.
-  image: docker.io/amd64/rust:1.95.0-alpine3.23
+  image: docker.io/amd64/rust:1.96.0-alpine3.23
   script:
     - apk add bash
     - ./maint/reproducible-build $TARGET
@@ -617,8 +619,8 @@ build-shadow:
   variables:
     JOB_SHADOW_REPO: "https://github.com/shadow/shadow.git"
     JOB_SHADOW_BRANCH: "main"
-    # Last updated 2025-11-03
-    JOB_SHADOW_COMMIT: "248bf5f7fa9f45c8caee2e1b57746fcd729e3fe5"
+    # Last updated 2026-06-03
+    JOB_SHADOW_COMMIT: "fda368e7f9ed87c3981c8d8679f716c20c8b634a"
   artifacts:
     paths:
       - opt/shadow

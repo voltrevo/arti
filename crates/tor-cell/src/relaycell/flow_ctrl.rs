@@ -139,7 +139,7 @@ impl std::ops::Deref for FlowCtrlVersion {
 pub struct UnrecognizedVersionError;
 
 /// The `kbps_ewma` field of an XON cell.
-#[derive(Copy, Clone, Debug, Deftly)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deftly)]
 #[derive_deftly(HasMemoryCost)]
 #[allow(clippy::exhaustive_enums)]
 pub enum XonKbpsEwma {

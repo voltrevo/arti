@@ -14,7 +14,7 @@ use tor_proto::{
         self,
         hs_ntor::{self, HsNtorHkdfKeyGenerator},
     },
-    client::stream::{IncomingStream, IncomingStreamRequestFilter},
+    stream::{IncomingStream, IncomingStreamRequestFilter},
 };
 
 /// An error produced while trying to process an introduction request we have
@@ -215,15 +215,15 @@ pub(crate) struct RequestFilter {
 impl IncomingStreamRequestFilter for RequestFilter {
     fn disposition(
         &mut self,
-        _ctx: &tor_proto::client::stream::IncomingStreamRequestContext<'_>,
+        _ctx: &tor_proto::stream::IncomingStreamRequestContext<'_>,
         circ: &tor_proto::circuit::CircHopSyncView<'_>,
-    ) -> tor_proto::Result<tor_proto::client::stream::IncomingStreamRequestDisposition> {
+    ) -> tor_proto::Result<tor_proto::stream::IncomingStreamRequestDisposition> {
         if circ.n_open_streams() >= self.max_concurrent_streams {
             // TODO: We may want to have a way to send back an END message as
             // well and not tear down the circuit.
-            Ok(tor_proto::client::stream::IncomingStreamRequestDisposition::CloseCircuit)
+            Ok(tor_proto::stream::IncomingStreamRequestDisposition::CloseCircuit)
         } else {
-            Ok(tor_proto::client::stream::IncomingStreamRequestDisposition::Accept)
+            Ok(tor_proto::stream::IncomingStreamRequestDisposition::Accept)
         }
     }
 }

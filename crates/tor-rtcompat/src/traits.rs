@@ -547,6 +547,15 @@ pub trait NetStreamProvider<ADDR = net::SocketAddr>: Clone + Send + Sync + 'stat
     type Stream: AsyncRead + AsyncWrite + StreamOps + Send + Sync + Unpin + 'static;
     /// The type for the listeners returned by [`Self::listen()`].
     type Listener: NetStreamListener<ADDR, Stream = Self::Stream> + Send + Sync + Unpin + 'static;
+    /// The options that can be passed to [`Self::connect()`].
+    ///
+    /// It can include options set with `setsockopt`,
+    /// as well as options that influence higher layers (eg, the runtime).
+    ///
+    /// For connected streams,
+    /// you can use [`StreamOps`] to perform additional operations
+    /// or to configure additional options.
+    type ConnectOptions: Clone + Default + Send + Sync + Unpin + 'static;
     /// The options that can be passed to [`Self::listen()`].
     ///
     /// This includes both options that affect the listening,
@@ -566,7 +575,7 @@ pub trait NetStreamProvider<ADDR = net::SocketAddr>: Clone + Send + Sync + 'stat
     /// any types other than a single `ADDR`.  We do this because
     /// we must be absolutely sure not to perform
     /// unnecessary DNS lookups.
-    async fn connect(&self, addr: &ADDR) -> IoResult<Self::Stream>;
+    async fn connect(&self, addr: &ADDR, options: &Self::ConnectOptions) -> IoResult<Self::Stream>;
 
     /// Open a listener on a given socket address.
     async fn listen(&self, addr: &ADDR, options: &Self::ListenOptions) -> IoResult<Self::Listener>;

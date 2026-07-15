@@ -22,7 +22,6 @@ use crate::Result;
 //use zeroize::Zeroizing;
 use rand_core::{CryptoRng, Rng};
 use tor_bytes::SecretBuf;
-use tor_cell::chancell::msg::DestroyReason;
 use tor_error::{ErrorKind, HasKind};
 
 /// A ClientHandshake is used to generate a client onionskin and
@@ -183,19 +182,6 @@ pub(crate) enum RelayHandshakeError {
     /// An internal error.
     #[error("Internal error")]
     Internal(#[from] tor_error::Bug),
-}
-
-impl RelayHandshakeError {
-    /// The reason to use in a DESTROY message for this failure.
-    pub(crate) fn destroy_reason(&self) -> DestroyReason {
-        match self {
-            Self::Fmt(_) => DestroyReason::PROTOCOL,
-            // TODO(relay): Is this right?
-            Self::MissingKey => DestroyReason::OR_IDENTITY,
-            Self::BadClientHandshake => DestroyReason::PROTOCOL,
-            Self::Internal(_) => DestroyReason::INTERNAL,
-        }
-    }
 }
 
 impl HasKind for RelayHandshakeError {

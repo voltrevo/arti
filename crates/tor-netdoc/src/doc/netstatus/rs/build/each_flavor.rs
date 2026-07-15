@@ -184,6 +184,7 @@ impl RouterStatusBuilder {
                 publication: IgnoredPublicationTimeSp,
                 ip: *ip.ip(),
                 or_port: ip.port(),
+                dir_port: 0,
             },
             m: m_doc_digest.into(),
             a,
@@ -194,6 +195,9 @@ impl RouterStatusBuilder {
                 unknown: Unknown::new_discard(),
             },
             weight,
+            port_policy: ns_expr!(None, NotPresent, Void {}),
+            ed25519_id: NotPresent,
+            stats: NotPresent,
         })
     }
 

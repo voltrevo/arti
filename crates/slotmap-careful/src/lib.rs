@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 mod key_data;
@@ -660,6 +661,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     /// Create a new key, using `ver` as its version field (includes trailing 1)

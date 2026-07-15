@@ -144,11 +144,13 @@ impl<'a, K: Keyword> NetDocReaderBase<'a, K> {
     }
 
     /// Return true if the next characters in this reader are `s`
+    #[allow(clippy::string_slice)] // TODO
     fn starts_with(&self, s: &str) -> bool {
         self.s[self.off..].starts_with(s)
     }
     /// Try to extract a NL-terminated line from this reader.  Always
     /// remove data if the reader is nonempty.
+    #[allow(clippy::string_slice)] // TODO
     fn line(&mut self) -> Result<&'a str> {
         let remainder = &self.s[self.off..];
         if let Some(nl_pos) = remainder.find('\n') {
@@ -167,6 +169,7 @@ impl<'a, K: Keyword> NetDocReaderBase<'a, K> {
     /// Try to extract a line that begins with a keyword from this reader.
     ///
     /// Returns a (kwd, args) tuple on success.
+    #[allow(clippy::string_slice)] // TODO
     fn kwdline(&mut self) -> Result<(&'a str, &'a str)> {
         let pos = self.off;
         let line = self.line()?;
@@ -203,6 +206,7 @@ impl<'a, K: Keyword> NetDocReaderBase<'a, K> {
     /// Returns Ok(Some(Object(...))) on success if an object is
     /// found, Ok(None) if no object is found, and Err only if a
     /// corrupt object is found.
+    #[allow(clippy::string_slice)] // TODO
     fn object(&mut self) -> Result<Option<Object<'a>>> {
         use object::*;
 
@@ -270,6 +274,7 @@ impl<'a, K: Keyword> NetDocReaderBase<'a, K> {
 /// Return true iff 's' is a valid keyword or annotation.
 ///
 /// (Only allow annotations if `anno_ok` is true.`
+#[allow(clippy::string_slice)] // TODO
 fn keyword_ok(mut s: &str, anno_ok: bool) -> bool {
     /// Helper: return true if this character can appear in keywords.
     fn kwd_char_ok(c: char) -> bool {
@@ -499,7 +504,7 @@ pub(crate) struct MaybeItem<'a, 'b, K: Keyword>(Option<&'a Item<'b, K>>);
 // All methods here are as for Item.
 impl<'a, 'b, K: Keyword> MaybeItem<'a, 'b, K> {
     /// Return the position of this item, if it has one.
-    fn pos(&self) -> Pos {
+    pub(crate) fn pos(&self) -> Pos {
         match self.0 {
             Some(item) => item.pos(),
             None => Pos::None,
@@ -747,6 +752,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::cognitive_complexity)]
     use super::*;

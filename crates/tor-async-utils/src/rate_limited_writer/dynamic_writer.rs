@@ -17,7 +17,7 @@ use super::writer::{RateLimitedWriter, RateLimitedWriterConfig};
 #[derive(educe::Educe)]
 #[educe(Debug)]
 #[pin_project::pin_project]
-pub(crate) struct DynamicRateLimitedWriter<W: AsyncWrite, S, P: SleepProvider> {
+pub struct DynamicRateLimitedWriter<W: AsyncWrite, S, P: SleepProvider> {
     /// The rate-limited writer.
     #[pin]
     writer: RateLimitedWriter<W, P>,
@@ -35,12 +35,12 @@ where
     /// Create a new [`DynamicRateLimitedWriter`].
     ///
     /// This wraps the `writer` and watches for configuration changes from the `updates` stream.
-    pub(crate) fn new(writer: RateLimitedWriter<W, P>, updates: S) -> Self {
+    pub fn new(writer: RateLimitedWriter<W, P>, updates: S) -> Self {
         Self { writer, updates }
     }
 
     /// Access the inner [`AsyncWrite`] writer of the [`RateLimitedWriter`].
-    pub(crate) fn inner(&self) -> &W {
+    pub fn inner(&self) -> &W {
         self.writer.inner()
     }
 }
@@ -105,7 +105,7 @@ where
 mod tokio_impl {
     use super::*;
 
-    use tokio_crate::io::AsyncWrite as TokioAsyncWrite;
+    use tokio::io::AsyncWrite as TokioAsyncWrite;
     use tokio_util::compat::FuturesAsyncWriteCompatExt;
 
     use std::io::Result as IoResult;
@@ -134,7 +134,9 @@ mod tokio_impl {
     }
 }
 
-#[cfg(test)]
+// The single test here requires the `tokio` feature and so gate the test module to avoid
+// unused imports when the feature is disabled.
+#[cfg(all(test, feature = "tokio"))]
 mod test {
     #![allow(clippy::unwrap_used)]
 
@@ -146,12 +148,10 @@ mod test {
     use futures::{AsyncReadExt, AsyncWriteExt, FutureExt, SinkExt};
     use tor_rtcompat::SpawnExt;
 
-    #[cfg(feature = "tokio")]
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
     /// This test ensures that a [`DynamicRateLimitedWriter`] writes the expected number of bytes,
     /// as a background task alternates the rate limit between on/off once every second.
-    #[cfg(feature = "tokio")]
     #[test]
     fn alternating_on_off() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
@@ -175,7 +175,7 @@ mod test {
 
             // there are some other crates which allow you to make a data "pipe" without tokio, but
             // I don't think it's worth bringing in a new dev-dependency for this
-            let (writer, reader) = tokio_crate::io::duplex(/* max_buf_size= */ 1000);
+            let (writer, reader) = tokio::io::duplex(/* max_buf_size= */ 1000);
             let writer = writer.compat_write();
             let mut reader = reader.compat();
 

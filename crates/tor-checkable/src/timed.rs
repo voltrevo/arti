@@ -7,6 +7,7 @@ use web_time_compat as time;
 ///
 /// The range is given as an argument, as in `t1..t2`.
 ///
+/// The range is always treated as inclusive.
 ///
 /// ```
 /// use web_time_compat::{SystemTime, SystemTimeExt, Duration};
@@ -57,7 +58,7 @@ impl<T> TimerangeBound<T> {
     ///
     /// Note that we do not distinguish between inclusive and
     /// exclusive bounds: `x..y` and `x..=y` are treated the same
-    /// here.
+    /// here - as an inclusive range.
     pub fn new<U>(obj: T, range: U) -> Self
     where
         U: RangeBounds<time::SystemTime>,
@@ -185,13 +186,17 @@ impl<T> crate::Timebound<T> for TimerangeBound<T> {
     fn is_valid_at(&self, t: &time::SystemTime) -> Result<(), Self::Error> {
         use crate::TimeValidityError;
         if let Some(start) = self.start {
-            if let Ok(d) = start.duration_since(*t) {
+            if let Ok(d) = start.duration_since(*t)
+                && d > time::Duration::ZERO
+            {
                 return Err(TimeValidityError::NotYetValid(d));
             }
         }
 
         if let Some(end) = self.end {
-            if let Ok(d) = t.duration_since(end) {
+            if let Ok(d) = t.duration_since(end)
+                && d > time::Duration::ZERO
+            {
                 return Err(TimeValidityError::Expired(d));
             }
         }
@@ -218,6 +223,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::{TimeValidityError, Timebound};
@@ -314,6 +320,16 @@ mod test {
         );
         let tr = TimerangeBound::new("hello world", ..za);
         assert!(tr.check_valid_at_opt(None).is_err());
+
+        // edge cases
+        let tr = TimerangeBound::new("Hello world", de..eu);
+        let nano = Duration::from_nanos(1);
+        assert!(tr.is_valid_at(&(de - nano)).is_err());
+        assert!(tr.is_valid_at(&de).is_ok());
+        assert!(tr.is_valid_at(&(de + nano)).is_ok());
+        assert!(tr.is_valid_at(&(eu - nano)).is_ok());
+        assert!(tr.is_valid_at(&eu).is_ok());
+        assert!(tr.is_valid_at(&(eu + nano)).is_err());
     }
 
     #[test]

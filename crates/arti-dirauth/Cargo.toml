@@ -1,0 +1,30 @@
+[package]
+name = "arti-dirauth"
+version = "0.44.0"
+authors = [
+    "The Tor Project, Inc.",
+    "Ian Jackson <iwj@torproject.org>",
+    "Clara Engler <cve@torproject.org>",
+]
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
+description = "Tor Directory Authority"
+keywords = ["tor", "arti", "privacy", "anonymity", "networking"]
+categories = ["network-programming", "cryptography"]
+repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
+
+[features]
+experimental = []
+full = ["tor-dirauth/full", "tor-netdoc/full"]
+__is_experimental = []
+
+[dependencies]
+tor-dirauth = { path = "../tor-dirauth", version = "0.44.0" }
+tor-netdoc = { path = "../tor-netdoc", version = "0.44.0", features = ["full", "incomplete"] }
+
+[dev-dependencies]
+
+[package.metadata.docs.rs]
+all-features = true

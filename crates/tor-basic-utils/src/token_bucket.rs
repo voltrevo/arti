@@ -19,7 +19,7 @@ use web_time_compat::{Duration, Instant};
 /// complexity, but that optimization should probably only be made if/when needed since it would
 /// make the code more difficult to reason about, and possibly more complex.
 #[derive(Debug)]
-pub(crate) struct TokenBucket<I> {
+pub struct TokenBucket<I> {
     /// The refill rate in tokens/second.
     rate: u64,
     /// The max amount of tokens in the bucket.
@@ -44,7 +44,7 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
     ///
     /// The bucket will initially be full.
     /// The value `max` is commonly referred to as the "burst".
-    pub(crate) fn new(config: &TokenBucketConfig, now: I) -> Self {
+    pub fn new(config: &TokenBucketConfig, now: I) -> Self {
         Self {
             rate: config.rate,
             bucket_max: config.bucket_max,
@@ -54,21 +54,17 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
     }
 
     /// Are there no tokens in the bucket?
-    // remove this if we use it in the future
-    #[cfg_attr(not(test), expect(dead_code))]
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.bucket == 0
     }
 
     /// The maximum number of tokens that this bucket can hold.
-    pub(crate) fn max(&self) -> u64 {
+    pub fn max(&self) -> u64 {
         self.bucket_max
     }
 
     /// Remove `count` tokens from the bucket.
-    // remove this if we use it in the future
-    #[cfg_attr(not(test), expect(dead_code))]
-    pub(crate) fn drain(&mut self, count: u64) -> Result<BecameEmpty, InsufficientTokensError> {
+    pub fn drain(&mut self, count: u64) -> Result<BecameEmpty, InsufficientTokensError> {
         Ok(self.claim(count)?.commit())
     }
 
@@ -79,10 +75,7 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
     /// **Note:** You probably want to call [`refill()`](Self::refill) before this.
     // Since the `ClaimedTokens` holds a `&mut` to this `TokenBucket`, we don't need to worry about
     // other calls accessing the `TokenBucket` before the `ClaimedTokens` are committed.
-    pub(crate) fn claim(
-        &mut self,
-        count: u64,
-    ) -> Result<ClaimedTokens<I>, InsufficientTokensError> {
+    pub fn claim(&mut self, count: u64) -> Result<ClaimedTokens<I>, InsufficientTokensError> {
         if count > self.bucket {
             return Err(InsufficientTokensError {
                 available: self.bucket,
@@ -100,7 +93,7 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
     /// the number of tokens will be reduced to the new max.
     ///
     /// A rate and/or max of 0 is allowed.
-    pub(crate) fn adjust(&mut self, now: I, config: &TokenBucketConfig) {
+    pub fn adjust(&mut self, now: I, config: &TokenBucketConfig) {
         // make sure that the bucket gets the tokens it is owed before we change the rate
         self.refill(now);
 
@@ -129,7 +122,7 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
     /// for example if the refill rate is 0,
     /// the bucket max is too small,
     /// or the time is too large to be represented as an `I`.
-    pub(crate) fn tokens_available_at(&self, tokens: u64) -> Result<I, NeverEnoughTokensError> {
+    pub fn tokens_available_at(&self, tokens: u64) -> Result<I, NeverEnoughTokensError> {
         let tokens_needed = tokens.saturating_sub(self.bucket);
 
         // check if we currently have enough tokens before considering refilling
@@ -163,7 +156,7 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
     }
 
     /// Refill the bucket.
-    pub(crate) fn refill(&mut self, now: I) -> BecameNonEmpty {
+    pub fn refill(&mut self, now: I) -> BecameNonEmpty {
         // time since we last added tokens
         let elapsed = now.saturating_duration_since(self.added_tokens_at);
 
@@ -262,19 +255,20 @@ impl<I: TokenBucketInstant> TokenBucket<I> {
 
 /// The refill rate and token max for a [`TokenBucket`].
 #[derive(Clone, Debug)]
-pub(crate) struct TokenBucketConfig {
+#[allow(clippy::exhaustive_structs)] // constructed directly by callers configuring the bucket
+pub struct TokenBucketConfig {
     /// The refill rate in tokens/second.
-    pub(crate) rate: u64,
+    pub rate: u64,
     /// The max amount of tokens in the bucket.
     /// Commonly referred to as the "burst".
-    pub(crate) bucket_max: u64,
+    pub bucket_max: u64,
 }
 
 /// A handle to a number of claimed tokens.
 ///
 /// Dropping this handle will commit the claim.
 #[derive(Debug)]
-pub(crate) struct ClaimedTokens<'a, I> {
+pub struct ClaimedTokens<'a, I> {
     /// The bucket that the claim is for.
     bucket: &'a mut TokenBucket<I>,
     /// How many tokens to remove from the bucket.
@@ -292,7 +286,7 @@ impl<'a, I> ClaimedTokens<'a, I> {
     ///
     /// This is equivalent to just dropping the [`ClaimedTokens`], but also returns whether the
     /// token bucket became empty or not.
-    pub(crate) fn commit(mut self) -> BecameEmpty {
+    pub fn commit(mut self) -> BecameEmpty {
         self.commit_impl()
     }
 
@@ -300,7 +294,7 @@ impl<'a, I> ClaimedTokens<'a, I> {
     ///
     /// If `count` is larger than the original claim, an error will be returned containing the
     /// current number of claimed tokens.
-    pub(crate) fn reduce(&mut self, count: u64) -> Result<(), InsufficientTokensError> {
+    pub fn reduce(&mut self, count: u64) -> Result<(), InsufficientTokensError> {
         if count > self.count {
             return Err(InsufficientTokensError {
                 available: self.count,
@@ -314,7 +308,7 @@ impl<'a, I> ClaimedTokens<'a, I> {
     /// Discard the claim.
     ///
     /// This does not remove any tokens from the token bucket.
-    pub(crate) fn discard(mut self) {
+    pub fn discard(mut self) {
         self.count = 0;
     }
 
@@ -358,22 +352,23 @@ impl<'a, I> std::ops::Drop for ClaimedTokens<'a, I> {
 /// but the token bucket did not have enough tokens.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("insufficient tokens for operation")]
-pub(crate) struct InsufficientTokensError {
+pub struct InsufficientTokensError {
     /// The number of tokens that are available to drain/commit.
     available: u64,
 }
 
 impl InsufficientTokensError {
     /// Get the number of tokens that are available to drain/commit.
-    pub(crate) fn available_tokens(&self) -> u64 {
+    pub fn available_tokens(&self) -> u64 {
         self.available
     }
 }
 
 /// The token bucket will never have the requested number of tokens.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[allow(clippy::exhaustive_enums)] // callers exhaustively match on these variants
 #[error("there will never be enough tokens for this operation")]
-pub(crate) enum NeverEnoughTokensError {
+pub enum NeverEnoughTokensError {
     /// The request exceeds the bucket's maximum number of tokens.
     ExceedsMaxTokens,
     /// The refill rate is 0.
@@ -387,7 +382,8 @@ pub(crate) enum NeverEnoughTokensError {
 
 /// The token bucket transitioned from "empty" to "non-empty".
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum BecameNonEmpty {
+#[allow(clippy::exhaustive_enums)] // a simple yes/no status that callers match on
+pub enum BecameNonEmpty {
     /// Token bucket became non-empty.
     Yes,
     /// Token bucket remains empty.
@@ -396,7 +392,8 @@ pub(crate) enum BecameNonEmpty {
 
 /// The token bucket transitioned from "non-empty" to "empty".
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum BecameEmpty {
+#[allow(clippy::exhaustive_enums)] // a simple yes/no status that callers match on
+pub enum BecameEmpty {
     /// Token bucket became empty.
     Yes,
     /// Token bucket remains non-empty.
@@ -405,9 +402,7 @@ pub(crate) enum BecameEmpty {
 
 /// Any type implementing this must be represented as a measurement of a monotonically nondecreasing
 /// clock.
-pub(crate) trait TokenBucketInstant:
-    Copy + Clone + Debug + PartialEq + Eq + PartialOrd + Ord
-{
+pub trait TokenBucketInstant: Copy + Clone + Debug + PartialEq + Eq + PartialOrd + Ord {
     /// An unrealistically large time jump.
     ///
     /// We assume that any time change larger than this indicates a broken monotonic clock,

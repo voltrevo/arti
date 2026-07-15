@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 #![allow(non_upper_case_globals)]
@@ -113,7 +114,7 @@ pub struct NamedSubver {
     kind: ProtoKind,
     /// The version of the protocol
     ///
-    /// Must be in 0..=MAX_VER
+    /// Must be in 1..=MAX_VER
     version: u8,
 }
 
@@ -279,7 +280,8 @@ static PROTOCOLS: InternCache<ProtocolsInner> = InternCache::new();
 
 impl From<ProtocolsInner> for Protocols {
     fn from(value: ProtocolsInner) -> Self {
-        Protocols(PROTOCOLS.intern(value))
+        // TODO: Use Intern more natively.
+        Protocols(PROTOCOLS.intern(value).into())
     }
 }
 
@@ -481,7 +483,10 @@ impl ProtocolsInner {
     ///
     /// Uses `foundmask`, a bit mask saying which recognized protocols
     /// we've already found entries for.  Returns an error if `ent` is
-    /// for a protocol we've already added.
+    /// for a recognized protocol we've already added.
+    ///
+    /// WARNING: This method DOES NOT enforce uniqueness for unrecognized protocols.
+    /// The caller is responsible for doing that.
     ///
     /// Does not preserve sorting order; the caller must call `self.unrecognized.sort()` before returning.
     fn add(&mut self, foundmask: &mut u64, ent: SubprotocolEntry) -> Result<(), ParseError> {
@@ -496,14 +501,7 @@ impl ProtocolsInner {
                 *foundmask |= bit;
                 self.recognized[idx] = ent.supported;
             }
-            Protocol::Unrecognized(ref s) => {
-                if self
-                    .unrecognized
-                    .iter()
-                    .any(|ent| ent.proto.is_unrecognized(s))
-                {
-                    return Err(ParseError::Duplicate);
-                }
+            Protocol::Unrecognized(_) => {
                 if ent.supported != 0 {
                     self.unrecognized.push(ent);
                 }
@@ -517,7 +515,7 @@ impl ProtocolsInner {
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]
 pub enum ParseError {
-    /// A protocol version was not in the range 0..=63.
+    /// A protocol version was not in the range 1..=63.
     #[error("Protocol version out of range")]
     OutOfRange,
     /// Some subprotocol or protocol version appeared more than once.
@@ -564,10 +562,8 @@ impl std::str::FromStr for SubprotocolEntry {
 
     fn from_str(s: &str) -> Result<Self, ParseError> {
         // split the string on the =.
-        let (name, versions) = {
-            let eq_idx = s.find('=').ok_or(ParseError::Malformed)?;
-            (&s[..eq_idx], &s[eq_idx + 1..])
-        };
+        let (name, versions) = s.split_once('=').ok_or(ParseError::Malformed)?;
+
         // Look up the protocol by name.
         let proto = match ProtoKind::from_name(name) {
             Some(p) => Protocol::Proto(p),
@@ -588,12 +584,8 @@ impl std::str::FromStr for SubprotocolEntry {
             // Find and parse lo and hi for a single range of versions.
             // (If this is not a range, but rather a single version v,
             // treat it as if it were a range v-v.)
-            let (lo_s, hi_s) = {
-                match ent.find('-') {
-                    Some(pos) => (&ent[..pos], &ent[pos + 1..]),
-                    None => (ent, ent),
-                }
-            };
+            let (lo_s, hi_s) = ent.split_once('-').unwrap_or((ent, ent));
+
             if !is_good_number(lo_s) {
                 return Err(ParseError::Malformed);
             }
@@ -648,6 +640,14 @@ impl std::str::FromStr for Protocols {
             result.add(&mut foundmask, s)?;
         }
         result.unrecognized.sort();
+        if result
+            .unrecognized
+            .windows(2)
+            .any(|w| w[0].proto == w[1].proto)
+        {
+            return Err(ParseError::Duplicate);
+        }
+
         Ok(result.into())
     }
 }
@@ -820,6 +820,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use std::str::FromStr;
 

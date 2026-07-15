@@ -25,7 +25,6 @@ pub use crate::client::circuit::padding::{
 };
 use crate::client::stream::{
     DataStream, OutboundDataCmdChecker, ResolveCmdChecker, ResolveStream, StreamParameters,
-    StreamReceiver,
 };
 use crate::congestion::sendme::StreamRecvWindow;
 use crate::crypto::cell::HopNum;
@@ -33,7 +32,7 @@ use crate::memquota::{SpecificAccount as _, StreamAccount};
 use crate::stream::STREAM_READER_BUFFER;
 use crate::stream::cmdcheck::AnyCmdChecker;
 use crate::stream::flow_ctrl::xon_xoff::reader::XonXoffReaderCtrl;
-use crate::stream::{RECV_WINDOW_INIT, StreamComponents, StreamTarget, Tunnel};
+use crate::stream::{RECV_WINDOW_INIT, StreamComponents, StreamReceiver, StreamTarget, Tunnel};
 use crate::{Error, ResolveError, Result};
 use circuit::{ClientCirc, Path};
 use reactor::{CtrlCmd, CtrlMsg, FlowCtrlMsg, MetaCellHandler};
@@ -47,10 +46,7 @@ use tor_memquota::derive_deftly_template_HasMemoryCost;
 use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 
 #[cfg(feature = "hs-service")]
-use crate::stream::incoming::StreamReqInfo;
-
-#[cfg(feature = "hs-service")]
-use crate::client::stream::{IncomingCmdChecker, IncomingStream};
+use crate::stream::{IncomingCmdChecker, IncomingStream, StreamReqInfo};
 
 #[cfg(feature = "send-control-msg")]
 use msghandler::{MsgHandler, UserMsgHandler};
@@ -260,7 +256,7 @@ impl ClientTunnel {
         filter: FILT,
     ) -> Result<impl futures::Stream<Item = IncomingStream> + use<'a, FILT>>
     where
-        FILT: crate::client::stream::IncomingStreamRequestFilter + 'a,
+        FILT: crate::stream::IncomingStreamRequestFilter + 'a,
     {
         use futures::stream::StreamExt;
 

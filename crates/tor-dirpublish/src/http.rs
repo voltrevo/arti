@@ -87,15 +87,20 @@ impl<R: Runtime> DirectHttpUploader<R> {
         /// How long should we wait for a given connect attempt to succeed or fail?
         const CONNECT_TIMEOUT: Duration = Duration::new(30, 0);
 
+        let connect_options = Default::default();
+
         let mut last_error = None;
         // TODO: Happy eyeballs?
         // TODO: Return all errors?
         for addr in target {
-            match self
+            let connect_res = self
                 .runtime
-                .timeout(CONNECT_TIMEOUT, self.runtime.connect(addr))
-                .await
-            {
+                .timeout(
+                    CONNECT_TIMEOUT,
+                    self.runtime.connect(addr, &connect_options),
+                )
+                .await;
+            match connect_res {
                 Ok(Ok(conn)) => return Ok(conn),
                 Ok(Err(e)) => last_error = Some(UploadError::Connect(Arc::new(e))),
                 Err(_timeout) => last_error = Some(UploadError::Timeout),

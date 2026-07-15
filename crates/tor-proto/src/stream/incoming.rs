@@ -141,7 +141,7 @@ impl IncomingStream {
     pub async fn reject(mut self, message: msg::End) -> Result<()> {
         let rx = self.reject_inner(CloseStreamBehavior::SendEnd(message))?;
 
-        rx.await.map_err(|_| Error::CircuitClosed)?.map(|_| ())
+        rx.await.map_err(|_| Error::CircuitClosed)?
     }
 
     /// Reject this request and possibly send an error message to the client.
@@ -343,6 +343,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use tor_cell::relaycell::{

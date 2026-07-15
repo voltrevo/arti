@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #2010: Remove this global allow, and either propagate it to the functions that need it,
@@ -65,7 +66,7 @@ mod congestion;
 mod crypto;
 pub mod memquota;
 pub mod peer;
-mod stream;
+pub mod stream;
 pub(crate) mod streammap;
 pub(crate) mod tunnel;
 mod util;
@@ -193,6 +194,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use cfg_if::cfg_if;

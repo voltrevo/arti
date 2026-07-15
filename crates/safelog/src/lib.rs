@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO: Try making it not Deref and having expose+expose_mut instead; how bad is it?
@@ -55,6 +56,7 @@ use serde::{Deserialize, Serialize};
 mod err;
 mod flags;
 mod impls;
+pub mod util;
 
 pub use err::Error;
 pub use flags::{Guard, disable_safe_logging, enforce_safe_logging, with_safe_logging_suppressed};
@@ -538,6 +540,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

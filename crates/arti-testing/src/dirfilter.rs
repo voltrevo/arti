@@ -4,9 +4,10 @@
 use anyhow::{Result, anyhow};
 use rand::RngExt;
 use std::sync::{Arc, Mutex};
+use tor_basic_utils::intern::{GloballyInternable, Intern};
 use tor_dirmgr::filter::DirFilter;
 use tor_netdoc::{
-    doc::{microdesc::Microdesc, netstatus::UncheckedMdConsensus},
+    doc::{microdesc::MicrodescAndHash, netstatus::UncheckedMdConsensus},
     types::{Curve25519Public, family::RelayFamily, policy::PortPolicy},
 };
 
@@ -50,7 +51,7 @@ pub(crate) fn nil_filter() -> Arc<dyn DirFilter + 'static> {
 struct ReplaceOnionKeysFilter;
 
 impl DirFilter for ReplaceOnionKeysFilter {
-    fn filter_md(&self, mut md: Microdesc) -> tor_dirmgr::Result<Microdesc> {
+    fn filter_md(&self, mut md: MicrodescAndHash) -> tor_dirmgr::Result<MicrodescAndHash> {
         let junk_key: [u8; 32] = rand::rng().random();
         md.ntor_onion_key = Curve25519Public(junk_key.into());
         Ok(md)
@@ -69,7 +70,7 @@ struct OneBigFamilyFilter {
     /// (This filter won't do a very good job of ensuring consistency between
     /// this family and the MDs we attach it to, but that's okay for the kind of
     /// testing we want to do.)
-    new_family: Mutex<Arc<RelayFamily>>,
+    new_family: Mutex<Intern<RelayFamily>>,
 }
 
 impl DirFilter for OneBigFamilyFilter {
@@ -82,12 +83,12 @@ impl DirFilter for OneBigFamilyFilter {
             new_family.push(*r.rsa_identity());
         }
 
-        *self.new_family.lock().expect("poisoned lock") = Arc::new(new_family);
+        *self.new_family.lock().expect("poisoned lock") = RelayFamily::into_intern(new_family);
 
         Ok(consensus)
     }
 
-    fn filter_md(&self, mut md: Microdesc) -> tor_dirmgr::Result<Microdesc> {
+    fn filter_md(&self, mut md: MicrodescAndHash) -> tor_dirmgr::Result<MicrodescAndHash> {
         let big_family = self.new_family.lock().expect("poisoned lock").clone();
         md.family = big_family;
         Ok(md)
@@ -101,19 +102,19 @@ impl DirFilter for OneBigFamilyFilter {
 #[derive(Debug)]
 struct NoExitPortsFilter {
     /// A "reject all ports" policy.
-    reject_all: Arc<PortPolicy>,
+    reject_all: Intern<PortPolicy>,
 }
 
 impl Default for NoExitPortsFilter {
     fn default() -> Self {
         Self {
-            reject_all: Arc::new(PortPolicy::new_reject_all()),
+            reject_all: PortPolicy::into_intern(PortPolicy::new_reject_all()),
         }
     }
 }
 
 impl DirFilter for NoExitPortsFilter {
-    fn filter_md(&self, mut md: Microdesc) -> tor_dirmgr::Result<Microdesc> {
+    fn filter_md(&self, mut md: MicrodescAndHash) -> tor_dirmgr::Result<MicrodescAndHash> {
         md.ipv4_policy = self.reject_all.clone();
         md.ipv6_policy = self.reject_all.clone();
         Ok(md)

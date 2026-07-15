@@ -11,7 +11,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::Result;
-use tor_netdoc::doc::{microdesc::Microdesc, netstatus::UncheckedMdConsensus};
+use tor_netdoc::doc::{microdesc::MicrodescAndHash, netstatus::UncheckedMdConsensus};
 
 /// Filtering configuration, as provided to the directory code
 pub type FilterConfig = Option<Arc<dyn DirFilter>>;
@@ -26,7 +26,7 @@ pub trait DirFilter: Debug + Send + Sync {
         Ok(consensus)
     }
     /// Modify `md` in an unspecified way.
-    fn filter_md(&self, md: Microdesc) -> Result<Microdesc> {
+    fn filter_md(&self, md: MicrodescAndHash) -> Result<MicrodescAndHash> {
         Ok(md)
     }
 }

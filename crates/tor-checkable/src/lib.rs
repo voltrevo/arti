@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use std::time;
@@ -74,6 +75,15 @@ pub enum TimeValidityError {
 /// It's better to wrap things in a TimeBound than to give them an is_valid()
 /// valid method, so that you can make sure that nobody uses the object before
 /// checking it.
+///
+/// [`Timebound`] implementations are required to be **inclusive** of the
+/// bounds when performing a verification.  Mathematically speaking, this means
+/// that implementations must check whether `x ∊ [start; end]` but *not*
+/// `x ∊ (start; end)`.
+//
+// TODO: We should really provide a method or something to obtain a
+// TimeboundRange from a Timebound, as Timebound itself is not a nice type to
+// work with.
 pub trait Timebound<T>: Sized {
     /// An error type that's returned when the object is _not_ timely.
     type Error;

@@ -3,14 +3,17 @@
 use crate::circuit::UniqId;
 use crate::circuit::circhop::{CircHopOutbound, HopSettings};
 use crate::circuit::reactor::circhop::CircHopList;
-use crate::circuit::reactor::stream::{ReadyStreamMsg, StreamHandler, StreamMsg, StreamReactor};
+use crate::circuit::reactor::stream::{CtrlMsg, ReadyStreamMsg, StreamHandler, StreamReactor};
 use crate::congestion::CongestionControl;
 use crate::memquota::CircuitAccount;
 use crate::util::err::ReactorError;
 use crate::{Error, HopNum, Result};
 
 #[cfg(any(feature = "hs-service", feature = "relay"))]
-use crate::stream::incoming::IncomingStreamRequestHandler;
+use {
+    crate::stream::CloseStreamBehavior, crate::stream::incoming::IncomingStreamRequestHandler,
+    tor_cell::relaycell::StreamId,
+};
 
 use tor_error::internal;
 use tor_rtcompat::Runtime;
@@ -27,7 +30,7 @@ use std::sync::{Arc, Mutex, RwLock};
 /// and a handle to the stream reactor of the hop.
 ///
 /// The stream reactor of the hop is launched lazily,
-/// when the first [`StreamMsg`] is sent via [`HopMgr::send`].
+/// when the first [`CtrlMsg`] is sent via [`HopMgr::send`].
 pub(crate) struct HopMgr<R: Runtime> {
     /// A handle to the runtime.
     runtime: R,
@@ -75,14 +78,60 @@ struct StreamReactorContext {
 }
 
 impl<R: Runtime> HopMgr<R> {
+    /// Create a new [`HopMgr`] with an empty hop list,
+    /// settings the incoming stream request handler to `incoming_handler`.
+    ///
+    /// Hops are added with [`HopMgr::add_hop`].
+    #[cfg(feature = "relay")]
+    pub(crate) fn new_with_incoming_handler<S: StreamHandler>(
+        runtime: R,
+        unique_id: UniqId,
+        handler: S,
+        bwd_tx: mpsc::Sender<ReadyStreamMsg>,
+        incoming_handler: IncomingStreamRequestHandler,
+        memquota: CircuitAccount,
+    ) -> Self {
+        Self::new_inner(
+            runtime,
+            unique_id,
+            handler,
+            bwd_tx,
+            Some(incoming_handler),
+            memquota,
+        )
+    }
+
     /// Create a new [`HopMgr`] with an empty hop list.
     ///
     /// Hops are added with [`HopMgr::add_hop`].
+    #[expect(unused)] // TODO(dedup): clients will use this
     pub(crate) fn new<S: StreamHandler>(
         runtime: R,
         unique_id: UniqId,
         handler: S,
         bwd_tx: mpsc::Sender<ReadyStreamMsg>,
+        memquota: CircuitAccount,
+    ) -> Self {
+        Self::new_inner(
+            runtime,
+            unique_id,
+            handler,
+            bwd_tx,
+            #[cfg(any(feature = "hs-service", feature = "relay"))]
+            None,
+            memquota,
+        )
+    }
+
+    /// Helper for the new*() functions.
+    fn new_inner<S: StreamHandler>(
+        runtime: R,
+        unique_id: UniqId,
+        handler: S,
+        bwd_tx: mpsc::Sender<ReadyStreamMsg>,
+        #[cfg(any(feature = "hs-service", feature = "relay"))] incoming_handler: Option<
+            IncomingStreamRequestHandler,
+        >,
         memquota: CircuitAccount,
     ) -> Self {
         // We don't spawn any stream reactors ahead of time.
@@ -91,7 +140,7 @@ impl<R: Runtime> HopMgr<R> {
         let ctx = StreamReactorContext {
             unique_id,
             #[cfg(any(feature = "hs-service", feature = "relay"))]
-            incoming: Arc::new(Mutex::new(None)),
+            incoming: Arc::new(Mutex::new(incoming_handler)),
             handler: Arc::new(handler),
         };
 
@@ -155,7 +204,7 @@ impl<R: Runtime> HopMgr<R> {
     pub(crate) async fn send(
         &mut self,
         hopnum: Option<HopNum>,
-        msg: StreamMsg,
+        msg: CtrlMsg,
     ) -> StdResult<(), ReactorError> {
         let mut tx = self.get_or_spawn_stream_reactor(hopnum)?;
 
@@ -165,11 +214,30 @@ impl<R: Runtime> HopMgr<R> {
         })
     }
 
+    /// Tell the stream reactor of the specified `hop`
+    /// to close the stream with the specified `stream_id`.
+    #[cfg(any(feature = "hs-service", feature = "relay"))]
+    pub(crate) async fn close_pending(
+        &mut self,
+        hopnum: Option<HopNum>,
+        stream_id: StreamId,
+        behav: CloseStreamBehavior,
+    ) -> StdResult<(), Error> {
+        let mut tx = self.get_or_spawn_stream_reactor(hopnum)?;
+
+        let msg = CtrlMsg::ClosePendingStream { stream_id, behav };
+
+        tx.send(msg).await.map_err(|_| {
+            // The stream reactor has shut down
+            Error::NotConnected
+        })
+    }
+
     /// Get a handle to the stream reactor, spawning it if necessary
     fn get_or_spawn_stream_reactor(
         &self,
         hopnum: Option<HopNum>,
-    ) -> StdResult<mpsc::Sender<StreamMsg>, ReactorError> {
+    ) -> StdResult<mpsc::Sender<CtrlMsg>, Error> {
         let mut hops = self.hops.write().expect("poisoned lock");
         let hop = hops
             .get_mut(hopnum)
@@ -201,7 +269,7 @@ impl<R: Runtime> HopMgr<R> {
         hopnum: Option<HopNum>,
         settings: &HopSettings,
         ccontrol: Arc<Mutex<CongestionControl>>,
-    ) -> StdResult<mpsc::Sender<StreamMsg>, ReactorError> {
+    ) -> StdResult<mpsc::Sender<CtrlMsg>, Error> {
         use tor_rtcompat::SpawnExt as _;
 
         // NOTE: not registering this channel with the memquota subsystem is okay,
@@ -236,7 +304,10 @@ impl<R: Runtime> HopMgr<R> {
             .spawn(async {
                 let _ = stream_reactor.run().await;
             })
-            .map_err(|_| ReactorError::Shutdown)?;
+            .map_err(|e| Error::Spawn {
+                spawning: "stream reactor",
+                cause: e.into(),
+            })?;
 
         Ok(fwd_stream_tx)
     }

@@ -152,7 +152,6 @@ ns_choose! { (
                 slice::from_ref(&self.sigs.sigs.directory_signature),
                 &[*cert.fingerprint],
                 &[&cert],
-                1,
             )?;
 
             Ok(self.unwrap_unverified())
@@ -161,9 +160,11 @@ ns_choose! { (
 
     impl NetworkStatus {
         /// Parse the embedded authcert
+        //
+        // TODO DIRAUTH abolish/move
         fn parse_authcert(&self) -> Result<crate::doc::authcert::AuthCertUnverified, EP> {
             let cert_input = ParseInput::new(
-                self.authority.cert.as_str(),
+                self.authority.cert.raw_unverified().as_str(),
                 "<embedded auth cert>",
             );
             parse_netdoc(&cert_input).map_err(|e| e.problem)
@@ -178,6 +179,8 @@ ns_choose! { (
         ///
         /// It is up to the caller to decide whether this identity is actually
         /// a voter, count up votes, etc.
+        //
+        // TODO DIRAUTH use EmbeddedCert::get
         pub fn h_kp_auth_id_rsa(&self) -> pk::rsa::RsaIdentity {
             *self.parse_authcert()
                 // SECURITY: if the user calls this function, they have a bare
@@ -212,7 +215,6 @@ ns_choose! { (
             authorities: &[pk::rsa::RsaIdentity],
             certs: &[&DirAuthKeyCert],
         ) -> Result<(NetworkStatus, SignaturesData<NetworkStatusUnverified>), VF> {
-            let threshold = authorities.len() / 2 + 1; // strict majority
             let validity_start = self.body.valid_after.0
                 .checked_sub(Duration::from_secs(self.body.voting_delay.dist_seconds.into()))
                 .ok_or(VF::Other)?;
@@ -223,7 +225,6 @@ ns_choose! { (
                 &self.sigs.sigs.directory_signature,
                 authorities,
                 certs,
-                threshold,
             )?;
 
             Ok(self.unwrap_unverified())

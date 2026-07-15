@@ -164,6 +164,209 @@ pub(crate) struct AbstractChanMgr<CF: AbstractChannelFactory> {
 
     /// The memory quota account that every channel will be a child of
     pub(crate) memquota: ToplevelAccount,
+
+    /// Metrics counters / gauges / histograms.
+    #[cfg(feature = "metrics")]
+    pub(crate) metrics: ChanMgrMetrics,
+}
+
+/// Struct to hold all the metrics counters / gauges / histograms we use.
+///
+/// We create these and store them in the [`AbstractChanMgr`] in order to avoid
+/// the performance hit associated with re-registering counters.
+#[cfg(feature = "metrics")]
+pub(crate) struct ChanMgrMetrics {
+    /// Number of inbound channels successfully built.
+    pub(crate) inbound_channels_built_success: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::UnusableTarget`] error.
+    pub(crate) inbound_channels_built_failure_unusable_target: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::PendingFailed`] error.
+    pub(crate) inbound_channels_built_failure_pending_failed: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::ChanTimeout`] error.
+    pub(crate) inbound_channels_built_failure_chan_timeout: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Proto`] error.
+    pub(crate) inbound_channels_built_failure_proto: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Io`] error.
+    pub(crate) inbound_channels_built_failure_io: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Connect`] error.
+    pub(crate) inbound_channels_built_failure_connect: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Spawn`] error.
+    pub(crate) inbound_channels_built_failure_spawn: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::MissingId`] error.
+    pub(crate) inbound_channels_built_failure_missing_id: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::IdentityConflict`] error.
+    pub(crate) inbound_channels_built_failure_identity_conflict: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::NoSuchTransport`] error.
+    pub(crate) inbound_channels_built_failure_no_such_transport: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::RequestCancelled`] error.
+    pub(crate) inbound_channels_built_failure_request_cancelled: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Pt`] error.
+    pub(crate) inbound_channels_built_failure_pt: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Memquota`] error.
+    pub(crate) inbound_channels_built_failure_memquota: metrics::Counter,
+    /// Number of inbound channels that we tried to build but had an [`Error::Internal`] error.
+    pub(crate) inbound_channels_built_failure_internal: metrics::Counter,
+}
+
+#[cfg(feature = "metrics")]
+impl ChanMgrMetrics {
+    /// Create a new instance of [`ChanMgrMetrics`].
+    pub(crate) fn new() -> Self {
+        ChanMgrMetrics {
+            inbound_channels_built_success: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "success",
+                "direction" => "inbound",
+            ),
+            inbound_channels_built_failure_unusable_target: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "unusable_target",
+            ),
+            inbound_channels_built_failure_pending_failed: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "pending_failed",
+            ),
+            inbound_channels_built_failure_chan_timeout: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "chan_timeout",
+            ),
+            inbound_channels_built_failure_proto: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "proto",
+            ),
+            inbound_channels_built_failure_io: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "io",
+            ),
+            inbound_channels_built_failure_connect: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "connect",
+            ),
+            inbound_channels_built_failure_spawn: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "spawn",
+            ),
+            inbound_channels_built_failure_missing_id: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "missing_id",
+            ),
+            inbound_channels_built_failure_identity_conflict: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "identity_conflict",
+            ),
+            inbound_channels_built_failure_no_such_transport: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "no_such_transport",
+            ),
+            inbound_channels_built_failure_request_cancelled: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "request_cancelled",
+            ),
+            inbound_channels_built_failure_pt: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "pt",
+            ),
+            inbound_channels_built_failure_memquota: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "memquota",
+            ),
+            inbound_channels_built_failure_internal: metrics::counter!(
+                description: "Total number of channels built",
+                unit: metrics::Unit::Count,
+                "arti_chanmgr_channels_built",
+                "result" => "failure",
+                "direction" => "inbound",
+                "error" => "internal",
+            ),
+        }
+    }
+
+    /// Increment the correct inbound_channels_built counter for the given result.
+    pub(crate) fn increment_inbound_channels_built<R>(&self, result: &Result<R>) {
+        match result {
+            Ok(_) => self.inbound_channels_built_success.increment(1),
+            Err(Error::UnusableTarget(_)) => self
+                .inbound_channels_built_failure_unusable_target
+                .increment(1),
+            Err(Error::PendingFailed { .. }) => self
+                .inbound_channels_built_failure_pending_failed
+                .increment(1),
+            Err(Error::ChanTimeout { .. }) => self
+                .inbound_channels_built_failure_chan_timeout
+                .increment(1),
+            Err(Error::Proto { .. }) => self.inbound_channels_built_failure_proto.increment(1),
+            Err(Error::Io { .. }) => self.inbound_channels_built_failure_io.increment(1),
+            Err(Error::Connect { .. }) => self.inbound_channels_built_failure_connect.increment(1),
+            Err(Error::Spawn { .. }) => self.inbound_channels_built_failure_spawn.increment(1),
+            Err(Error::MissingId) => self.inbound_channels_built_failure_missing_id.increment(1),
+            Err(Error::IdentityConflict) => self
+                .inbound_channels_built_failure_identity_conflict
+                .increment(1),
+            Err(Error::NoSuchTransport(_)) => self
+                .inbound_channels_built_failure_no_such_transport
+                .increment(1),
+            Err(Error::RequestCancelled) => self
+                .inbound_channels_built_failure_request_cancelled
+                .increment(1),
+            Err(Error::Pt(_)) => self.inbound_channels_built_failure_pt.increment(1),
+            Err(Error::Memquota(_)) => self.inbound_channels_built_failure_memquota.increment(1),
+            Err(Error::Internal(_)) => self.inbound_channels_built_failure_internal.increment(1),
+        }
+    }
 }
 
 /// Type alias for a future that we wait on to see when a pending
@@ -254,6 +457,8 @@ impl<CF: AbstractChannelFactory + Clone> AbstractChanMgr<CF> {
             channels: state::MgrState::new(connector, config, dormancy, netparams),
             reporter,
             memquota,
+            #[cfg(feature = "metrics")]
+            metrics: ChanMgrMetrics::new(),
         }
     }
 
@@ -560,6 +765,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::Error;

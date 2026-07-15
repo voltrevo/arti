@@ -467,11 +467,9 @@ impl ServiceOnionServiceDataTunnel {
         allow_commands: &'a [tor_cell::relaycell::RelayCmd],
         hop: TargetHop,
         filter: FILT,
-    ) -> Result<
-        impl futures::Stream<Item = tor_proto::client::stream::IncomingStream> + use<'a, FILT>,
-    >
+    ) -> Result<impl futures::Stream<Item = tor_proto::stream::IncomingStream> + use<'a, FILT>>
     where
-        FILT: tor_proto::client::stream::IncomingStreamRequestFilter,
+        FILT: tor_proto::stream::IncomingStreamRequestFilter,
     {
         self.tunnel_ref()
             .allow_stream_requests(allow_commands, hop, filter)

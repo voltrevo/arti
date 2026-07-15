@@ -7,9 +7,9 @@
 
 /// Types used for networking (async_std implementation)
 mod net {
-    use crate::network::TcpListenOptions;
+    use crate::network::{TcpConnectOptions, TcpListenOptions};
     #[cfg(unix)]
-    use crate::network::UnixListenOptions;
+    use crate::network::{UnixConnectOptions, UnixListenOptions};
     use crate::{impls, traits};
 
     use async_std_crate::net::{TcpListener, TcpStream, UdpSocket as StdUdpSocket};
@@ -78,10 +78,17 @@ mod net {
     impl traits::NetStreamProvider<std::net::SocketAddr> for async_executors::AsyncStd {
         type Stream = TcpStream;
         type Listener = TcpListener;
+        type ConnectOptions = TcpConnectOptions;
         type ListenOptions = TcpListenOptions;
         #[instrument(skip_all, level = "trace")]
-        async fn connect(&self, addr: &SocketAddr) -> IoResult<Self::Stream> {
-            TcpStream::connect(addr).await
+        async fn connect(
+            &self,
+            addr: &SocketAddr,
+            options: &Self::ConnectOptions,
+        ) -> IoResult<Self::Stream> {
+            // The async-std runtime uses async-io internally.
+            let stream = impls::tcp_async_io_connect(addr, options).await?;
+            Ok(stream.into())
         }
         async fn listen(
             &self,
@@ -98,9 +105,17 @@ mod net {
     impl traits::NetStreamProvider<unix::SocketAddr> for async_executors::AsyncStd {
         type Stream = UnixStream;
         type Listener = UnixListener;
+        type ConnectOptions = UnixConnectOptions;
         type ListenOptions = UnixListenOptions;
         #[instrument(skip_all, level = "trace")]
-        async fn connect(&self, addr: &unix::SocketAddr) -> IoResult<Self::Stream> {
+        async fn connect(
+            &self,
+            addr: &unix::SocketAddr,
+            options: &Self::ConnectOptions,
+        ) -> IoResult<Self::Stream> {
+            // Will fail to compile if we add options without handling them here.
+            let UnixConnectOptions {} = options;
+
             let path = addr
                 .as_pathname()
                 .ok_or(crate::unix::UnsupportedAfUnixAddressType)?;

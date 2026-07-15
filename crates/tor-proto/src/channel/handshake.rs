@@ -770,7 +770,7 @@ pub(crate) fn verify_link_auth_cert(
     let (cert_timeliness, cert) = check_cert_timeliness(cert, now, clock_skew);
 
     // Make sure the cert is well signed.
-    if cert_sig.is_valid() {
+    if !cert_sig.is_valid() {
         return Err(Error::HandshakeProto(
             "Invalid ed25519 LINK_AUTH signature in handshake".into(),
         ));
@@ -906,7 +906,7 @@ where
     let m = m.try_into().map_err(|m: AnyChanMsg| {
         Error::HandshakeProto(format!(
             "Expected [{}] cell, but received {} cell instead",
-            tor_basic_utils::iter_join(", ", T::cmds_for_logging().iter()),
+            tor_basic_utils::iter_join(", ", T::cmds_for_logging()),
             m.cmd(),
         ))
     })?;
@@ -937,6 +937,7 @@ pub(crate) mod test {
 
     #[cfg(feature = "relay")]
     use {
+        crate::circuit::reactor::test::AllowAllStreamsFilter,
         crate::relay::channel::handshake::RelayInitiatorHandshake,
         crate::relay::channel::test::{RelayMsgBuf, fake_auth_material},
         tor_basic_utils::test_rng::{TestingRng, testing_rng},
@@ -1312,6 +1313,7 @@ pub(crate) mod test {
                     Arc::downgrade(&chan_provider) as Weak<_>,
                     new_circ_net_params(),
                     ntor_keys,
+                    Box::new(|| Box::new(AllowAllStreamsFilter) as Box<_>),
                 ));
                 let peer_target = OwnedChanTargetBuilder::default().build().unwrap();
                 let unverified = RelayInitiatorHandshake::new(
@@ -1518,5 +1520,84 @@ pub(crate) mod test {
                 );
             }
         });
+    }
+
+    /// Regression tests for [`verify_link_auth_cert`].
+    #[cfg(feature = "relay")]
+    mod link_auth_cert {
+        use super::*;
+        use crate::relay::channel::build_certs_cell;
+        use tor_cert::CertType;
+
+        fn good_certs_and_signing_key() -> (msg::Certs, Ed25519Identity) {
+            let auth_material = fake_auth_material();
+            let certs = build_certs_cell(&auth_material, /* is_responder = */ false);
+            let cert_signing = get_cert(&certs, CertType::IDENTITY_V_SIGNING).unwrap();
+            let (cert_signing, _sig) = cert_signing
+                .should_have_signing_key()
+                .unwrap()
+                .dangerously_split()
+                .unwrap();
+            let (timeliness, cert_signing) =
+                check_cert_timeliness(cert_signing, SystemTime::get(), ClockSkew::None);
+            timeliness.unwrap();
+            let kp_relaysign_ed = *cert_signing.subject_key().as_ed25519().unwrap();
+            (certs, kp_relaysign_ed)
+        }
+
+        /// A valid CertType 6 LINK_AUTH cert must be accepted.
+        #[test]
+        fn link_auth_cert_good() {
+            let (certs, kp_relaysign_ed) = good_certs_and_signing_key();
+            let _ = verify_link_auth_cert(
+                &certs,
+                &kp_relaysign_ed,
+                Some(SystemTime::get()),
+                ClockSkew::None,
+            )
+            .expect("valid LINK_AUTH cert was rejected by verify_link_auth_cert");
+        }
+
+        /// A CertType 6 whose signature has been corrupted must be rejected
+        /// with the specific `Invalid ed25519 LINK_AUTH signature in handshake` error.
+        #[test]
+        fn link_auth_cert_badsig() {
+            let (good_certs, kp_relaysign_ed) = good_certs_and_signing_key();
+            // Flip the last byte of the CertType 6 body to break its signature,
+            // mirroring the existing `certs_badsig` pattern above.
+            let bad_link_auth_body = {
+                let mut v = good_certs
+                    .cert_body(CertType::SIGNING_V_LINK_AUTH)
+                    .unwrap()
+                    .to_vec();
+                let last = v.len() - 1;
+                v[last] ^= 0x10;
+                v
+            };
+
+            // Carry over the supporting certs unchanged and replace only
+            // CertType 6 with the corrupted body.
+            let mut bad_certs = msg::Certs::new_empty();
+            for ct in [
+                CertType::RSA_ID_X509,
+                CertType::IDENTITY_V_SIGNING,
+                CertType::RSA_ID_V_IDENTITY,
+            ] {
+                bad_certs.push_cert_body(ct, good_certs.cert_body(ct).unwrap().to_vec());
+            }
+            bad_certs.push_cert_body(CertType::SIGNING_V_LINK_AUTH, bad_link_auth_body);
+
+            let err = verify_link_auth_cert(
+                &bad_certs,
+                &kp_relaysign_ed,
+                Some(SystemTime::get()),
+                ClockSkew::None,
+            )
+            .expect_err("munged LINK_AUTH cert was accepted by verify_link_auth_cert");
+            assert_eq!(
+                err.to_string(),
+                "Handshake protocol violation: Invalid ed25519 LINK_AUTH signature in handshake"
+            );
+        }
     }
 }

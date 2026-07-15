@@ -125,32 +125,51 @@ async fn run_proxy<R: ToplevelRuntime>(
 ) -> Result<()> {
     // Using OnDemand arranges that, while we are bootstrapping, incoming connections wait
     // for bootstrap to complete, rather than getting errors.
-    use arti_client::BootstrapBehavior::OnDemand;
+    use arti_client::BootstrapBehavior;
     use futures::FutureExt;
 
     // TODO: We may instead want to provide a way to get these items out of TorClient.
     let fs_mistrust = client_config.fs_mistrust().clone();
     let path_resolver: CfgPathResolver = AsRef::<CfgPathResolver>::as_ref(&client_config).clone();
 
+    let defer_bootstrap = arti_config.application().defer_bootstrap;
+
+    let bootstrap_behavior = match defer_bootstrap {
+        true => BootstrapBehavior::Manual,
+        false => BootstrapBehavior::OnDemand,
+    };
+
     let client_builder = TorClient::with_runtime(runtime.clone())
         .config(client_config)
-        .bootstrap_behavior(OnDemand);
+        .bootstrap_behavior(bootstrap_behavior);
     let client = client_builder.create_unbootstrapped_async().await?;
+
+    let launchable_client = Arc::new(reload_cfg::LaunchableTorClient::new(
+        Arc::clone(&client),
+        arti_config.application(),
+    ));
 
     #[allow(unused_mut)]
     let mut reconfigurable_modules: Vec<Arc<dyn reload_cfg::ReconfigurableModule>> = vec![
-        Arc::clone(&client) as _,
+        Arc::clone(&launchable_client) as _,
         Arc::new(reload_cfg::Application::new(arti_config.clone())),
     ];
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "onion-service-service")] {
-            let onion_services =
-                onion_proxy::ProxySet::launch_new(Arc::clone(&client), arti_config.onion_services.clone())?;
-            let launched_onion_svc = !onion_services.is_empty();
-            reconfigurable_modules.push(Arc::new(onion_services));
+            let have_onion_svc = if defer_bootstrap {
+                let onion_services = onion_proxy::ProxySet::new_deferred(Arc::clone(&client));
+                reconfigurable_modules.push(Arc::new(onion_services));
+                arti_config.onion_services.values().any(|c| *c.svc_cfg.enabled())
+            } else {
+                let onion_services =
+                    onion_proxy::ProxySet::launch_new(Arc::clone(&client), arti_config.onion_services.clone())?;
+                let have_onion_svc = !onion_services.is_empty();
+                reconfigurable_modules.push(Arc::new(onion_services));
+                have_onion_svc
+            };
         } else {
-            let launched_onion_svc = false;
+            let have_onion_svc = false;
         }
     };
 
@@ -175,6 +194,7 @@ async fn run_proxy<R: ToplevelRuntime>(
                 &path_resolver,
                 &fs_mistrust,
                 client.clone(),
+                launchable_client.clone(),
             )
             .await?;
             let (rpc_mgr, mut rpc_state_sender) = rpc_data
@@ -245,7 +265,7 @@ async fn run_proxy<R: ToplevelRuntime>(
     }
 
     if proxy.is_empty() {
-        if !launched_onion_svc {
+        if !have_onion_svc {
             // TODO: rename "socks_listen" to "proxy_listen", preserving compat, once http-connect is stable.
             warn!(
                 "No proxy address set; \
@@ -288,11 +308,15 @@ async fn run_proxy<R: ToplevelRuntime>(
         r = proxy.fuse()
             => r,
         r = async {
-            client.bootstrap().await?;
-            if !socks_listen.is_empty() {
-                info!("Sufficiently bootstrapped; proxy now functional.");
+            if defer_bootstrap {
+                info!("Bootstrapping deferred.");
             } else {
-                info!("Sufficiently bootstrapped.");
+                client.bootstrap().await?;
+                if !socks_listen.is_empty() {
+                    info!("Sufficiently bootstrapped; proxy now functional.");
+                } else {
+                    info!("Sufficiently bootstrapped.");
+                }
             }
             futures::future::pending::<Result<()>>().await
         }.fuse()

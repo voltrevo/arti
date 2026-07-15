@@ -242,7 +242,10 @@ impl NetdocParseable for ConsensusAuthoritySection {
             }
 
             // Well, this is pretty terrible
-            let rest = &input.whole_input()[input.byte_position()..];
+            let rest = input
+                .whole_input()
+                .get(input.byte_position()..)
+                .ok_or(ErrorProblem::Internal("chopped utf8"))?;
             let line = rest.split_once('\n').map(|(l, _)| l).unwrap_or(rest);
             let mut line = line.split_ascii_whitespace();
             assert_eq!(line.next(), Some(DIR_SOURCE_KEYWORD));

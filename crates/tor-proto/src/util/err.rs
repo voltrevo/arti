@@ -1,4 +1,6 @@
 //! Define an error type for the tor-proto crate.
+
+use futures::task::SpawnError;
 use safelog::Sensitive;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
@@ -186,6 +188,20 @@ pub enum Error {
     /// Memory quota error
     #[error("memory quota error")]
     Memquota(#[from] tor_memquota::Error),
+
+    /// Unable to spawn task
+    //
+    // TODO lots of our Errors have a variant exactly like this.
+    // Maybe we should make a struct tor_error::SpawnError.
+    #[error("Unable to spawn {spawning}")]
+    Spawn {
+        /// What we were trying to spawn.
+        spawning: &'static str,
+        /// What happened when we tried to spawn it.
+        #[source]
+        cause: Arc<SpawnError>,
+    },
+
     /// An unsupported authentication type value. This is raised during the relay <-> relay channel
     /// handshake if the authentication presented from the other side is unsupported.
     #[cfg(feature = "relay")]
@@ -294,7 +310,9 @@ impl From<Error> for std::io::Error {
 
             Bug(ref e) if e.kind() == tor_error::ErrorKind::BadApiUsage => ErrorKind::InvalidData,
 
-            IdRangeFull | CircRefused(_) | ResolveError(_) | Bug(_) => ErrorKind::Other,
+            IdRangeFull | CircRefused(_) | ResolveError(_) | Spawn { .. } | Bug(_) => {
+                ErrorKind::Other
+            }
         };
         std::io::Error::new(kind, err)
     }
@@ -347,6 +365,7 @@ impl HasKind for Error {
             E::ExcessOutboundCells => EK::Internal,
             E::ExcessPadding(_, _) => EK::TorProtocolViolation,
             E::Memquota(err) => err.kind(),
+            E::Spawn { cause, .. } => cause.kind(),
             E::Bug(e) => e.kind(),
             #[cfg(feature = "relay")]
             E::UnsupportedAuth(_) => EK::RemoteProtocolViolation,

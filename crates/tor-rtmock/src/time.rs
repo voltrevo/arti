@@ -84,7 +84,7 @@ use crate::time_core::MockTimeCore;
 /// async fn say_hi(runtime: impl Runtime, addr: &SocketAddr) -> Result<()> {
 ///    let delay = Duration::new(5,0);
 ///    runtime.timeout(delay, async {
-///       let mut conn = runtime.connect(addr).await?;
+///       let mut conn = runtime.connect(addr, &Default::default()).await?;
 ///       conn.write_all(b"Hello world!\r\n").await?;
 ///       conn.close().await?;
 ///       Ok::<_,Error>(())
@@ -587,6 +587,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use tor_rtcompat::test_with_all_runtimes;

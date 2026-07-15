@@ -191,6 +191,15 @@ impl<'f, T: 'f> MultiplicityMethods<'f> for SingletonMultiplicitySelector<T> {
         iter::once(f)
     }
 }
+impl<T> SingletonMultiplicitySelector<T> {
+    /// Test whether the value is `Default`
+    pub fn is_default(self, item: &T) -> bool
+    where
+        T: Default + Eq,
+    {
+        item == &Default::default()
+    }
+}
 
 /// Methods for handling optionality of a netdoc Object, during encoding
 ///

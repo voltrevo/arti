@@ -32,7 +32,7 @@ use tracing::{debug, trace};
 #[cfg(feature = "hs-service")]
 use {
     crate::client::reactor::IncomingStreamRequestHandler,
-    crate::client::stream::IncomingStreamRequestFilter, crate::stream::incoming::StreamReqSender,
+    crate::stream::IncomingStreamRequestFilter, crate::stream::incoming::StreamReqSender,
 };
 
 #[cfg(test)]

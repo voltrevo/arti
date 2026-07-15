@@ -1,7 +1,7 @@
 //! Declare a type for streams that do hostname lookups
 
-use crate::client::stream::StreamReceiver;
 use crate::memquota::StreamAccount;
+use crate::stream::StreamReceiver;
 use crate::stream::cmdcheck::{AnyCmdChecker, CmdChecker, StreamStatus};
 use crate::{Error, Result};
 
@@ -104,7 +104,7 @@ impl CmdChecker for ResolveCmdChecker {
 }
 
 impl ResolveCmdChecker {
-    /// Return a new boxed `DataCmdChecker` in a state suitable for a newly
+    /// Return a new boxed `ResolveCmdChecker` in a state suitable for a newly
     /// constructed connection.
     pub(crate) fn new_any() -> AnyCmdChecker {
         Box::<Self>::default()

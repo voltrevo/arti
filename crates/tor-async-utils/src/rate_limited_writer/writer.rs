@@ -11,7 +11,7 @@ use futures::io::Error;
 use sync_wrapper::SyncFuture;
 use tor_rtcompat::SleepProvider;
 
-use super::bucket::{NeverEnoughTokensError, TokenBucket, TokenBucketConfig};
+use tor_basic_utils::token_bucket::{NeverEnoughTokensError, TokenBucket, TokenBucketConfig};
 
 /// A rate-limited async [writer](AsyncWrite).
 ///
@@ -19,7 +19,7 @@ use super::bucket::{NeverEnoughTokensError, TokenBucket, TokenBucketConfig};
 #[derive(educe::Educe)]
 #[educe(Debug)]
 #[pin_project::pin_project]
-pub(crate) struct RateLimitedWriter<W: AsyncWrite, P: SleepProvider> {
+pub struct RateLimitedWriter<W: AsyncWrite, P: SleepProvider> {
     /// The token bucket.
     bucket: TokenBucket<Instant>,
     /// The sleep provider, for getting the current time and creating new sleep futures.
@@ -51,7 +51,7 @@ where
     /// Create a new [`RateLimitedWriter`].
     // We take the rate and bucket max directly rather than a `TokenBucket` to ensure that the token
     // bucket only ever uses times from `sleep_provider`.
-    pub(crate) fn new(writer: W, config: &RateLimitedWriterConfig, sleep_provider: P) -> Self {
+    pub fn new(writer: W, config: &RateLimitedWriterConfig, sleep_provider: P) -> Self {
         let bucket_config = TokenBucketConfig {
             rate: config.rate,
             bucket_max: config.burst,
@@ -84,18 +84,14 @@ where
     }
 
     /// Access the inner [`AsyncWrite`] writer.
-    pub(crate) fn inner(&self) -> &W {
+    pub fn inner(&self) -> &W {
         &self.inner
     }
 
     /// Adjust the refill rate and burst.
     ///
     /// A rate and/or burst of 0 is allowed.
-    pub(crate) fn adjust(
-        self: &mut Pin<&mut Self>,
-        now: Instant,
-        config: &RateLimitedWriterConfig,
-    ) {
+    pub fn adjust(self: &mut Pin<&mut Self>, now: Instant, config: &RateLimitedWriterConfig) {
         let self_ = self.as_mut().project();
 
         // destructuring allows us to make sure we aren't forgetting to handle any fields
@@ -322,7 +318,7 @@ where
 mod tokio_impl {
     use super::*;
 
-    use tokio_crate::io::AsyncWrite as TokioAsyncWrite;
+    use tokio::io::AsyncWrite as TokioAsyncWrite;
     use tokio_util::compat::FuturesAsyncWriteCompatExt;
 
     use std::io::Result as IoResult;
@@ -352,11 +348,12 @@ mod tokio_impl {
 
 /// The refill rate and burst for a [`RateLimitedWriter`].
 #[derive(Clone, Debug)]
-pub(crate) struct RateLimitedWriterConfig {
+#[allow(clippy::exhaustive_structs)]
+pub struct RateLimitedWriterConfig {
     /// The refill rate in bytes/second.
-    pub(crate) rate: u64,
+    pub rate: u64,
     /// The "burst" in bytes.
-    pub(crate) burst: u64,
+    pub burst: u64,
     /// When polled, block until at most this many bytes are available.
     ///
     /// Or in other words, wake when we can write this many bytes, even if the provided buffer is
@@ -366,7 +363,7 @@ pub(crate) struct RateLimitedWriterConfig {
     /// the entire buffer can be written. We'd prefer several partial writes to a single large
     /// write. So instead of blocking until the entire buffer can be written, we only block until
     /// at most this many bytes are available.
-    pub(crate) wake_when_bytes_available: NonZero<u64>,
+    pub wake_when_bytes_available: NonZero<u64>,
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@ use extend_handler::ExtendRequestHandler;
 use crate::channel::{Channel, ChannelSender};
 use crate::circuit::CircuitRxReceiver;
 use crate::circuit::UniqId;
+use crate::circuit::celltypes::RelayMaybeEarlyChanMsg;
 use crate::circuit::reactor::ControlHandler;
 use crate::circuit::reactor::backward::BackwardReactorCmd;
 use crate::circuit::reactor::forward::{ForwardCellDisposition, ForwardHandler};
@@ -135,7 +136,7 @@ impl Forward {
     fn decode_relay_cell<R: Runtime>(
         &mut self,
         hop_mgr: &mut HopMgr<R>,
-        cell: Relay,
+        cell: RelayMaybeEarlyChanMsg,
     ) -> Result<(Option<HopNum>, CellDecodeResult)> {
         // Note: the client reactor will return the actual source hopnum
         let hopnum = None;
@@ -192,9 +193,10 @@ impl Forward {
     fn handle_relay_cell<R: Runtime>(
         &mut self,
         hop_mgr: &mut HopMgr<R>,
-        cell: Relay,
-        early: bool,
+        cell: RelayMaybeEarlyChanMsg,
     ) -> StdResult<Option<ForwardCellDisposition>, ReactorError> {
+        let early = matches!(cell, RelayMaybeEarlyChanMsg::RelayEarly(_));
+
         if early {
             self.relay_early_count += 1;
 
@@ -320,8 +322,8 @@ impl ForwardHandler for Forward {
         use RelayCircChanMsg::*;
 
         match cell {
-            Relay(r) => self.handle_relay_cell(hop_mgr, r, false),
-            RelayEarly(r) => self.handle_relay_cell(hop_mgr, r.into(), true),
+            Relay(r) => self.handle_relay_cell(hop_mgr, r.into()),
+            RelayEarly(r) => self.handle_relay_cell(hop_mgr, r.into()),
             Destroy(d) => {
                 self.handle_destroy_cell(&d)?;
                 Ok(None)

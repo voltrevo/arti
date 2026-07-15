@@ -70,7 +70,7 @@ use extender::HandshakeAuxDataHandler;
 #[cfg(feature = "hs-service")]
 use {
     crate::circuit::CircHopSyncView,
-    crate::client::stream::{InboundDataCmdChecker, IncomingStreamRequest},
+    crate::stream::{InboundDataCmdChecker, IncomingStreamRequest},
     tor_cell::relaycell::msg::Begin,
 };
 
@@ -882,9 +882,9 @@ impl Circuit {
         let req = IncomingStreamRequest::Begin(begin);
 
         {
-            use crate::client::stream::IncomingStreamRequestDisposition::*;
+            use crate::stream::IncomingStreamRequestDisposition::*;
 
-            let ctx = crate::client::stream::IncomingStreamRequestContext { request: &req };
+            let ctx = crate::stream::IncomingStreamRequestContext { request: &req };
             // IMPORTANT: super::syncview::CircHopSyncView::n_open_streams() (called via disposition() below)
             // accesses the stream map mutexes!
             //

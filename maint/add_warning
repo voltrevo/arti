@@ -6,7 +6,8 @@ import sys
 import os
 import re
 import shutil
-import subprocess
+from pathlib import Path
+from difflib import unified_diff
 
 # ---------- actual list of lints to apply (or disapply) ----------
 
@@ -59,6 +60,7 @@ WANT_LINTS = """
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 """
 
 # ---------- list of lints to apply or disapply *in tests* ----------
@@ -75,6 +77,7 @@ TEST_LINTS = """
 #![allow(clippy::unchecked_time_subtraction)]
 #![allow(clippy::useless_vec)]
 #![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::string_slice)] // See arti#2571
 """
 
 # ---------- list of lints to apply or disapply *in examples* ----------
@@ -203,8 +206,10 @@ def process(lints, fn, always_insist):
     )
 
     tmp_name = fn + ".tmp~"
-    outp = open(tmp_name, "w")
-    inp = open(fn, "r")
+    # Explicitly specify UTF-8 encoding
+    # because Windows defaults to a system locale encoding (e.g., GBK or cp1252)
+    outp = open(tmp_name, "w", encoding="utf-8")
+    inp = open(fn, "r", encoding="utf-8")
     try:
         filter_file(lints, inp, outp, insist)
     except ImproperFile as e:
@@ -217,10 +222,43 @@ def process(lints, fn, always_insist):
     outp.close()
 
     if opts.check:
-        if subprocess.run(["diff", "-u", "--", fn, tmp_name]).returncode != 0:
+        mh = check_diff(fn, tmp_name)
+        if mh:
+            sys.stdout.write(mh)
             deferred_errors.append(fn)
     else:
         shutil.move(tmp_name, fn)
+
+
+def check_diff(fn: str, tmp_name: str) -> str | None:
+    """
+    fn = original file name
+    tmp_name = temporary file name which contains the modified content
+    When caller call the function,
+    caller itself will check if the return value is None or not.
+    If it is not None,
+    caller should print the diff to stdout
+    and add the file name to deferred_errors list.
+    Like:
+    ```python
+    sys.stdout.writelines(diff)
+    deferred_errors.append(fn)
+    """
+    with open(fn, "r", encoding="utf-8") as original, open(
+        tmp_name, "r", encoding="utf-8"
+    ) as modified:
+        original_lines = original.readlines()
+        modified_lines = modified.readlines()
+
+    if original_lines != modified_lines:
+        diff = unified_diff(
+            original_lines,
+            modified_lines,
+            fromfile=fn,
+            tofile=tmp_name,
+        )
+        return "".join(diff)
+    return None
 
 
 def main(lints, files):
@@ -230,10 +268,7 @@ def main(lints, files):
 
     always_insist = True
     if not files:
-        files = subprocess.run(
-            ["find", ".", "-name", "*.rs"], stdout=subprocess.PIPE, check=True
-        ).stdout
-        files = files.decode("utf-8").rstrip("\n").split("\n")
+        files = [str(file) for file in Path("./").rglob("*.rs")]
         always_insist = False
 
     if opts.ci_nightly:

@@ -555,7 +555,7 @@ fn install_panic_handler() {
         let msg = match panic_info.payload().downcast_ref::<&'static str>() {
             Some(s) => *s,
             None => match panic_info.payload().downcast_ref::<String>() {
-                Some(s) => &s[..],
+                Some(s) => s.as_str(),
                 None => "Box<dyn Any>",
             },
         };

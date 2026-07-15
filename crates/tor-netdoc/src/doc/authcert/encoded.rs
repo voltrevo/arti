@@ -10,11 +10,7 @@ use crate::parse2::{
 
 use ErrorProblem as EP;
 
-// TODO DIRAUTH abolish poc
-use crate::parse2::poc::netstatus::vote::{
-    //
-    NetworkStatusUnverifiedParsedBody as NetworkStatusVoteUnverifiedParsedBody,
-};
+use crate::doc::netstatus::vote::NetworkStatusUnverifiedParsedBody as NetworkStatusVoteUnverifiedParsedBody;
 
 /// Entire authority key certificate, encoded and signed
 ///
@@ -250,10 +246,11 @@ impl NetdocParseable for EncodedAuthCert {
             }
         }
         seq.finish()?;
+        let end_pos = input.byte_position();
 
         let text = input
             .whole_input()
-            .get(start_pos..)
+            .get(start_pos..end_pos)
             .expect("start_pos wasn't included in the body so far?!");
 
         extra_lexical_checks(text)?;
@@ -292,6 +289,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::parse2::parse_netdoc;

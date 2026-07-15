@@ -272,6 +272,8 @@ define_derive_deftly_module! {
             let $fpatname = Option::unwrap_or_default($fpatname);
           }}
         )
+
+        #[allow(deprecated)]
         Ok($vpat)
     }}
 }
@@ -506,12 +508,16 @@ define_derive_deftly! {
     ///
     /// ### Signed documents
     ///
-    /// To handle signed documents define two structures:
+    /// To handle signed documents:
     ///
-    ///  * `Foo`, containing only the content, not the signatures.
-    ///    Derive [`NetdocParseableUnverified`](derive_deftly_template_NetdocUnverified).
-    ///  * `FooSignatures`, containing only the signatures.
+    ///  * Define `struct Foo`, containing only the content, not the signatures.
+    ///    Derive [`NetdocParseableUnverified`](crate::derive_deftly_template_NetdocParseableUnverified).
+    ///  * Define `struct FooSignatures`, containing only the signatures.
     ///    Derive `NetdocParseableSignatures`.
+    ///
+    ///  * Implement a suitable `FooUnverified::verify`.
+    ///    See [`NetdocParseableUnverified`](crate::derive_deftly_template_NetdocParseableUnverified)
+    ///    for guidance.
     ///
     /// Don't mix signature items with non-signature items in the same struct.
     /// (This wouldn't compile, because the field type would implement the wrong trait.)
@@ -591,6 +597,7 @@ define_derive_deftly! {
     ///
     /// ```
     /// use derive_deftly::Deftly;
+    /// use tor_checkable::{Timebound, timed::TimerangeBound};
     /// use tor_netdoc::derive_deftly_template_AsMutSelf;
     /// use tor_netdoc::derive_deftly_template_NetdocParseableSignatures;
     /// use tor_netdoc::derive_deftly_template_NetdocParseableUnverified;
@@ -645,20 +652,25 @@ define_derive_deftly! {
     /// "#;
     ///
     /// impl NdThingUnverified {
-    ///     pub fn verify_foolish_timeless(self) -> Result<NdThing, VerifyFailed> {
+    ///     pub fn verify_foolish(self) -> Result<TimerangeBound<NdThing>, VerifyFailed> {
+    ///         // See docs for derive_deftly_template_NetdocParseableUnverified
+    ///         // for how to write a verify function.
+    ///
     ///         let sig = &self.sigs.sigs.signature;
     ///         let hash = self.sigs.hashes.doc_len_actual_pretending_to_be_hash
     ///             .as_ref().ok_or(VerifyFailed::Bug)?;
     ///         if sig.doc_len != *hash {
     ///             return Err(VerifyFailed::VerifyFailed);
     ///         }
-    ///         Ok(self.body)
+    ///         let foolish_lack_of_validity_time_info = ..;
+    ///         let body = TimerangeBound::new(self.body, foolish_lack_of_validity_time_info);
+    ///         Ok(body)
     ///     }
     /// }
     ///
     /// let input = ParseInput::new(&doc_text, "<input>");
     /// let doc: NdThingUnverified = parse_netdoc(&input).unwrap();
-    /// let doc = doc.verify_foolish_timeless().unwrap();
+    /// let doc = doc.verify_foolish().unwrap().dangerously_assume_timely();
     /// assert_eq!(doc.value.0, "something");
     /// ```
     export NetdocParseable for struct, meta_quoted rigorous, expect items, beta_deftly:
@@ -693,7 +705,7 @@ define_derive_deftly! {
     ///
     /// This signatures sub-document will typically be included in a
     /// `FooUnverified` struct derived with
-    /// [`NetdocUnverified`](derive_deftly_template_NetdocUnverified),
+    /// [`NetdocParseableUnverified`](crate::derive_deftly_template_NetdocParseableUnverified),
     /// rather than included anywhere manually.
     ///
     /// ### Expected input structure
@@ -916,6 +928,7 @@ define_derive_deftly! {
             }
 
             #[allow(unreachable_code)] // If there are no fields!
+            #[allow(deprecated)]
             Ok(())
         }
 
@@ -971,11 +984,27 @@ define_derive_deftly! {
     /// Usually, the caller will provide suitable ad-hoc `.verify_...` methods
     /// on `FooUnverified`.
     ///
+    /// The `verify` method should:
+    ///
+    ///   * Take as an argument(s) the expected (trustworthy) signer(s),
+    ///     (if the document is not always just supposed to be self-signed).
+    ///
+    ///   * Work directly with the fields `body` and `sigs` in `FooUnverified`.
+    ///
+    ///   * Verify all the signatures, including any [`EmbeddedCert`]s in the body.
+    ///
+    ///   * Cross-check any information that is supposed to be duplicated.
+    ///
+    ///   * Determine the validity period, from the validity time
+    ///     information contained in the document or signatures.
+    ///
+    ///   * Return `TimeRangebound<Foo>`.
+    ///
     /// ### Generated code
     ///
     /// Supposing your input structure is `Foo`, this macro will
-    /// generate a `**struct FooUnverified`**
-    /// implementing [`NetdocParseable`] and [`NetdocUnverified`]:
+    /// generate a **`struct FooUnverified`**
+    /// implementing [`NetdocParseable`] and [`NetdocParseableUnverified`]:
     ///
     /// ```rust,ignore
     /// # struct Foo; struct FooSignatures;
@@ -1004,7 +1033,7 @@ define_derive_deftly! {
     ///
     /// All the attributes supported by the `NetdocParseable` derive are supported.
     //
-    // We don't make NetdocUnverified a generic struct because
+    // We don't make NetdocParseableUnverified a generic struct because
     //  - the defining module (crate) will want to add verification methods,
     //    which means they must define the struct
     //  - that lets the actual `body` field be private to the defining module.
@@ -1100,7 +1129,7 @@ define_derive_deftly! {
         }
     }
 
-    impl<$tgens> $P::NetdocUnverified for $<$ttype Unverified> {
+    impl<$tgens> $P::NetdocParseableUnverified for $<$ttype Unverified> {
         type Body = $ttype;
         type Signatures = $SIGS_TYPE;
         fn inspect_unverified(&self) -> (&Self::Body, &$SIGS_DATA_TYPE) {
@@ -1247,6 +1276,17 @@ define_derive_deftly! {
     // SignatureItemParseable::HashAccu
     ${define SIG_HASH_ACCU_TYPE ${tmeta(netdoc(signature(hash_accu))) as ty}}
 
+    // Avoid that someone wanting to parse a signed netdoc
+    //   - tries to use parse2 on Foo rather than FooUnverified
+    //   - fails to notice the impl on FooUnverified
+    //   - adds a derive of NetdocParseable
+    //   - calls that parser
+    // thereby completely ignoring the signatures.
+    $P::assert_not_impl! {
+        [signed_documents_should_be_parsed_only_as_foo_unverified <$tgens>]
+        $ttype: $P::NetdocParseable
+    }
+
     impl<$tgens> $P::$TRAIT for $ttype {
       ${if T_IS_SIGNATURE {
         type HashAccu = $SIG_HASH_ACCU_TYPE;
@@ -1357,6 +1397,7 @@ define_derive_deftly! {
             args.reject_extra_args()?;
           }}
             dtrace!("item complete Ok");
+            #[allow(deprecated)]
             Ok($tname { $( $fname: $fpatname, ) })
         }
     }

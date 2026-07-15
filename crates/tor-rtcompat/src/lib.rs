@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -78,7 +79,10 @@ pub use traits::{
 
 pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};
 pub use dyn_time::DynTimeProvider;
-pub use network::{CommonListenOptions, TcpListenOptions, UnixListenOptions};
+pub use network::{
+    CommonConnectOptions, CommonListenOptions, TcpConnectOptions, TcpListenOptions,
+    UnixConnectOptions, UnixListenOptions,
+};
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 
 /// Traits used to describe TLS connections and objects that can
@@ -434,6 +438,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::unnecessary_wraps)]
     use crate::SleepProviderExt;
@@ -532,7 +537,8 @@ mod test {
                 IoResult::Ok(buf)
             };
             let task2 = async {
-                let mut con = rt1.connect(&addr).await?;
+                let connect_options = Default::default();
+                let mut con = rt1.connect(&addr, &connect_options).await?;
                 con.write_all(b"Hello world").await?;
                 con.flush().await?;
                 IoResult::Ok(())
@@ -610,12 +616,13 @@ mod test {
                 }
             };
             let task2 = async {
+                let connect_options = Default::default();
                 for _ in 0_u8..5 {
-                    let mut con = rt1.connect(&addr).await?;
+                    let mut con = rt1.connect(&addr, &connect_options).await?;
                     con.write_all(b"Hello world").await?;
                     con.flush().await?;
                 }
-                let mut con = rt1.connect(&addr).await?;
+                let mut con = rt1.connect(&addr, &connect_options).await?;
                 con.write_all(b"world done!").await?;
                 con.flush().await?;
                 con.close().await?;
@@ -680,7 +687,8 @@ mod test {
         runtime.block_on(async {
             let text = b"I Suddenly Dont Understand Anything";
             let mut buf = vec![0_u8; text.len()];
-            let conn = runtime.connect(&addr).await?;
+            let connect_options = Default::default();
+            let conn = runtime.connect(&addr, &connect_options).await?;
             let mut conn = connector.negotiate_unvalidated(conn, "Kan.Aya").await?;
             assert!(conn.peer_certificate()?.is_some());
             conn.write_all(text).await?;
@@ -737,7 +745,8 @@ mod test {
 
             let h2 = runtime
                 .spawn_with_handle(async move {
-                    let conn = rt1.connect(&address).await.unwrap();
+                    let connect_options = Default::default();
+                    let conn = rt1.connect(&address, &connect_options).await.unwrap();
                     let mut conn = tls_connector
                         .negotiate_unvalidated(conn, "prospit.example.org")
                         .await

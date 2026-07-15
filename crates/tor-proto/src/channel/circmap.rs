@@ -362,9 +362,11 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
-    use crate::{client::circuit::padding::new_padding, fake_mpsc};
+    use crate::circuit::test::fake_mpsc;
+    use crate::client::circuit::padding::new_padding;
     use tor_basic_utils::test_rng::testing_rng;
     use tor_rtcompat::DynTimeProvider;
 

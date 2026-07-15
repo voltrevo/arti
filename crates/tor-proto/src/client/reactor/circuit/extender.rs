@@ -158,7 +158,8 @@ where
             .relay_crypt_protocol()
             .construct_client_layers(HandshakeRole::Initiator, keygen)?;
 
-        trace!(circ_id = %self.unique_id, "Handshake complete; circuit extended.");
+        trace!(circ_id = %self.unique_id, settings = ?self.settings,
+            "Handshake complete; circuit extended.");
 
         // If we get here, it succeeded.  Add a new hop to the circuit.
         circ.add_hop(

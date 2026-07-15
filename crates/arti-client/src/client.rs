@@ -73,7 +73,7 @@ use crate::{TorClientBuilder, status, util};
 #[cfg(feature = "geoip")]
 use tor_geoip::CountryCode;
 use tor_rtcompat::scheduler::TaskHandle;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use tor_persist::FsStateMgr as UsingStateMgr;
@@ -171,9 +171,16 @@ struct ClientShared<R: Runtime> {
     /// mutex used to prevent two tasks from trying to bootstrap at once.
     bootstrap_in_progress: AsyncMutex<()>,
 
+    /// Sender used to update changes in our bootstrap settings.
+    bootstrap_setting_sender: Mutex<postage::watch::Sender<BootstrapSetting>>,
+
     /// Whether or not we should call `bootstrap` before doing things that require
-    /// bootstrapping. If this is `false`, we will just call `wait_for_bootstrap`
-    /// instead.
+    /// bootstrapping.
+    ///
+    /// If this is [`BootstrapBehavior::OnDemand`], we wait for the client to bootstrap
+    /// (launching a bootstrap if necessary) before performing any operation that needs circuits.
+    /// If this is [`BootstrapBehavior::Manual`], we give an error if we are told to do
+    /// something that needs circuits and we have not been told to bootstrap.
     should_bootstrap: BootstrapBehavior,
 
     /// Shared boolean for whether we're currently in "dormant mode" or not.
@@ -220,6 +227,9 @@ struct NotConstructedInner<R: Runtime> {
     /// that [`RunningInner::new`] needs to take NotConstructedInner by value.
     /// With some redesign we could simplify this, and do away with [`Inner::Poisoned`].
     status_sender: postage::watch::Sender<BootstrapStatus>,
+
+    /// A receiver used to inform the bootstrap status processor about changes in our settings.
+    bootstrap_setting_receiver: postage::watch::Receiver<BootstrapSetting>,
 
     /// A (possibly user-provided) builder used to construct our NetDirProvider.
     dirmgr_builder: Arc<dyn crate::builder::DirProviderBuilder<R>>,
@@ -599,6 +609,41 @@ pub enum BootstrapBehavior {
     Manual,
 }
 
+/// A representation of whether a [`TorClient`] is allowed to bootstrap, and whether it
+/// has begun to do so.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BootstrapSetting {
+    /// The configured [`BootstrapBehavior`] for the `TorClient`.
+    behavior: BootstrapBehavior,
+
+    /// If true, we have a [`RunningInner`] in the `TorClient`,
+    /// indicating that we are trying to bootstrap it.
+    running_inner_is_present: bool,
+}
+
+impl Default for BootstrapSetting {
+    fn default() -> Self {
+        Self {
+            behavior: BootstrapBehavior::Manual,
+            running_inner_is_present: false,
+        }
+    }
+}
+
+impl BootstrapSetting {
+    /// Return true if this [`BootstrapSetting`]
+    /// indicates that the client is not trying to bootstrap,
+    /// and will not try until it is told explicitly to do so.
+    pub(crate) fn blocked(&self) -> bool {
+        use BootstrapBehavior::*;
+        match (self.behavior, self.running_inner_is_present) {
+            (OnDemand, _) => false,
+            (Manual, true) => false,
+            (Manual, false) => true,
+        }
+    }
+}
+
 /// What level of sleep to put a Tor client into.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -973,7 +1018,15 @@ impl<R: Runtime> TorClient<R> {
 
         let addr_cfg = config.address_filter.clone();
 
-        let (status_sender, status_receiver) = postage::watch::channel();
+        let bootstrap_setting = BootstrapSetting {
+            behavior: autobootstrap,
+            running_inner_is_present: false,
+        };
+        let (bootstrap_setting_sender, bootstrap_setting_receiver) =
+            postage::watch::channel_with(bootstrap_setting);
+        let bootstrap_setting_sender = Mutex::new(bootstrap_setting_sender);
+        let (status_sender, status_receiver) =
+            postage::watch::channel_with(BootstrapStatus::from_setting(bootstrap_setting));
         let status_receiver = status::BootstrapEvents {
             inner: status_receiver,
         };
@@ -1005,6 +1058,7 @@ impl<R: Runtime> TorClient<R> {
             config: config.clone(),
             dormant_recv,
             status_sender,
+            bootstrap_setting_receiver,
             dirmgr_builder,
             dirmgr_extensions,
         });
@@ -1023,6 +1077,7 @@ impl<R: Runtime> TorClient<R> {
             reconfigure_lock: Arc::new(Mutex::new(())),
             status_receiver,
             bootstrap_in_progress: AsyncMutex::new(()),
+            bootstrap_setting_sender,
             should_bootstrap: autobootstrap,
             dormant: Mutex::new(dormant_send),
             #[cfg(feature = "onion-service-service")]
@@ -1114,6 +1169,7 @@ impl<R: Runtime> RunningInner<R> {
             config,
             dormant_recv,
             status_sender,
+            bootstrap_setting_receiver,
             dirmgr_builder,
             dirmgr_extensions,
         } = pending;
@@ -1262,6 +1318,7 @@ impl<R: Runtime> RunningInner<R> {
                 conn_status,
                 dir_status,
                 skew_status,
+                bootstrap_setting_receiver,
             ))
             .map_err(|e| ErrorDetail::from_spawn("top-level status reporter", e))?;
 
@@ -1342,6 +1399,9 @@ impl<R: Runtime> TorClient<R> {
     /// applied, or none will. If you have disabled all-or-nothing changes, then
     /// only fatal errors will be reported in this function's return value.
     ///
+    /// When performing a reconfiguration,
+    /// a returned error may indicate that the client is now in an inconsistent state.
+    ///
     /// This function applies its changes to **all** TorClient instances derived
     /// from the same call to `TorClient::create_*`: even ones whose circuits
     /// are isolated from this handle.
@@ -1360,6 +1420,7 @@ impl<R: Runtime> TorClient<R> {
     /// and circuits, but rather affect only future streams and circuits.  Those
     /// are also explicitly documented.
     #[instrument(skip_all, level = "trace")]
+    #[allow(clippy::cognitive_complexity)]
     pub fn reconfigure(
         &self,
         new_config: &TorClientConfig,
@@ -1372,24 +1433,47 @@ impl<R: Runtime> TorClient<R> {
         // deciding how to change it, then applying the changes.
         let guard = self.client.reconfigure_lock.lock().expect("Poisoned lock");
 
+        use tor_config::Reconfigure::*;
+
         match how {
-            tor_config::Reconfigure::AllOrNothing => {
+            AllOrNothing => {
                 // We have to check before we make any changes.
-                self.client.reconfigure_inner(
-                    new_config,
-                    tor_config::Reconfigure::CheckAllOrNothing,
-                    &guard,
-                )?;
+                self.client
+                    .reconfigure_inner(new_config, CheckAllOrNothing, &guard)?;
+
+                // Hopefully this doesn't fail,
+                // otherwise we may have returned early from the reconfiguration
+                // and its no longer "all-or-nothing".
+                let result = self
+                    .client
+                    .reconfigure_inner(new_config, AllOrNothing, &guard);
+
+                if result.is_err() {
+                    warn!(
+                        "Attempted an \"all-or-nothing\" reconfigure, but unexpectedly failed. \
+                        The client will continue to run in an inconsistent state."
+                    );
+                }
+
+                result
             }
-            tor_config::Reconfigure::CheckAllOrNothing => {}
-            tor_config::Reconfigure::WarnOnFailures => {}
-            _ => {}
+            WarnOnFailures => {
+                let result = self.client.reconfigure_inner(new_config, how, &guard);
+
+                // If there's a fatal error,
+                // we may have reconfigured some components and not others.
+                if result.is_err() {
+                    warn!(
+                        "Attempted a reconfigure, but failed. \
+                        The client will continue to run in an inconsistent state."
+                    );
+                }
+
+                result
+            }
+            CheckAllOrNothing => self.client.reconfigure_inner(new_config, how, &guard),
+            _ => self.client.reconfigure_inner(new_config, how, &guard),
         }
-
-        // Actually reconfigure
-        self.client.reconfigure_inner(new_config, how, &guard)?;
-
-        Ok(())
     }
 
     /// Return a new isolated `TorClient` handle.
@@ -2258,6 +2342,11 @@ impl<R: Runtime> ClientShared<R> {
                 match RunningInner::new(*pending, self) {
                     Ok(running_inner) => {
                         *inner_guard = Inner::Running(Arc::clone(&running_inner));
+                        self.bootstrap_setting_sender
+                            .lock()
+                            .expect("lock poisoned")
+                            .borrow_mut()
+                            .running_inner_is_present = true;
                         Ok(running_inner)
                     }
                     Err(e) => {
@@ -2526,6 +2615,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use tor_config::Reconfigure;

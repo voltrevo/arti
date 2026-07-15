@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use std::fmt;
@@ -60,11 +61,15 @@ pub mod rand_hostname;
 pub mod rangebounds;
 pub mod retry;
 pub mod test_rng;
+pub mod token_bucket;
 
 mod byte_qty;
 pub use byte_qty::ByteQty;
 
 pub use paste::paste;
+
+#[doc(hidden)]
+pub use derive_deftly;
 
 use rand::Rng;
 
@@ -109,19 +114,19 @@ pub fn skip_fmt<T>(_: &T, f: &mut fmt::Formatter) -> fmt::Result {
 /// of items from `iter`.
 pub fn iter_join(
     separator: &str,
-    iter: impl Iterator<Item: fmt::Display> + Clone,
+    iter: impl IntoIterator<Item: fmt::Display> + Clone,
 ) -> impl fmt::Display {
     // TODO MSRV 1.93: Replace with `std::fmt::from_fn()`?
-    struct Fmt<'a, I: Iterator<Item: fmt::Display> + Clone> {
+    struct Fmt<'a, I: IntoIterator<Item: fmt::Display> + Clone> {
         /// Separates items in `iter`.
         separator: &'a str,
         /// Iterator to join.
         iter: I,
     }
-    impl<'a, I: Iterator<Item: fmt::Display> + Clone> fmt::Display for Fmt<'a, I> {
+    impl<'a, I: IntoIterator<Item: fmt::Display> + Clone> fmt::Display for Fmt<'a, I> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let Self { separator, iter } = self;
-            let mut iter = iter.clone();
+            let mut iter = iter.clone().into_iter();
             if let Some(first) = iter.next() {
                 write!(f, "{first}")?;
             }
@@ -143,9 +148,8 @@ pub trait StrExt: AsRef<str> {
     fn strip_suffix_ignore_ascii_case(&self, suffix: &str) -> Option<&str> {
         let whole = self.as_ref();
         let suffix_start = whole.len().checked_sub(suffix.len())?;
-        whole[suffix_start..]
-            .eq_ignore_ascii_case(suffix)
-            .then(|| &whole[..suffix_start])
+        let (rest, possible_suffix) = whole.split_at_checked(suffix_start)?;
+        possible_suffix.eq_ignore_ascii_case(suffix).then_some(rest)
     }
 
     /// Like `str.ends_with()` but ASCII-case-insensitive
@@ -601,6 +605,82 @@ macro_rules! derive_serde_raw { {
 
 // ----------------------------------------------------------------------
 
+/// Give a compile time error if TYPE implements TRAIT
+///
+/// Includes the identifier $rule in the error message, to help the user diagnose
+/// the problem (unlike the similar macro in `static_assertions`.
+///
+/// Supports generics (also, unlike the one in static_assertions`).
+///
+/// # Input syntaxes
+///
+/// ```
+// With a fair amount of trickery, we can get the compiler to (mostly) syntax-check this!
+/// # #![allow(nonstandard_style)]
+/// # use tor_basic_utils::assert_not_impl;
+/// # use std::cell::Cell;
+/// # type TYPE = Cell<u32>;
+/// # use Sync as TRAIT;
+/// assert_not_impl! { [RULE_IDENTIFIER] TYPE: TRAIT }
+//
+// We can't get the compiler to syntax check this one:
+// error[E0207]: the type parameter `TYPE_GENERICS` is not constrained ...
+// Instead, we hide it from the compiler and write a very similar test, hidden from the reader.
+/// # let _ = r#"
+/// assert_not_impl! { [RULE_IDENTIFIER <TYPE_GENERICS>] TYPE: TRAIT }
+/// # "#;
+/// # assert_not_impl! { [RULE_IDENTIFIER <TYPE_GENERICS>] Cell<TYPE_GENERICS>: TRAIT }
+/// ```
+///
+///  * `RULE_IDENTIFIER` is an arbitrary identifier; it will appear in the error message.
+///    (There is no way to include arbitrary explanatory text.)
+///  * `TYPE_GENERICS` are generic bindings needed for `TYPE`.
+///    (Generics on the trait are not supported.)
+///
+/// # Examples
+///
+/// ```
+/// use std::cell::Cell;
+/// use tor_basic_utils::assert_not_impl;
+///
+/// // No error will occur; Cell is not Sync
+/// assert_not_impl! {
+///     [cell_must_not_be_sync] Cell<u32>: Sync
+/// }
+/// assert_not_impl! {
+///     [cell_must_not_be_sync <T: Copy>]
+///     Cell<T>: Sync
+/// }
+/// ```
+///
+/// ```compile_fail
+/// // Compile-time error _is_ given; String implements Clone.
+/// assert_not_impl! {
+///     [clone_is_forbidden_here] String: Clone
+/// }
+/// ```
+#[macro_export]
+macro_rules! assert_not_impl {
+    // we can't match the trailing > of generics - only the leading <
+    {[$rule:ident $( < $($gens:tt)* )? ] $t:ty : $trait:path } => {
+        const _ : () = {
+            #[allow(dead_code, non_camel_case_types)]
+            trait $rule<X> {
+                fn item();
+            }
+            impl$( < $($gens)* )? $rule<()> for $t {
+                fn item() {
+                    let _ = Self::item;
+                }
+            }
+            struct Invalid;
+            impl<T : $trait + ?Sized> $rule<Invalid> for T { fn item() {} }
+        };
+    }
+}
+
+// ----------------------------------------------------------------------
+
 /// Asserts that the type of the expression implements the given trait.
 ///
 /// Example:
@@ -634,6 +714,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

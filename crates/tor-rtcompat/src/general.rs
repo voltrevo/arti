@@ -124,16 +124,29 @@ where
 {
     type Stream = Stream;
     type Listener = Listener;
+    // TODO: If unix sockets ever support `CommonConnectOptions`,
+    // we could accept these common options and convert to the appropriate type.
+    type ConnectOptions = ();
     // TODO: If unix sockets ever support `CommonListenOptions`,
     // we could accept these common options and convert to the appropriate type.
     type ListenOptions = ();
 
     #[instrument(skip_all, level = "trace")]
-    async fn connect(&self, addr: &general::SocketAddr) -> IoResult<Stream> {
+    async fn connect(
+        &self,
+        addr: &general::SocketAddr,
+        (): &Self::ConnectOptions,
+    ) -> IoResult<Stream> {
         use general::SocketAddr as G;
         match addr {
-            G::Inet(a) => Ok(Stream(Box::pin(self.connect(a).await?))),
-            G::Unix(a) => Ok(Stream(Box::pin(self.connect(a).await?))),
+            G::Inet(a) => {
+                let options = Default::default();
+                Ok(Stream(Box::pin(self.connect(a, &options).await?)))
+            }
+            G::Unix(a) => {
+                let options = Default::default();
+                Ok(Stream(Box::pin(self.connect(a, &options).await?)))
+            }
             other => Err(IoError::new(
                 IoErrorKind::InvalidInput,
                 UnsupportedAddress(other.clone()),
@@ -143,7 +156,7 @@ where
     async fn listen(
         &self,
         addr: &general::SocketAddr,
-        _options: &Self::ListenOptions,
+        (): &Self::ListenOptions,
     ) -> IoResult<Listener> {
         use general::SocketAddr as G;
         match addr {

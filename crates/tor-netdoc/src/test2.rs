@@ -10,6 +10,7 @@
 #![allow(clippy::unchecked_time_subtraction)]
 #![allow(clippy::useless_vec)]
 #![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 #![allow(clippy::needless_borrows_for_generic_args)] // TODO add to maint/add_warning
 
@@ -19,7 +20,6 @@ use std::slice;
 
 use anyhow::Context as _;
 use derive_deftly::Deftly;
-use itertools::{Itertools, chain};
 use testresult::TestResult;
 use tor_error::{Bug, ErrorReport as _};
 
@@ -326,24 +326,7 @@ where
 
     eprintln!("====== enc got ======\n{reenc}====== end ======");
 
-    assert_eq!(
-        &enc,
-        &reenc,
-        "re-encode mismatch:\n{}",
-        Itertools::zip_longest(
-            chain!(["EXPECTED"], enc.lines()),
-            chain!(["GOT"], reenc.lines()),
-        )
-        .enumerate()
-        .map(|(i, eob)| {
-            let lno = i + 1;
-            let [l, r] = [eob.clone().left(), eob.right()];
-            let yn = if l == r { "  " } else { "!=" };
-            let [l, r] = [l, r].map(|s| s.unwrap_or_default());
-            format!(" {lno:2} {l:30} {yn} {r}\n")
-        })
-        .collect::<String>(),
-    );
+    assert_eq_or_diff!(&enc, &reenc,);
 
     Ok(())
 }
@@ -964,6 +947,46 @@ bad b64 !
 hU6Qo2fW7+9PXkcrEyiB62ZDne/gwKPHXBo8lMeV8JCOfVBF5vT4BtKRLP+Jw66x
 -----END UTF-8 STRING-----
 "#,
+    )?;
+
+    Ok(())
+}
+
+#[derive(Deftly, Debug, Default, Clone, Eq, PartialEq)]
+#[derive_deftly(NetdocEncodable, NetdocParseable)]
+struct TopSkips {
+    top_skip_intro: (),
+    #[deftly(netdoc(default(skip)))]
+    item: TestItemRest,
+    #[deftly(netdoc(default(skip), subdoc))]
+    subdoc: Sub3,
+}
+
+#[test]
+fn default_skip() -> TestResult<()> {
+    t_ok(
+        r#"top-skip-intro
+"#,
+        &TopSkips::default(),
+    )?;
+
+    t_ok(
+        r#"top-skip-intro
+item arg rest
+sub3-intro
+sub3-field s3f
+"#,
+        &TopSkips {
+            item: TestItemRest {
+                optional: Some("arg".into()),
+                rest: "rest".into(),
+            },
+            subdoc: Sub3 {
+                sub3_field: Some(("s3f".into(),)),
+                ..default()
+            },
+            ..default()
+        },
     )?;
 
     Ok(())

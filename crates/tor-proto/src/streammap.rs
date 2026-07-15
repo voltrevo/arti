@@ -582,12 +582,22 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
-    use crate::client::circuit::test::fake_mpsc;
     use crate::stream::queue::fake_stream_queue;
+    use crate::stream::{StreamMpscReceiver, StreamMpscSender};
     use crate::{client::stream::OutboundDataCmdChecker, congestion::sendme::StreamSendWindow};
+    use std::fmt::Debug;
+    use tor_memquota::HasMemoryCost;
     use web_time_compat::InstantExt;
+
+    /// Make an MPSC queue, of the type we use in Channels, but a fake one for testing
+    fn fake_mpsc<T: HasMemoryCost + Debug + Send>(
+        buffer: usize,
+    ) -> (StreamMpscSender<T>, StreamMpscReceiver<T>) {
+        crate::fake_mpsc(buffer)
+    }
 
     #[test]
     fn test_wrapping_next_stream_id() {

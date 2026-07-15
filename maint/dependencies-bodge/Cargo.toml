@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2024"
 publish = false
 authors = ["The Tor Project, Inc."]
-rust-version = "1.89"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Fake crate to influence cargo dependency selection"
@@ -17,6 +17,9 @@ description = "Fake crate to influence cargo dependency selection"
 # This tends to work because cargo likes to use a single version where it can.
 
 [dependencies]
+
+[features]
+full = []
 # Example:  We used this to encourage Cargo to select an older version
 # of security-framework, when we were stuck on the 10.12 OSX APIs and couldn't
 # build the newer versions. (#2387)

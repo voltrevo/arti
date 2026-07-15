@@ -1,6 +1,6 @@
 [package]
 name = "fslock-guard"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -9,7 +9,7 @@ description = "Wrapper around a lockfile with unlock-on-drop semantics"
 keywords = ["fs", "file", "lock"]
 categories = ["filesystem"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
-rust-version = "1.89"
+rust-version = "1.91"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -28,5 +28,5 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
 
 [dev-dependencies]
-test-temp-dir = { version = "0.7.0", path = "../test-temp-dir" }
+test-temp-dir = { version = "0.8.0", path = "../test-temp-dir" }
 

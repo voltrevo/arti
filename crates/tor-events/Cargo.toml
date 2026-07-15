@@ -2,7 +2,7 @@
 name = "tor-events"
 version = "0.42.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 authors = ["The Tor Project, Inc.", "eta <eta@torproject.org>"]
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
@@ -22,7 +22,7 @@ thiserror = "2"
 tracing = "0.1.36"
 
 [dev-dependencies]
-tokio = { version = "1.7", features = ["macros", "rt", "rt-multi-thread", "time"] }
+tokio = { version = "1.47.1", features = ["macros", "rt", "rt-multi-thread", "time"] }
 
 [features]
 full = []

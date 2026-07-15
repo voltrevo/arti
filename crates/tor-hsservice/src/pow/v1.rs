@@ -1071,11 +1071,35 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> RendRequestReceiver<R,
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "metrics")] {
-                let counter_rendrequest_error_total = metrics::counter!("arti_hss_pow_rendrequest_error_total", "nickname" => nickname.clone());
-                let counter_rendrequest_verification_failure = metrics::counter!("arti_hss_pow_rendrequest_verification_failure_total", "nickname" => nickname.clone());
-                let counter_rend_queue_overflow = metrics::counter!("arti_hss_pow_rend_queue_overflow_total", "nickname" => nickname.clone());
-                let counter_rendrequest_enqueued = metrics::counter!("arti_hss_pow_rendrequest_enqueued_total", "nickname" => nickname.clone());
-                let histogram_rendrequest_effort = metrics::histogram!("arti_hss_pow_rendrequest_effort_hist", "nickname" => nickname.clone());
+                let counter_rendrequest_error_total = metrics::counter!(
+                    description: "Number of errors processing rendezvous requests in the PoW subsystem.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rendrequest_error_total",
+                    "nickname" => nickname.clone()
+                );
+                let counter_rendrequest_verification_failure = metrics::counter!(
+                    description: "Number of PoW verification failures.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rendrequest_verification_failure_total",
+                    "nickname" => nickname.clone()
+                );
+                let counter_rend_queue_overflow = metrics::counter!(
+                    description: "Number of times the PoW rendezvous request queue overflowed, leading to dropped requests.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rend_queue_overflow_total",
+                    "nickname" => nickname.clone()
+                );
+                let counter_rendrequest_enqueued = metrics::counter!(
+                    description: "Number of rendezvous requests enqueued in the PoW subsystem.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rendrequest_enqueued_total",
+                    "nickname" => nickname.clone()
+                );
+                let histogram_rendrequest_effort = metrics::histogram!(
+                    description: "Histogram of effort values seen for incoming PoW requests.",
+                    "arti_hss_pow_rendrequest_effort_hist",
+                    "nickname" => nickname.clone()
+                );
             }
         }
 

@@ -125,11 +125,11 @@ auth = {{ cookie = {{ path = "{cookie2_path}" }} }}
         self.rpc_port = rpc_port
         self.arti_process = None
 
-    def launch_arti(self):
+    def launch_arti(self, extra_args=[]):
         """
         Start a new Arti process, and store it in self.arti_process.
         """
-        args = [self.arti_binary, "proxy", "-c", self.conf_file]
+        args = [self.arti_binary, "proxy", "-c", self.conf_file] + extra_args
 
         # TODO: Capture the logs from arti somehow.  (As it stands,
         # they just go to stdout, which is iffy.

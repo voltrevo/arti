@@ -1,9 +1,9 @@
 [package]
 name = "tor-netdoc"
-version = "0.43.0"
+version = "0.44.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Network document formats used with the Tor protocols."
@@ -72,7 +72,7 @@ __is_experimental = []
 amplify = { version = "4", default-features = false, features = ["derive"] }
 base64ct = { version = "1.5.1", features = ["alloc"] }
 cipher = { version = "0.4.1", features = ["zeroize"] }
-derive-deftly = { version = "~1.11.0", features = ["full", "beta"] }
+derive-deftly = { version = "~1.11.3", features = ["full", "beta"] }
 derive_builder = { version = "0.11.2", package = "derive_builder_fork_arti" }
 derive_more = { version = "2.1.1", features = ["full"] }
 digest = "0.10.0"
@@ -82,12 +82,13 @@ hex = "0.4"
 hex-literal = { version = "1.0", optional = true }
 hostname-validator = "1.1.1"
 humantime = "2"
+ipnet = "2"
 itertools = "0.14.0"
 memchr = "2.5"
 paste = "1.0.3"
 phf = { version = "0.13.1", features = ["macros"] }
 rand = { version = "0.10.1" }
-saturating-time = "0.3.0"
+saturating-time = "0.4.0"
 serde = { version = "1.0.103", features = ["derive"] }
 serde_with = "3.0.0"
 signature = "2"
@@ -97,31 +98,34 @@ subtle = "2"
 thiserror = "2"
 time = { version = "0.3.47", features = ["std", "parsing", "macros", "formatting"] }
 tinystr = "0.8.0"
-tor-basic-utils = { path = "../tor-basic-utils", version = "0.43.0" }
-tor-bytes = { path = "../tor-bytes", version = "0.43.0" }
-tor-cell = { path = "../tor-cell", version = "0.43.0" }
-tor-cert = { path = "../tor-cert", version = "0.43.0" }
-tor-checkable = { path = "../tor-checkable", version = "0.43.0" }
-tor-error = { path = "../tor-error", version = "0.43.0" }
-tor-hscrypto = { path = "../tor-hscrypto", version = "0.43.0", optional = true }
-tor-linkspec = { path = "../tor-linkspec", version = "0.43.0", optional = true }
-tor-llcrypto = { path = "../tor-llcrypto", version = "0.43.0" }
-tor-protover = { path = "../tor-protover", version = "0.43.0", features = ["serde"] }
-tor-units = { version = "0.43.0", path = "../tor-units", optional = true }
+tor-basic-utils = { path = "../tor-basic-utils", version = "0.44.0" }
+tor-bytes = { path = "../tor-bytes", version = "0.44.0" }
+tor-cell = { path = "../tor-cell", version = "0.44.0" }
+tor-cert = { path = "../tor-cert", version = "0.44.0" }
+tor-checkable = { path = "../tor-checkable", version = "0.44.0" }
+tor-error = { path = "../tor-error", version = "0.44.0" }
+tor-hscrypto = { path = "../tor-hscrypto", version = "0.44.0", optional = true }
+tor-linkspec = { path = "../tor-linkspec", version = "0.44.0", optional = true }
+tor-llcrypto = { path = "../tor-llcrypto", version = "0.44.0" }
+tor-protover = { path = "../tor-protover", version = "0.44.0", features = ["serde"] }
+tor-units = { version = "0.44.0", path = "../tor-units", optional = true }
 visibility = { version = "0.1.0", optional = true }
 visible = { version = "0.0.1", optional = true }
 void = "1"
-web-time-compat = { version = "0.1.0", path = "../web-time-compat" }
+web-time-compat = { version = "0.2.0", path = "../web-time-compat" }
 zeroize = "1"
 
 [dev-dependencies]
 anyhow = "1.0.23"
+assert_matches = "1.5.0"
 hex-literal = "1.0"
+imara-diff = "0.2.0"
 itertools = "0.14.0"
 pem = "3.0.6"
+regex = "1"
 serde_json = "1.0.50"
 testresult = "0.4.1"
-tor-basic-utils = { version = "0.43.0", path = "../tor-basic-utils" }
+tor-basic-utils = { version = "0.44.0", path = "../tor-basic-utils" }
 
 [package.metadata.docs.rs]
 all-features = true

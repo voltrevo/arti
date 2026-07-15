@@ -64,28 +64,30 @@ pub use proto_statuses_parse2_encode::ProtoStatusesNetdocParseAccumulator;
 #[cfg(feature = "incomplete")]
 use crate::doc::authcert::EncodedAuthCert;
 
-use crate::doc::authcert::{self, AuthCert, AuthCertKeyIds};
+use crate::doc::authcert::{self, AuthCert, AuthCertKeyIds, AuthCertUnverified};
 use crate::encode::{
-    ItemArgument, ItemEncoder, ItemValueEncodable, NetdocEncodable, NetdocEncoder,
+    EncodeOrd, ItemArgument, ItemEncoder, ItemValueEncodable, NetdocEncodable, NetdocEncoder,
 };
 use crate::parse::keyword::Keyword;
 use crate::parse::parser::{Section, SectionRules, SectionRulesBuilder};
 use crate::parse::tokenize::{Item, ItemResult, NetDocReader};
 use crate::parse2::{
     self, ArgumentError, ArgumentStream, ErrorProblem, IsStructural, ItemArgumentParseable,
-    ItemStream, ItemValueParseable, KeywordRef, NetdocParseable, SignatureHashInputs,
-    SignatureItemParseable, StopAt, UnparsedItem,
+    ItemStream, ItemValueParseable, KeywordRef, NetdocParseable, NetdocParseableUnverified,
+    SignatureHashInputs, SignatureItemParseable, StopAt, UnparsedItem, VerifyFailed,
 };
 use crate::types::relay_flags::{self, DocRelayFlags};
 use crate::types::{self, *};
 use crate::util::PeekableIterator;
-use crate::{Error, KeywordEncodable, NetdocErrorKind as EK, NormalItemArgument, Pos, Result};
+use crate::{Error, KeywordEncodable, NetdocErrorKind as EK, NormalItemArgument, Pos};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
-use std::result::Result as StdResult;
+use std::slice;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{net, result, time};
+use std::time::{self, SystemTime};
+use std::{net, result};
+use tor_basic_utils::iter_join;
 use tor_error::{Bug, HasKind, bad_api_usage, internal};
 use tor_protover::Protocols;
 use void::ResultVoidExt as _;
@@ -93,8 +95,9 @@ use void::ResultVoidExt as _;
 use derive_deftly::{Deftly, define_derive_deftly};
 use digest::Digest;
 use itertools::Itertools;
+use saturating_time::SaturatingTime as _;
 use std::sync::LazyLock;
-use tor_checkable::{ExternallySigned, timed::TimerangeBound};
+use tor_checkable::{ExternallySigned, Timebound, timed::TimerangeBound};
 use tor_llcrypto as ll;
 use tor_llcrypto::pk::rsa::RsaIdentity;
 
@@ -227,7 +230,7 @@ define_derive_deftly! {
         /// Construct a new Lifetime.
         pub fn new(
             $( ${when FIELD} $fname: time::SystemTime, )
-        ) -> Result<Self> {
+        ) -> crate::Result<Self> {
             // Make this now because otherwise literal `valid_after` here in the body
             // has the wrong span - the compiler refuses to look at the argument.
             // But we can refer to the field names.
@@ -322,9 +325,7 @@ pub mod consensus_methods_comma_separated {
     /// Encode
     #[cfg(feature = "incomplete")] // untested
     pub fn write_arg_onto(self_: &ConsensusMethods, out: &mut ItemEncoder) -> Result<(), Bug> {
-        for s in Itertools::intersperse(self_.methods.iter().map(|v| v as &dyn Display), &",") {
-            out.args_raw_string(s);
-        }
+        out.args_raw_string(&iter_join(",", &self_.methods));
         Ok(())
     }
 }
@@ -444,7 +445,7 @@ impl ProtoStatus {
     pub fn check_protocols(
         &self,
         supported_protocols: &Protocols,
-    ) -> StdResult<(), ProtocolSupportError> {
+    ) -> Result<(), ProtocolSupportError> {
         // Required protocols take precedence, so we check them first.
         let missing_required = self.required.difference(supported_protocols);
         if !missing_required.is_empty() {
@@ -516,6 +517,115 @@ impl ProtoStatuses {
     }
 }
 
+/// List of recommended Tor versions
+///
+/// As seen in `client-versions` and `server-versions` in the preamble.
+///
+/// Technically these are supposed to be as according to
+/// "`version-spec.txt`" but we actually allow anything that doesn't contain commas.
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:client-versions>
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:server-versions>
+///
+/// An empty set means no information, not no recommended versions.
+//
+// TODO should we have a CommaSeparated<T> type for arguments like this?
+// But maybe we wouldn't be able to use it here anyway because of
+// the special handling of the missing value.
+//
+// This is yet a third version number representation in arti!  Here it's just String.
+// TODO unify RecommendedTorVersions, RelayPlatform, TorVersion
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)] //
+#[derive(derive_more::Deref, derive_more::Into)]
+pub struct RecommendedTorVersions(BTreeSet<String>);
+
+/// Erroneous "recommended Tor versions" information
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum InvalidRecommendedTorVersions {
+    /// Identical version appears twice
+    #[error("version {_0:?} contains whitespace")]
+    ContainsWhitespace(String),
+
+    /// Identical version appears twice
+    #[error("version {_0:?} is repeated")]
+    Repeated(String),
+}
+
+impl RecommendedTorVersions {
+    /// Return a `RecommendedTorVersions` that has no information
+    pub fn new_unknown() -> Self {
+        Self::default()
+    }
+
+    /// Does this `RecommendedTorVersions` have any information?
+    ///
+    /// Ie, is it not empty.
+    ///
+    /// The opposite of [`BTreeSet::is_empty()`] (which available via deref).
+    pub fn is_known(&self) -> bool {
+        !self.is_empty()
+    }
+
+    /// Construct a RecommendedTorVersions from a list of strings
+    #[allow(clippy::should_implement_trait)] // we can't due to coherence
+    pub fn from_iter<I, S>(i: I) -> Result<Self, InvalidRecommendedTorVersions>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut set = BTreeSet::new();
+        for v in i {
+            let v = v.as_ref();
+            if v.is_empty() {
+                continue;
+            }
+            if v.chars().any(|c| c.is_whitespace()) {
+                return Err(InvalidRecommendedTorVersions::ContainsWhitespace(
+                    v.to_owned(),
+                ));
+            }
+            if !set.insert(v.to_owned()) {
+                return Err(InvalidRecommendedTorVersions::Repeated(v.to_owned()));
+            }
+        }
+        Ok(RecommendedTorVersions(set))
+    }
+}
+
+impl FromStr for RecommendedTorVersions {
+    type Err = InvalidRecommendedTorVersions;
+    fn from_str(s: &str) -> Result<Self, InvalidRecommendedTorVersions> {
+        Self::from_iter(s.split(','))
+    }
+}
+
+impl Display for RecommendedTorVersions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", iter_join(",", &self.0))
+    }
+}
+
+impl NormalItemArgument for RecommendedTorVersions {}
+
+impl ItemValueEncodable for RecommendedTorVersions {
+    fn write_item_value_onto(&self, mut out: ItemEncoder) -> Result<(), Bug> {
+        out.args_raw_string(self);
+        Ok(())
+    }
+}
+
+impl ItemValueParseable for RecommendedTorVersions {
+    fn from_unparsed(mut item: UnparsedItem) -> Result<Self, ErrorProblem> {
+        const FIELD: &str = "versions";
+        item.check_no_object()?;
+        let args = item.args_mut();
+        let arg = args.next().unwrap_or("");
+        arg.parse::<Self>()
+            .map_err(|_| args.handle_error(FIELD, ArgumentError::Invalid))
+    }
+}
+
 /// A recognized 'flavor' of consensus document.
 ///
 /// The enum is exhaustive because the addition/removal of a consensus flavor
@@ -548,7 +658,7 @@ impl ConsensusFlavor {
     ///
     /// For historical reasons, an unnamed flavor indicates an "Plain"
     /// document.
-    pub fn from_opt_name(name: Option<&str>) -> Result<Self> {
+    pub fn from_opt_name(name: Option<&str>) -> crate::Result<Self> {
         match name {
             Some("microdesc") => Ok(ConsensusFlavor::Microdesc),
             Some("ns") | None => Ok(ConsensusFlavor::Plain),
@@ -679,7 +789,7 @@ pub enum DirectorySignatureHashAlgo {
 pub struct DigestAlgoInSignature(pub Option<KeywordOrString<DirectorySignatureHashAlgo>>);
 
 impl ItemArgumentParseable for DigestAlgoInSignature {
-    fn from_args<'s>(args: &mut ArgumentStream<'s>) -> StdResult<Self, ArgumentError> {
+    fn from_args<'s>(args: &mut ArgumentStream<'s>) -> Result<Self, ArgumentError> {
         let v = if args
             .clone()
             .next()
@@ -698,7 +808,7 @@ impl ItemArgumentParseable for DigestAlgoInSignature {
     }
 }
 impl ItemArgument for DigestAlgoInSignature {
-    fn write_arg_onto(&self, out: &mut ItemEncoder<'_>) -> StdResult<(), Bug> {
+    fn write_arg_onto(&self, out: &mut ItemEncoder<'_>) -> Result<(), Bug> {
         if let Some(y) = &self.0 {
             y.write_arg_onto(out)?;
         }
@@ -746,7 +856,7 @@ impl SignatureItemParseable for Signature {
         item: UnparsedItem,
         body: &SignatureHashInputs<'_>,
         hash: &mut Self::HashAccu,
-    ) -> StdResult<Self, ErrorProblem> {
+    ) -> Result<Self, ErrorProblem> {
         let signature = Signature::from_unparsed(item)?;
         hash.update_from(&signature.digest_algo, body);
         Ok(signature)
@@ -769,6 +879,95 @@ pub struct SignatureGroup {
     pub hashes: DirectorySignaturesHashesAccu,
     /// The signatures listed on the document.
     pub signatures: Vec<Signature>,
+}
+
+/// Error which will prevent us from attempting to verify signatures on a consensus
+///
+/// This error occurs if we the consensus isn't signed by the right people,
+/// or we are lacking authcerts.
+///
+/// Does not represent actual verification errors.
+/// Those show up as `VerifyFailed`, typically [`ConsensusVerifyFailed::InvalidSignature`].
+///
+/// Can be converted to a `VerifyFailed`,
+/// giving [`InsufficientTrustedSigners`](VerifyFailed::InsufficientTrustedSigners).
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+// TODO DIRAUTH nothing tests that values in here are right, but there are no
+// public entrypoints that return one, so we don't need to cfg it "incomplete".
+pub enum ConsensusVerifiabilityError {
+    /// Insufficient trusted signers
+    #[error("consensus not signed by enough authorities")]
+    InsufficientTrustedSigners,
+
+    /// Insufficient trusted signers because we are missing authcerts
+    #[error("missing auth certs mean we could not verify enough consensuis signatures (need at least {deficit} more, out of {} that are missing)", missing.len())]
+    MissingAuthCerts {
+        /// The number of additional useful authcerts that would be sufficient
+        deficit: usize,
+        /// All the authcerts that would be useful
+        missing: HashSet<AuthCertKeyIds>,
+    },
+}
+
+/// Error encountered while verifying a consensus
+///
+/// Thrown by
+/// [`plain::NetworkStatusUnverified::verify`]
+/// and
+/// [`md::NetworkStatusUnverified::verify`].
+///
+/// Not used for problems with the validity period:
+/// that's handled by `tor-checkable` and shows up as [`tor_checkable::TimeValidityError`].
+///
+/// Can be converted to a `VerifyFailed` (which, in effect, summarises the error).
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ConsensusVerifyFailed {
+    /// Certificates or signatures insufficient
+    #[error("certs/sigs insufficient")]
+    CertificationInsufficient(#[from] ConsensusVerifiabilityError),
+
+    /// One or more signatures failed to verify
+    #[error("invalid signature")]
+    //
+    // Not `#[from]` because we don't want to accidentally convert
+    // ConsensusVerifiabilityError -> VerifyFailed -> ConsensusVerifyFailed
+    // since that would give the wrong variant.
+    InvalidSignature(#[source] VerifyFailed),
+}
+
+/// Error encountered while verifying a vote
+///
+/// Thrown by
+/// [`vote::NetworkStatusUnverified::verify`].
+///
+/// Not used for problems with the validity period:
+/// that's handled by `tor-checkable` and shows up as [`tor_checkable::TimeValidityError`].
+///
+/// Can be converted to a `VerifyFailed` (which, in effect, summarises the error).
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum VoteVerifyFailed {
+    /// The document signature failed to verify
+    #[error("invalid signature")]
+    //
+    // Not `#[from]` because we don't want to accidentally convert
+    // VoteVerifyFailed::Something -> VerifyFailed -> VoteVerifyFailed
+    // since that would give the wrong variant.
+    InvalidSignature(#[source] VerifyFailed),
+
+    /// Authcert couldn't be parsed
+    #[error("unparseable authcert")]
+    AuthCertParseError(#[source] parse2::ParseError),
+
+    /// Authcert isn't valid for this vote's validity period
+    #[error("authcert not valid for vote period")]
+    AuthCertWrongValidity(#[source] tor_checkable::TimeValidityError),
+
+    /// Authcert is for a different authority
+    #[error("wrong authcert")]
+    AuthCertWrongAuthority,
 }
 
 /// A shared random value produced by the directory authorities.
@@ -1074,7 +1273,7 @@ impl SharedRandCommitV1 {
     const FIXED_ARGUMENTS: &[&str] = &["1", "sha3-256"];
 }
 impl ItemValueEncodable for SharedRandCommit {
-    fn write_item_value_onto(&self, mut out: ItemEncoder) -> StdResult<(), Bug> {
+    fn write_item_value_onto(&self, mut out: ItemEncoder) -> Result<(), Bug> {
         match self {
             SharedRandCommit::V1(values) => {
                 for fixed in SharedRandCommitV1::FIXED_ARGUMENTS {
@@ -1087,7 +1286,7 @@ impl ItemValueEncodable for SharedRandCommit {
     }
 }
 impl ItemValueParseable for SharedRandCommit {
-    fn from_unparsed(mut item: UnparsedItem<'_>) -> StdResult<Self, ErrorProblem> {
+    fn from_unparsed(mut item: UnparsedItem<'_>) -> Result<Self, ErrorProblem> {
         let mut fixed = SharedRandCommitV1::FIXED_ARGUMENTS.iter().copied();
         let args = item.args_mut();
         let version = args
@@ -1147,7 +1346,7 @@ define_derive_deftly! {
         fn from_items<'s>(
             input: &mut ItemStream<'s>,
             stop_outer: stop_at!(),
-        ) -> StdResult<Self, ErrorProblem> {
+        ) -> Result<Self, ErrorProblem> {
             let stop_inner = stop_outer
               $(
                 ${when F_NORMAL}
@@ -1165,7 +1364,7 @@ define_derive_deftly! {
 
     #[cfg(feature = "incomplete")]
     impl NetdocEncodable for VoteAuthoritySection {
-        fn encode_unsigned(&self, out: &mut NetdocEncoder) -> StdResult<(), Bug> {
+        fn encode_unsigned(&self, out: &mut NetdocEncoder) -> Result<(), Bug> {
           $(
             ${when F_NORMAL}
             self.$fname.encode_unsigned(out)?;
@@ -1192,7 +1391,7 @@ pub struct VoteAuthoritySection {
 
     /// Authority key certificate
     #[deftly(constructor)]
-    pub cert: EncodedAuthCert,
+    pub cert: EmbeddedCert<AuthCert, EncodedAuthCert>,
 
     #[doc(hidden)]
     #[deftly(netdoc(skip))]
@@ -1439,9 +1638,9 @@ impl ProtoStatus {
         sec: &Section<'_, NetstatusKwd>,
         recommend_token: NetstatusKwd,
         required_token: NetstatusKwd,
-    ) -> Result<ProtoStatus> {
+    ) -> crate::Result<ProtoStatus> {
         /// Helper: extract a Protocols entry from an item's arguments.
-        fn parse(t: Option<&Item<'_, NetstatusKwd>>) -> Result<Protocols> {
+        fn parse(t: Option<&Item<'_, NetstatusKwd>>) -> crate::Result<Protocols> {
             if let Some(item) = t {
                 item.args_as_str()
                     .parse::<Protocols>()
@@ -1484,9 +1683,9 @@ where
     T::Err: std::error::Error,
 {
     type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> crate::Result<Self> {
         /// Helper: parse a single K=V pair.
-        fn parse_pair<U>(p: &str) -> Result<(String, U)>
+        fn parse_pair<U>(p: &str) -> crate::Result<(String, U)>
         where
             U: std::str::FromStr,
             U::Err: std::error::Error,
@@ -1509,14 +1708,14 @@ where
             .split(' ')
             .filter(|p| !p.is_empty())
             .map(parse_pair)
-            .collect::<Result<HashMap<_, _>>>()?;
+            .try_collect()?;
         Ok(NetParams { params })
     }
 }
 
 impl FromStr for SharedRandVal {
     type Err = Error;
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> crate::Result<Self> {
         let val: B64 = s.parse()?;
         let val = SharedRandVal(val.into_array()?);
         Ok(val)
@@ -1532,7 +1731,7 @@ impl NormalItemArgument for SharedRandVal {}
 impl SharedRandStatus {
     /// Parse a current or previous shared rand value from a given
     /// SharedRandPreviousValue or SharedRandCurrentValue.
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Self> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> crate::Result<Self> {
         match item.kwd() {
             NetstatusKwd::SHARED_RAND_PREVIOUS_VALUE | NetstatusKwd::SHARED_RAND_CURRENT_VALUE => {}
             _ => {
@@ -1567,7 +1766,7 @@ impl SharedRandStatus {
 
 impl DirSource {
     /// Parse a "dir-source" item
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Self> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> crate::Result<Self> {
         if item.kwd() != NetstatusKwd::DIR_SOURCE {
             return Err(
                 Error::from(internal!("Bad keyword {:?} on dir-source", item.kwd()))
@@ -1605,7 +1804,7 @@ impl DirSource {
 
 impl ConsensusAuthorityEntry {
     /// Parse a single ConsensusAuthorityEntry from a voter info section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<ConsensusAuthorityEntry> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> crate::Result<ConsensusAuthorityEntry> {
         use NetstatusKwd::*;
         // this unwrap should be safe because if there is not at least one
         // token in the section, the section is unparsable.
@@ -1687,7 +1886,7 @@ impl RelayWeightsItem {
     }
 
     /// Parse a routerweight from a "w" line.
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<RelayWeightsItem> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> crate::Result<RelayWeightsItem> {
         if item.kwd() != NetstatusKwd::RS_W {
             return Err(
                 Error::from(internal!("Wrong keyword {:?} on W line", item.kwd()))
@@ -1732,7 +1931,7 @@ impl RelayWeight {
     /// Parse a routerweight from partially-parsed `w` line in the form of a `NetParams`
     ///
     /// This function is the common part shared between `parse2` and `parse`.
-    fn from_net_params(params: &NetParams<u32>) -> Result<RelayWeight> {
+    fn from_net_params(params: &NetParams<u32>) -> crate::Result<RelayWeight> {
         params
             .try_into()
             .map_err(|e: InvalidRelayWeights| EK::BadArgument.with_msg(e.to_string()))
@@ -1748,7 +1947,7 @@ impl Default for RelayWeight {
 impl TryFrom<&NetParams<u32>> for RelayWeight {
     type Error = InvalidRelayWeights;
 
-    fn try_from(params: &NetParams<u32>) -> StdResult<RelayWeight, InvalidRelayWeights> {
+    fn try_from(params: &NetParams<u32>) -> Result<RelayWeight, InvalidRelayWeights> {
         let bw = params.params.get("Bandwidth");
         let unmeas = params.params.get("Unmeasured");
 
@@ -1769,7 +1968,7 @@ impl TryFrom<&NetParams<u32>> for RelayWeight {
 impl TryFrom<NetParams<u32>> for RelayWeightsItem {
     type Error = InvalidRelayWeights;
 
-    fn try_from(params: NetParams<u32>) -> StdResult<RelayWeightsItem, InvalidRelayWeights> {
+    fn try_from(params: NetParams<u32>) -> Result<RelayWeightsItem, InvalidRelayWeights> {
         Ok(RelayWeightsItem {
             effective: (&params).try_into()?,
             params: Unknown::Retained(Some(params)),
@@ -1910,7 +2109,7 @@ mod encode_impls {
 
 impl ConsensusFooterFields {
     /// Parse a directory footer from a footer section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<ConsensusFooterFields> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> crate::Result<ConsensusFooterFields> {
         use NetstatusKwd::*;
         sec.required(DIRECTORY_FOOTER)?;
 
@@ -1991,7 +2190,7 @@ mod proto_statuses_parse2_encode {
             fn encode_fields(&self, out: &mut NetdocEncoder) -> Result<(), Bug> {
               $(
                 self.$cr.$rr.write_item_value_onto(
-                    out.item(stringify!([<$rr _ $cr _protocols>]))
+                    out.item(concat!(stringify!($rr), "-", stringify!($cr), "-protocols"))
                 )?;
               )*
                 Ok(())
@@ -2000,28 +2199,16 @@ mod proto_statuses_parse2_encode {
     } } }
 
     impl_proto_statuses! {
-        required client;
-        required relay;
         recommended client;
         recommended relay;
+        required client;
+        required relay;
     }
-}
-
-/// Result of checking a single authority signature.
-enum SigCheckResult {
-    /// The signature checks out.  Great!
-    Valid,
-    /// The signature is invalid; no additional information could make it
-    /// valid.
-    Invalid,
-    /// We can't check the signature because we don't have a
-    /// certificate with the right signing key.
-    MissingCert,
 }
 
 impl Signature {
     /// Parse a Signature from a directory-signature section
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Signature> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> crate::Result<Signature> {
         if item.kwd() != NetstatusKwd::DIRECTORY_SIGNATURE {
             return Err(Error::from(internal!(
                 "Wrong keyword {:?} for directory signature",
@@ -2037,6 +2224,7 @@ impl Signature {
                 item.required_arg(2)?,
             )
         } else {
+            // TODO #2530 digest_algo needs to depend on whether SHA1 was stated
             ("sha1", item.required_arg(0)?, item.required_arg(1)?)
         };
 
@@ -2069,21 +2257,131 @@ impl Signature {
         certs.iter().find(|&c| self.matches_cert(c))
     }
 
-    /// Try to check whether this signature is a valid signature of a
-    /// provided digest, given a slice of certificates that might contain
-    /// its signing key.
-    fn check_signature(&self, signed_digest: &[u8], certs: &[AuthCert]) -> SigCheckResult {
-        match self.find_cert(certs) {
-            None => SigCheckResult::MissingCert,
-            Some(cert) => {
-                let key = cert.signing_key();
-                match key.verify(signed_digest, &self.signature[..]) {
-                    Ok(()) => SigCheckResult::Valid,
-                    Err(_) => SigCheckResult::Invalid,
-                }
-            }
-        }
+    /// Find the certificate and assemble the pieces ready for verification
+    ///
+    /// `None` means precisely that we're missing the authcert.
+    fn signature_to_verify<'r>(
+        &'r self,
+        signed_digest: &'r [u8],
+        certs: &'r [AuthCert],
+    ) -> Option<ConsensusSignatureToVerify> {
+        let cert = self.find_cert(certs)?;
+        let key = cert.signing_key();
+        Some(ConsensusSignatureToVerify {
+            key,
+            signed_digest,
+            signature: &self.signature,
+        })
     }
+}
+
+impl EncodeOrd for Signature {
+    fn encode_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let k: for<'s> fn(&'_ Signature) -> (&'_ _, &'_ _) = |s| (&s.key_ids, &s.signature);
+        Ord::cmp(&k(self), &k(other))
+    }
+}
+
+/// Signature information in a consensus, to be verified
+///
+/// Used by callers of [`SignatureGroup::verify_general`],
+/// to allow verification to be suppressed if all we wanted to know was
+/// whether we have enough signatures and enough authcerts.
+//
+// TODO DIRAUTH make this module-private when poc is abolished
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ConsensusSignatureToVerify<'r> {
+    /// KP_auth_sign_rsa
+    key: &'r ll::pk::rsa::PublicKey,
+
+    /// The digest (actual RSA signature payload, before PKCS#11 padding)
+    signed_digest: &'r [u8],
+
+    /// The RSA signature value
+    signature: &'r [u8],
+}
+
+/// Token indicating that signature verification has been done, if required
+///
+/// Prevents accidentally passing an unintended no-op function as
+/// `do_verify` to [`SignatureGroup::verify_general`].
+///
+/// Write `SignatureVerifiedIfIntended {}` to construct this,
+/// only in code which has actually done the verification,
+/// or code which is deliberately not verifying at all.
+pub(crate) struct SignatureVerifiedIfIntended {}
+
+impl<'r> ConsensusSignatureToVerify<'r> {
+    /// Verify this signature
+    ///
+    // TODO DIRAUTH make this module-private when poc is abolished
+    pub(crate) fn verify(self) -> Result<SignatureVerifiedIfIntended, VerifyFailed> {
+        self.key.verify(self.signed_digest, self.signature)?;
+        Ok(SignatureVerifiedIfIntended {})
+    }
+}
+
+/// How `verify_general` should decide who is a trusted authority
+///
+/// Don't use this for other purposes
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum VerifyGeneralTrustedAuthorities<'r> {
+    /// Trust these authorities.
+    TrustThese {
+        /// The HKP_auth_id_rsa
+        trusted: &'r [RsaIdentity],
+    },
+
+    /// Document is a a vote, so OK if signed by any one of the listed authorities
+    AnyOneOfThese {
+        /// The HKP_auth_id_rsa
+        trusted: &'r [RsaIdentity],
+    },
+
+    /// For the benefit of `SignatureGroup::validate`, used by the old parser, only
+    ///
+    /// Every `AuthCert` passed to `verify_general` is a real authority (!)
+    /// (But not necessarily a different one!)
+    HazardouslyAssumeAllAuthCertsAreReal {
+        /// Total number of authorities that we trust
+        ///
+        /// Used only to calculate the threshold
+        n_authorities: usize,
+    },
+}
+
+/// Return the minimum number of authorities that we need signatures from
+///
+/// Enough is strictly more than half.
+///
+/// The returned value is a [`RangeFrom`](std::ops::RangeFrom), ie an inclusive range.
+/// Its `start` value is the minimum acceptable number of authorities
+/// from whom we have good signatures.
+///
+/// Should usually be followed by
+/// [`.contains`](std::ops::RangeFrom::contains)`(&actual_number)`.
+///
+/// # Example
+///
+/// ```
+/// use tor_netdoc::{doc::netstatus::consensus_threshold, parse2::VerifyFailed};
+/// # fn main() -> Result<(), VerifyFailed> {
+///
+/// let n_trusted_authorities = 3;
+/// let n_good_signatures_from_different_authorities = 2;
+///
+/// if consensus_threshold(n_trusted_authorities)
+///      .contains(&n_good_signatures_from_different_authorities)
+/// {
+///     Ok(())
+/// } else {
+///     Err(VerifyFailed::InsufficientTrustedSigners)
+/// }
+/// # }
+/// ```
+pub fn consensus_threshold(n_authorities: usize) -> std::ops::RangeFrom<usize> {
+    (n_authorities / 2) + 1 // strict majority
+        ..
 }
 
 impl SignatureGroup {
@@ -2127,7 +2425,7 @@ impl SignatureGroup {
             }
         }
 
-        signed_by.len() > (authorities.len() / 2)
+        consensus_threshold(authorities.len()).contains(&signed_by.len())
     }
 
     /// Return true if the signature group defines a valid signature.
@@ -2136,46 +2434,164 @@ impl SignatureGroup {
     /// authorities.  This API requires that `n_authorities` is the number of
     /// authorities we believe in, and that every cert in `certs` belongs
     /// to a real authority.
-    fn validate(&self, n_authorities: usize, certs: &[AuthCert]) -> bool {
+    fn validate(&self, n_authorities: usize, certs: &[AuthCert]) -> Result<(), VerifyFailed> {
+        // TODO we ought to take the set of trusted authorities as an argument,
+        // rather than use VGTA::HazardouslyAssumeAllAuthCertsAreReal.
+        self.verify_general(
+            VerifyGeneralTrustedAuthorities::HazardouslyAssumeAllAuthCertsAreReal { n_authorities },
+            certs,
+            |tv| tv.verify(),
+        )
+    }
+
+    /// Check signatures (maybe), but not timeliness
+    ///
+    /// Examines the signatures and collates them with authcerts.
+    /// Performs the necessary consensus signature verifications, via `do_verify`.
+    ///
+    /// If there are not enough authcerts or not enough signatures,
+    /// throws a `ConsensusVerifiabilityError`.
+    ///
+    /// Differs from [`SignatureGroup::validate`]:
+    ///
+    ///  * Intended also for use with types from parse2.
+    ///
+    ///  * Yields information about missing authcerts directly in the return value,
+    ///    and can be used without actually doing the verification,
+    ///    so there's no need for a separate "which certs are we missing" function.
+    ///
+    ///  * Threshold is passed as a parameter (wanted for votes).
+    ///
+    ///  * Ability to check authority identities, by passing `trusted_authorities`.
+    ///    (done with `authorities_are_correct` in old parser,
+    ///    apparently with no engineered safeguard against consensus user omitting to do so).
+    ///
+    ///    **If `trusted_authorities` is None, all authorities in `certs` are treated as trusted**.
+    ///
+    ///  * Returns `Result`, not a boolean
+    ///
+    ///  * We prefer the term `verify` to `validate`.  All this does is signature verification.
+    ///
+    // TODO DIRAUTH make this module-private when poc is abolished
+    pub(crate) fn verify_general<E>(
+        &self,
+        trusted_authorities: VerifyGeneralTrustedAuthorities,
+        certs: &[AuthCert],
+        do_verify: impl Fn(ConsensusSignatureToVerify) -> Result<SignatureVerifiedIfIntended, E>,
+    ) -> Result<(), E>
+    where
+        ConsensusVerifiabilityError: Into<E>,
+    {
+        use VerifyGeneralTrustedAuthorities as TA;
+
         // A set of the authorities (by identity) who have have signed
         // this document.  We use a set here in case `certs` has more
         // than one certificate for a single authority.
         let mut ok: HashSet<RsaIdentity> = HashSet::new();
+        let mut missing = HashSet::new();
+        let mut verify_failed = Ok(());
 
         for sig in &self.signatures {
-            let id_fingerprint = &sig.key_ids.id_fingerprint;
+            // Exhaustive pattern makes it hard to accidentally ignore a field.
+            let Signature {
+                digest_algo,
+                key_ids:
+                    AuthCertKeyIds {
+                        id_fingerprint,
+                        // h_kp_auth_sign_rsa, which Signature::check_signature
+                        // checks against the authcert.
+                        sk_fingerprint: _,
+                    },
+                // Used by Signature::check_signature
+                signature: _,
+            } = sig;
+
+            match trusted_authorities {
+                TA::TrustThese { trusted } | TA::AnyOneOfThese { trusted } => {
+                    if !trusted.contains(id_fingerprint) {
+                        continue;
+                    }
+                }
+                TA::HazardouslyAssumeAllAuthCertsAreReal { .. } => {
+                    // OK then!
+                }
+            }
+
             if ok.contains(id_fingerprint) {
                 // We already checked at least one signature using this
                 // authority's identity fingerprint.
                 continue;
             }
 
-            use DirectorySignatureHashAlgo as DSHA;
-            use KeywordOrString as KOS;
-
-            let d: Option<&[u8]> = match sig.digest_algo.algorithm() {
-                KOS::Known(DSHA::Sha256) => self.hashes.sha256.as_ref().map(|a| &a[..]),
-                // TODO #2530 this needs to depend on whether `sha1` was stated (!)
-                KOS::Known(DSHA::Sha1) => self.hashes.sha1.as_ref().map(|a| &a[..]),
-                _ => None, // We don't know how to find this digest.
-            };
-            if d.is_none() {
+            let Some(d) = self.hashes.hash_slice_for_verification(digest_algo) else {
                 // We don't support this kind of digest for this kind
                 // of document.
                 continue;
-            }
+            };
 
-            // Unwrap should be safe because of above `d.is_none()` check
-            #[allow(clippy::unwrap_used)]
-            match sig.check_signature(d.as_ref().unwrap(), certs) {
-                SigCheckResult::Valid => {
+            let Some(tv) = sig.signature_to_verify(d, certs) else {
+                missing.insert(sig.key_ids);
+                continue;
+            };
+            match do_verify(tv) {
+                Ok::<SignatureVerifiedIfIntended, _>(_) => {
                     ok.insert(*id_fingerprint);
                 }
-                _ => continue,
+                Err(e) => {
+                    verify_failed = Err(e);
+                }
             }
         }
 
-        ok.len() > (n_authorities / 2)
+        let n_authorities = match trusted_authorities {
+            TA::TrustThese { trusted } => trusted.len(),
+            TA::HazardouslyAssumeAllAuthCertsAreReal { n_authorities: n } => n,
+            TA::AnyOneOfThese { .. } => {
+                // strict majority of 1 is 1, so n_authorites being 1 leads to threshold of 1
+                // (doing it this way avoids having both thresholds and authority counts
+                // in the same code area, which might lead to confusing one with the other.
+                1
+            }
+        };
+        let threshold = consensus_threshold(n_authorities);
+
+        if threshold.contains(&ok.len()) {
+            Ok(())
+        } else {
+            // Throw the verification error if any of the verifications failed
+            verify_failed?;
+
+            // Otherwise report that we're missing certs and/or signers
+            Err(if missing.is_empty() {
+                ConsensusVerifiabilityError::InsufficientTrustedSigners
+            } else {
+                let deficit = threshold.start - ok.len();
+                ConsensusVerifiabilityError::MissingAuthCerts { missing, deficit }
+            }
+            .into())
+        }
+    }
+}
+
+impl From<ConsensusVerifiabilityError> for VerifyFailed {
+    fn from(cve: ConsensusVerifiabilityError) -> VerifyFailed {
+        use ConsensusVerifiabilityError as CVE;
+        use VerifyFailed as VF;
+        match cve {
+            CVE::InsufficientTrustedSigners => VF::InsufficientTrustedSigners,
+            CVE::MissingAuthCerts { .. } => VF::InsufficientTrustedSigners,
+        }
+    }
+}
+
+impl From<ConsensusVerifyFailed> for VerifyFailed {
+    fn from(cvf: ConsensusVerifyFailed) -> VerifyFailed {
+        use ConsensusVerifyFailed as CVF;
+        use VerifyFailed as VF;
+        match cvf {
+            CVF::CertificationInsufficient { .. } => VF::InsufficientTrustedSigners,
+            CVF::InvalidSignature { .. } => VF::VerifyFailed,
+        }
     }
 }
 
@@ -2193,14 +2609,21 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
+    use crate::doc::authcert::AuthCertUnverified;
+    use crate::encode::{NetdocEncodable, NetdocEncodableFields};
+    use crate::parse2::{ParseInput, parse_netdoc, parse_netdoc_multiple};
+    use crate::util::regsub;
+    use anyhow::Context as _;
+    use assert_matches::assert_matches;
     use hex_literal::hex;
-    #[cfg(feature = "incomplete")]
-    use {
-        crate::parse2::{NetdocUnverified as _, ParseInput, parse_netdoc},
-        std::fs,
-    };
+    use humantime::parse_rfc3339;
+    use std::fmt::Debug;
+    use std::fs;
+    use std::time::Duration;
+    use tor_checkable::Timebound;
 
     const CERTS: &str = include_str!("../../testdata/authcerts2.txt");
     const CONSENSUS: &str = include_str!("../../testdata/mdconsensus1.txt");
@@ -2220,7 +2643,7 @@ mod test {
     }
 
     #[test]
-    fn parse_and_validate_md() -> Result<()> {
+    fn parse_and_validate_md() -> crate::Result<()> {
         use std::net::SocketAddr;
         use tor_checkable::{SelfSigned, Timebound};
         let mut certs = Vec::new();
@@ -2286,7 +2709,7 @@ mod test {
     }
 
     #[test]
-    fn parse_and_validate_ns() -> Result<()> {
+    fn parse_and_validate_ns() -> crate::Result<()> {
         use tor_checkable::{SelfSigned, Timebound};
         let mut certs = Vec::new();
         for cert in AuthCert::parse_multiple(PLAIN_CERTS)? {
@@ -2306,24 +2729,6 @@ mod test {
         assert!(consensus.key_is_correct(&certs).is_ok());
 
         let _consensus = consensus.check_signature(&certs)?;
-
-        Ok(())
-    }
-
-    #[test]
-    #[cfg(feature = "incomplete")]
-    fn parse2_vote() -> anyhow::Result<()> {
-        let file = "testdata2/v3-status-votes--1";
-        let text = fs::read_to_string(file)?;
-
-        // TODO DIRAUTH replace the poc struct here when we have parsing of proper whole votes
-        use crate::parse2::poc::netstatus::NetworkStatusUnverifiedVote;
-
-        let input = ParseInput::new(&text, file);
-        let doc: NetworkStatusUnverifiedVote = parse_netdoc(&input)?;
-
-        println!("{doc:?}");
-        println!("{:#?}", doc.inspect_unverified().0.r[0]);
 
         Ok(())
     }
@@ -2375,7 +2780,7 @@ mod test {
         check("wrong-version", &EK::BadDocumentVersion.with_msg("10"));
     }
 
-    fn gettok(s: &str) -> Result<Item<'_, NetstatusKwd>> {
+    fn gettok(s: &str) -> crate::Result<Item<'_, NetstatusKwd>> {
         let mut reader = NetDocReader::new(s)?;
         let tok = reader.next().unwrap();
         assert!(reader.next().is_none());
@@ -2539,5 +2944,341 @@ mod test {
         )
         .unwrap();
         assert_eq!(ps, ps3);
+    }
+
+    // TODO DIRAUTH test parse2 consensus verify functions
+    #[test]
+    #[cfg(feature = "incomplete")]
+    fn verify_error_netstatus_vote() -> Result<(), anyhow::Error> {
+        use VerifyFailed as VF;
+        use VoteVerifyFailed as VVF;
+        use vote::NetworkStatusUnverified as UV;
+
+        let file = "testdata2/v3-status-votes--1";
+        let text = fs::read_to_string(file).with_context(|| file.to_owned())?;
+        let input = ParseInput::new(&text, file);
+        let doc: UV = parse_netdoc(&input)?;
+        let trusted = [doc.peek_alleged_authority()];
+
+        let edit_body = |f: &dyn Fn(&mut _)| {
+            let (mut body, sigs) = doc.clone().unwrap_unverified();
+            f(&mut body);
+            UV::from_parts(body, sigs)
+        };
+
+        // sabotage the overall signature
+        {
+            let mut doc = doc.clone();
+            for b in &mut doc.sigs.sigs.directory_signature.signature {
+                *b = 0xff;
+            }
+            assert_matches! {
+                doc.verify(&trusted),
+                Err(VVF::InvalidSignature(VF::VerifyFailed))
+            }
+        }
+
+        // wrong authority
+        {
+            let doc = doc.clone();
+            assert_matches! {
+                doc.verify(&[[0x55; _].into()]),
+                Err(VVF::InvalidSignature(VF::InsufficientTrustedSigners))
+            }
+        }
+
+        // authcert is for a different authority
+        {
+            let doc = edit_body(&|body| {
+                body.authority.authority.dir_source.identity.0 = [0x55; _].into();
+            });
+            assert_matches! {
+                doc.verify(&trusted),
+                Err(VVF::AuthCertWrongAuthority)
+            }
+        }
+
+        // authcert is from a different time
+        let with_mutated_lifetime = |f: &dyn Fn(&mut Lifetime)| {
+            let doc = edit_body(&|body| f(&mut body.preamble.lifetime));
+            assert_matches! {
+                doc.verify(&trusted),
+                Err(VVF::AuthCertWrongValidity(_))
+            }
+        };
+        let t_past = parse_rfc3339("1990-01-01T00:02:25Z")?;
+        let t_future = parse_rfc3339("2010-01-01T00:02:25Z")?;
+        with_mutated_lifetime(&|lifetime| lifetime.valid_after.0 = t_future);
+        with_mutated_lifetime(&|lifetime| lifetime.fresh_until.0 = t_past);
+        with_mutated_lifetime(&|lifetime| lifetime.valid_until.0 = t_past);
+
+        // syntactically invalid authcert
+        {
+            let mut text = text.clone();
+            regsub(&mut text, "^dir-key-expires ", "dir-key-expires-SABOTAGED ");
+            let input = ParseInput::new(&text, file);
+            let doc: UV = parse_netdoc(&input)?;
+            assert_matches! {
+                doc.verify(&trusted),
+                Err(VVF::AuthCertParseError(..))
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check that a network document can be parsed and regenerated, mostly identically
+    ///
+    /// The regenerated encoded form doesn't need to be 100% identical:
+    /// it is compared with a *munged* version of the the original input file,
+    /// to cope with differences between C Tor and Arti.
+    ///
+    /// The mungings are:
+    ///
+    ///  * Some fields' syntax are adjusted, where C Tor and Arti disagree
+    ///    in all kinds of network document.
+    ///
+    ///  * Document-specific, [`MungeForRoundtrip::adjust_exp`]
+    #[cfg(feature = "incomplete")]
+    fn roundtrip_netstatus<UV, V, VE>(
+        // TODO DIRAUTH use include_str!, so, at call sites
+        // https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4121#note_3428675
+        file: &str,
+        verify: impl FnOnce(UV, &[RsaIdentity], &[AuthCert]) -> Result<TimerangeBound<V>, VE>,
+        adjust_now: Duration,
+    ) -> anyhow::Result<()>
+    where
+        UV: NetdocParseable + NetdocParseableUnverified + MungeForRoundtrip,
+        UV::Signatures: Clone + Debug + NetdocEncodableFields,
+        VE: Debug + std::error::Error + Send + Sync + 'static,
+        V: Debug + NetdocEncodable,
+    {
+        let text = fs::read_to_string(file).with_context(|| file.to_owned())?;
+        let now = parse_rfc3339("2000-01-01T00:02:25Z")? + adjust_now;
+
+        let mut input = ParseInput::new(&text, file);
+        input.retain_unknown_values();
+
+        let doc: UV = parse_netdoc(&input)?;
+
+        let certs = {
+            let file = "testdata2/cached-certs";
+            let text = fs::read_to_string(file)?;
+            let input = ParseInput::new(&text, file);
+            let certs: Vec<AuthCertUnverified> = parse_netdoc_multiple(&input)?;
+            certs
+                .into_iter()
+                .map(|cert| cert.verify_selfcert(now))
+                .collect::<Result<Vec<AuthCert>, _>>()?
+        };
+
+        let sigs = doc.inspect_unverified().1.sigs.clone();
+
+        let doc = verify(
+            doc,
+            &certs.iter().map(|cert| *cert.fingerprint).collect_vec(),
+            &certs,
+        )?
+        .check_valid_at(&now)?;
+
+        println!("{doc:?}");
+
+        let mut enc = NetdocEncoder::new();
+        doc.encode_unsigned(&mut enc)?;
+        sigs.encode_fields(&mut enc)?;
+        let enc = enc.finish()?;
+
+        let mut exp: String = text.clone();
+
+        // TODO DIRAUTH torspec!507 C Tor emits padded base64 in shared-rand-* items.
+        regsub(
+            //
+            &mut exp,
+            r#"^(shared-rand-.*)$"#,
+            |c: &regex::Captures| {
+                let mut s = c[1].to_owned();
+                regsub(&mut s, r#"="#, "");
+                s
+            },
+        );
+
+        let mut regsub = |re, repl| regsub(&mut exp, re, repl);
+
+        // C Tor writes empty versions lines with trailing space
+        regsub(
+            //
+            r#"^((?:client|server)-versions) $"#,
+            "$1",
+        );
+
+        // C Tor emits `m` in varying places: after `a` in votes,
+        // and at the end of each routerstatus in md consensuses.
+        // We emit it at the start of each routerstatus, right after `r`.
+        regsub(
+            r#"(?x)
+                   ( ^    r\ .* \n     )  #  ( r  )  $1, part before where we want to put m's
+                   ( (?:     .* \n )*? )  #  (.*? )  $2, the rest, before the m's
+                   ( (?:  m\ .* \n )+  )  #  ( m+ )  $3, one or more m's
+            "#,
+            r#"$1$3$2"#,
+        );
+
+        UV::adjust_exp(&mut exp);
+
+        assert_eq_or_diff!(&exp, &enc);
+
+        Ok(())
+    }
+
+    trait MungeForRoundtrip {
+        /// Munge `s` so that it resembles the output of C Tor
+        fn adjust_exp(exp: &mut String);
+    }
+
+    /// Test that we can re-encode the consensus we parsed, and that we get the same thing back.
+    ///
+    /// Well, roughly the same thing.
+    //
+    // TODO DIRAUTH want more comprehensive test; testdata2's netstatus lacks many things
+    #[cfg(feature = "incomplete")]
+    #[test]
+    fn roundtrip_netstatus_plain() -> anyhow::Result<()> {
+        roundtrip_netstatus::<plain::NetworkStatusUnverified, _, _>(
+            "testdata2/cached-consensus",
+            plain::NetworkStatusUnverified::verify,
+            Duration::ZERO,
+        )
+    }
+
+    #[cfg(feature = "incomplete")]
+    impl MungeForRoundtrip for plain::NetworkStatusUnverified {
+        fn adjust_exp(exp: &mut String) {
+            let mut regsub = |re, repl| regsub(exp, re, repl);
+
+            // We emit the optional `ns`
+            // https://spec.torproject.org/dir-spec/consensus-formats.html#item:network-status-version
+            regsub(
+                r#"^network-status-version 3$"#,
+                "network-status-version 3 ns",
+            );
+
+            // C Tor writes nontrivial values for `publication` in rs `r` items,
+            // but we use a fixed string.
+            // https://spec.torproject.org/dir-spec/consensus-formats.html#item:r
+            regsub(
+                r#"^(r \S+ \S+ \S+) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"#,
+                "$1 2000-01-01 00:00:01",
+            );
+        }
+    }
+
+    #[cfg(feature = "incomplete")]
+    #[test]
+    fn roundtrip_netstatus_md() -> anyhow::Result<()> {
+        roundtrip_netstatus::<md::NetworkStatusUnverified, _, _>(
+            "testdata2/cached-microdesc-consensus",
+            md::NetworkStatusUnverified::verify,
+            Duration::ZERO,
+        )
+    }
+
+    #[cfg(feature = "incomplete")]
+    impl MungeForRoundtrip for md::NetworkStatusUnverified {
+        fn adjust_exp(exp: &mut String) {
+            let mut regsub = |re, repl| regsub(exp, re, repl);
+
+            // C Tor writes nontrivial values for `publication` in rs `r` items,
+            // but we use a fixed string.
+            // https://spec.torproject.org/dir-spec/consensus-formats.html#item:r
+            //
+            // Not the same as in plain consensus: one fewer fields!
+            regsub(
+                r#"^(r \S+ \S+) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"#,
+                "$1 2000-01-01 00:00:01",
+            );
+        }
+    }
+
+    #[cfg(feature = "incomplete")]
+    #[test]
+    fn roundtrip_netstatus_vote() -> anyhow::Result<()> {
+        roundtrip_netstatus::<vote::NetworkStatusUnverified, _, _>(
+            "testdata2/v3-status-votes--1",
+            |doc, trusted, _| vote::NetworkStatusUnverified::verify(doc, trusted),
+            Duration::from_secs(20),
+        )
+    }
+
+    #[cfg(feature = "incomplete")]
+    impl MungeForRoundtrip for vote::NetworkStatusUnverified {
+        fn adjust_exp(exp: &mut String) {
+            // C Tor writes items in consensuses a different order to in votes!
+
+            // C Tor writes different stats items with different floating point formats!
+            let stats_massage_entry = |e: &str| {
+                let mut e = e.to_owned();
+                if e.contains('.') {
+                    regsub(
+                        &mut e,
+                        // strip trailing 0's and then trailing `.`
+                        r#"(?x)^ ( (?:wfu) = [0-9.]*? )( \.? 0+ ) $"#,
+                        "$1",
+                    );
+                }
+                e
+            };
+
+            // C Tor writes stats items in votes in an apparently arbitrarily chosen order
+            regsub(exp, r#"^stats (.+)$"#, |c: &regex::Captures| -> String {
+                format!(
+                    "stats {}",
+                    iter_join(" ", c[1].split(' ').sorted().map(stats_massage_entry)),
+                )
+            });
+
+            let mut regsub = |re: &_, repl| regsub(exp, re, repl);
+
+            // C Tor writes *-protocols in an apparently arbitrarily chosen order
+            regsub(
+                r#"(?x)
+                       ^ (recommended-relay-protocols\ .*)  \n
+                         (recommended-client-protocols\ .*) \n
+                         (required-relay-protocols\ .*)     \n
+                         (required-client-protocols\ .*)    \n
+                         (known-flags .*)$                  \n
+                    "#,
+                r#"$5
+$2
+$1
+$4
+$3
+"#,
+            );
+
+            // C Tor emits empty `client-versions` in consensuses, but not in votes.
+            // (See also the fixup in `roundtrip_netstatus`, which relates to the *syntax*)
+            //
+            // Some of our inputs (eg the testdata2 votes) don't contain meaningful
+            // info, so to make the C Tor output match our output, add them.
+            regsub(
+                r#"(?x) ^ (voting-delay\ .*) \n
+                          (known-flags\ .*) \n"#,
+                "$1
+client-versions
+server-versions
+$2
+",
+            );
+
+            //#                         (?:  a\ .* \n )?    )   #    a? )           we want to put m's
+
+            for missing_field in [
+                "bandwidth-file-headers", // TODO DIRAUTH implement
+                "bandwidth-file-digest",  // TODO DIRAUTH implement
+                "flag-thresholds",        // TODO DIRAUTH implement
+            ] {
+                regsub(&format!(r#"^{missing_field} .*\n"#), "");
+            }
+        }
     }
 }

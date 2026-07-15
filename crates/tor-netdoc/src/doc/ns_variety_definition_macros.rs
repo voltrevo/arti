@@ -1,12 +1,12 @@
 //! Machinery for defining multiple varieties of network status document.
 //!
 //! This module handles re-using the same source code to define
-//!  * Votes, and parts thereof
 //!  * Consensuses, and parts thereof
 //!  * Microdescriptor consensuses, and parts thereof
+//!  * Votes, and parts thereof
 //!
 //! We call these three kinds of document "variety".
-//! So a variety is either "vote", or a consensus flavour.
+//! So a variety is either a consensus flavour, or "vote".
 //!
 //! # Overwview
 //!
@@ -40,7 +40,7 @@
 //!
 //! This module contains macros that will be used to define
 //! similar-but-not-identical  types
-//! for each document variety ("vote", "md", and "plain").
+//! for each document variety ("plain", "md", and "vote").
 //!
 //! The definition of such type is in an `each_variety.rs` file,
 //! which will be included once for each variety.
@@ -69,9 +69,9 @@
 //! # Usage
 //!
 //! Create and include (with `mod`) normal module files:
-//!  * `vote.rs`
-//!  * `md.rs`
 //!  * `plain
+//!  * `md.rs`
+//!  * `vote.rs`
 //!
 //! These contain variety-specific definitions.
 //!
@@ -79,8 +79,8 @@
 //!  * `each_flavor.rs`
 //!  * `each_variety.rs`
 //!
-//! Do not write a `mod` line for it.
-//! Instead, in each of `vote.rs`, `plain.rs` and `md.rs`,
+//! Do not write a `mod` line for these files.
+//! Instead, in each of `plain.rs`, `md.rs` and `vote.rs`,
 //! call [`ns_do_variety_vote`], [`ns_do_variety_plain`], or [`ns_do_variety_md`].
 //!
 //! The `each_variety.rs` file will be included three times, once each as a submodule
@@ -193,7 +193,7 @@
 ///
 /// **Internal to `ns_variety_definition_macros.rs`, do not use directly!**
 ///
-///  * `$abbrev` is one of `vote`, `plain`, or `md` as applicable.
+///  * `$abbrev` is one of `plain`, `md`, or `vote` as applicable.
 ///
 ///  * `: $plain $md $vote $d` is always `: plain md vote $`.
 ///    `$d` is needed because it's not possible to write a literal `$`

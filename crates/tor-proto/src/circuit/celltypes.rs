@@ -6,6 +6,7 @@
 
 use derive_deftly::{Deftly, define_derive_deftly};
 use std::fmt::{self, Display};
+use tor_cell::chancell::BoxedCellBody;
 use tor_cell::chancell::msg::{self as chanmsg};
 use tor_cell::restricted_msg;
 
@@ -83,6 +84,25 @@ impl Display for CreateResponse {
     }
 }
 
+restricted_msg! {
+    /// A RELAY or RELAY_EARLY channel message.
+    #[derive(Debug)]
+    pub(crate) enum RelayMaybeEarlyChanMsg : ChanMsg {
+        Relay,
+        RelayEarly,
+    }
+}
+
+impl RelayMaybeEarlyChanMsg {
+    /// Consume this message and return a `BoxedCellBody` for encryption/decryption.
+    pub(crate) fn into_relay_body(self) -> BoxedCellBody {
+        match self {
+            Self::Relay(x) => x.into_relay_body(),
+            Self::RelayEarly(x) => x.into_relay_body(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
@@ -97,6 +117,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

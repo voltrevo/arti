@@ -864,9 +864,11 @@ impl Channel {
         // TODO: blocking is risky, but so is unbounded.
         let (sender, receiver) =
             MpscSpec::new(128).new_mq(time_prov.clone(), memquota.as_raw_account())?;
+        let (sender, receiver) = crate::circuit::circ_sender::channel(sender, receiver);
         let (createdsender, createdreceiver) = oneshot::channel::<CreateResponse>();
 
         let (tx, rx) = oneshot::channel();
+
         self.send_control(CtrlMsg::AllocateCircuit {
             created_sender: createdsender,
             sender,
@@ -912,6 +914,7 @@ impl Channel {
         // TODO: blocking is risky, but so is unbounded.
         let (sender, receiver) =
             MpscSpec::new(128).new_mq(time_prov.clone(), memquota.as_raw_account())?;
+        let (sender, receiver) = crate::circuit::circ_sender::channel(sender, receiver);
         let (createdsender, createdreceiver) = oneshot::channel::<CreateResponse>();
 
         let (tx, rx) = oneshot::channel();

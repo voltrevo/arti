@@ -10,7 +10,10 @@ const PREFIXES: &[&str] = &["www."];
 const SUFFIXES: &[&str] = &[".com", ".net", ".org"];
 
 /// The characters that we use for the middle part of a hostname.
-const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz-0123456789";
+// NOTE: Some characters have restrictions.
+// For example `-` isn't allowed as the first or last character of a subdomain,
+// so we don't include it here (see arti#2597).
+const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
 /// Lowest permissible hostname length.
 const MIN_LEN: usize = 16;
@@ -57,6 +60,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
@@ -73,7 +77,7 @@ mod test {
             assert!(name.len() >= MIN_LEN);
             assert!(name.len() <= MAX_LEN);
             for ch in name.chars() {
-                assert!(matches!(ch, '.' | '-' | '0'..='9' | 'a'..='z'));
+                assert!(matches!(ch, '.' | '0'..='9' | 'a'..='z'));
             }
         }
     }

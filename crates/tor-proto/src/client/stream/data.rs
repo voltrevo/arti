@@ -33,14 +33,15 @@ use std::sync::{Mutex, Weak};
 use educe::Educe;
 
 use crate::client::ClientTunnel;
-use crate::client::stream::StreamReceiver;
 use crate::memquota::StreamAccount;
+use crate::stream::StreamReceiver;
 use crate::stream::StreamTarget;
 use crate::stream::cmdcheck::{AnyCmdChecker, CmdChecker, StreamStatus};
 use crate::stream::flow_ctrl::state::StreamRateLimit;
 use crate::stream::flow_ctrl::xon_xoff::reader::{BufferIsEmpty, XonXoffReader, XonXoffReaderCtrl};
-use crate::util::token_bucket::dynamic_writer::DynamicRateLimitedWriter;
-use crate::util::token_bucket::writer::{RateLimitedWriter, RateLimitedWriterConfig};
+use tor_async_utils::rate_limited_writer::{
+    DynamicRateLimitedWriter, RateLimitedWriter, RateLimitedWriterConfig,
+};
 use tor_basic_utils::skip_fmt;
 use tor_cell::relaycell::msg::Data;
 use tor_error::internal;
@@ -140,8 +141,10 @@ pub struct DataStream {
     r: DataReader,
     /// A control object that can be used to monitor and control this stream
     /// without needing to own it.
+    ///
+    /// Set to `None` if this is not a client stream.
     #[cfg(feature = "stream-ctrl")]
-    ctrl: Arc<ClientDataStreamCtrl>,
+    ctrl: Option<Arc<ClientDataStreamCtrl>>,
 }
 assert_impl_all! { DataStream: Send, Sync }
 
@@ -205,8 +208,10 @@ struct DataWriterInner {
 
     /// A control object that can be used to monitor and control this stream
     /// without needing to own it.
+    ///
+    /// Set to `None` if this is not a client stream.
     #[cfg(feature = "stream-ctrl")]
-    ctrl: Arc<ClientDataStreamCtrl>,
+    ctrl: Option<Arc<ClientDataStreamCtrl>>,
 }
 
 /// The write half of a [`DataStream`], implementing [`futures::io::AsyncWrite`].
@@ -292,9 +297,11 @@ impl DataWriter {
 
     /// Return a [`ClientDataStreamCtrl`] object that can be used to monitor and
     /// interact with this stream without holding the stream itself.
+    ///
+    /// Returns `None` if this is not a client stream.
     #[cfg(feature = "stream-ctrl")]
     pub fn client_stream_ctrl(&self) -> Option<&Arc<ClientDataStreamCtrl>> {
-        Some(self.writer.inner().client_stream_ctrl())
+        self.writer.inner().client_stream_ctrl()
     }
 }
 
@@ -362,9 +369,11 @@ impl DataReader {
 
     /// Return a [`ClientDataStreamCtrl`] object that can be used to monitor and
     /// interact with this stream without holding the stream itself.
+    ///
+    /// Returns `None` if this is not a client stream.
     #[cfg(feature = "stream-ctrl")]
     pub fn client_stream_ctrl(&self) -> Option<&Arc<ClientDataStreamCtrl>> {
-        Some(self.reader.inner().client_stream_ctrl())
+        self.reader.inner().client_stream_ctrl()
     }
 }
 
@@ -419,8 +428,10 @@ pub(crate) struct DataReaderInner {
 
     /// A control object that can be used to monitor and control this stream
     /// without needing to own it.
+    ///
+    /// Set to `None` if this is not a client stream.
     #[cfg(feature = "stream-ctrl")]
-    ctrl: Arc<ClientDataStreamCtrl>,
+    ctrl: Option<Arc<ClientDataStreamCtrl>>,
 }
 
 impl BufferIsEmpty for DataReaderInner {
@@ -600,15 +611,17 @@ impl DataStream {
         #[cfg(feature = "stream-ctrl")]
         let ctrl = {
             let tunnel = match target.tunnel() {
-                crate::stream::Tunnel::Client(t) => Arc::downgrade(t),
+                crate::stream::Tunnel::Client(t) => Some(Arc::downgrade(t)),
                 #[cfg(feature = "relay")]
-                crate::stream::Tunnel::Relay(_) => panic!("created a relay tunnel in the client?!"),
+                crate::stream::Tunnel::Relay(_) => None,
             };
 
-            Arc::new(ClientDataStreamCtrl {
-                tunnel,
-                status: status.clone(),
-                _memquota: memquota.clone(),
+            tunnel.map(|tunnel| {
+                Arc::new(ClientDataStreamCtrl {
+                    tunnel,
+                    status: status.clone(),
+                    _memquota: memquota.clone(),
+                })
             })
         };
         let r = DataReaderInner {
@@ -691,7 +704,7 @@ impl DataStream {
     /// interact with this stream without holding the stream itself.
     #[cfg(feature = "stream-ctrl")]
     pub fn client_stream_ctrl(&self) -> Option<&Arc<ClientDataStreamCtrl>> {
-        Some(&self.ctrl)
+        self.ctrl.as_ref()
     }
 }
 
@@ -803,8 +816,8 @@ struct DataWriterImpl {
 impl DataWriterInner {
     /// See [`DataWriter::client_stream_ctrl`].
     #[cfg(feature = "stream-ctrl")]
-    fn client_stream_ctrl(&self) -> &Arc<ClientDataStreamCtrl> {
-        &self.ctrl
+    fn client_stream_ctrl(&self) -> Option<&Arc<ClientDataStreamCtrl>> {
+        self.ctrl.as_ref()
     }
 
     /// Helper for poll_flush() and poll_close(): Performs a flush, then
@@ -991,8 +1004,8 @@ impl DataReaderInner {
     /// Return a [`ClientDataStreamCtrl`] object that can be used to monitor and
     /// interact with this stream without holding the stream itself.
     #[cfg(feature = "stream-ctrl")]
-    pub(crate) fn client_stream_ctrl(&self) -> &Arc<ClientDataStreamCtrl> {
-        &self.ctrl
+    pub(crate) fn client_stream_ctrl(&self) -> Option<&Arc<ClientDataStreamCtrl>> {
+        self.ctrl.as_ref()
     }
 }
 

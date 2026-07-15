@@ -1,9 +1,9 @@
 [package]
 name = "tor-checkable"
-version = "0.43.0"
+version = "0.44.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Types to ensure that signed or time-bound data is validated before use"
@@ -21,8 +21,8 @@ __is_experimental = []
 humantime = "2"
 signature = "2"
 thiserror = "2"
-tor-llcrypto = { path = "../tor-llcrypto", version = "0.43.0" }
-web-time-compat = { path = "../web-time-compat", version = "0.1.0" }
+tor-llcrypto = { path = "../tor-llcrypto", version = "0.44.0" }
+web-time-compat = { path = "../web-time-compat", version = "0.2.0" }
 [package.metadata.docs.rs]
 all-features = true
 [dev-dependencies]

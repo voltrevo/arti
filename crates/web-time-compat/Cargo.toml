@@ -1,9 +1,9 @@
 [package]
 name = "web-time-compat"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Compatibility layer for web-time"

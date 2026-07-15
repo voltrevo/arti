@@ -318,7 +318,7 @@ impl<'n> ItemEncoder<'n> {
                 data.write_into(&mut bytes)?;
                 Base64::encode_string(&bytes)
             };
-            let mut data = &data[..];
+            let mut data = data.as_str();
             writeln!(out, "\n{BEGIN_STR}{keywords}{TAG_END}").expect("write!");
             while !data.is_empty() {
                 let (l, r) = if data.len() > BASE64_PEM_MAX_LINE {
@@ -463,6 +463,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use std::str::FromStr;
@@ -487,8 +488,7 @@ mod test {
             .arg(&t_no_sp);
 
         let doc = encode.finish().unwrap();
-        println!("{}", doc);
-        assert_eq!(
+        assert_eq_or_diff!(
             doc,
             r"dir-key-expires 2020-04-18 08:36:57
 shared-rand-previous-value 3 bMZR5Q6kBadzApPjd5dZ1tyLt1ckv1LfNCP/oyGhCXs= 2021-04-18T08:36:57
@@ -535,8 +535,7 @@ qiBHRBGbtkF/Re5pb438HC/CGyuujp43oZ3CUYosJOfY/X+sD0aVAgMBAAE";
             .object_bytes("SIGNATURE", []);
 
         let doc = encode.finish().unwrap();
-        eprintln!("{}", doc);
-        assert_eq!(
+        assert_eq_or_diff!(
             doc,
             r"dir-key-certificate-version 3
 fingerprint 9367f9781da8eabbf96b691175f0e701b43c602e

@@ -438,7 +438,7 @@ impl Readable for Relay {
 /// A Relay cell that is allowed to contain a CREATE message.
 ///
 /// Only a limited number of these may be sent on each circuit.
-#[derive(Clone, Debug, derive_more::Deref, derive_more::From, derive_more::Into, Deftly)]
+#[derive(Clone, Debug, derive_more::Deref, derive_more::From, Deftly)]
 #[derive_deftly(HasMemoryCost)]
 pub struct RelayEarly(Relay);
 impl Readable for RelayEarly {
@@ -475,6 +475,13 @@ pub struct Destroy {
 }
 impl Destroy {
     /// Create a new destroy cell.
+    ///
+    /// If generating a new destroy cell,
+    /// you should always create it with [`DestroyReason::NONE`].
+    ///
+    /// `tor-spec/tearing-down-circuits.md`:
+    ///
+    /// > Implementations SHOULD always use the NONE reason to avoid side channels: [...]
     pub fn new(reason: DestroyReason) -> Self {
         Destroy { reason }
     }
@@ -1315,6 +1322,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     #[test]

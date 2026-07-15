@@ -25,7 +25,8 @@ pub use fingerprint::{Base64Fingerprint, Fingerprint};
 pub use identified_digest::{DigestName, IdentifiedDigest};
 
 pub use ignored_impl::{
-    Ignored, IgnoredItemOrObjectValue, NoMoreArguments, NotPresent, NotPresentEachValue,
+    Ignored, IgnoredItemOrObjectValue, ItemPresent, NoMoreArguments, NotPresent,
+    NotPresentEachValue,
 };
 
 use crate::NormalItemArgument;
@@ -106,6 +107,9 @@ define_derive_deftly_module! {
         }
     }
 
+    // TODO: This implementation is probably a bug, as it forbids to derive
+    // Transparent on types like `struct Foo<T>(T)`, namely `T` not being
+    // covered by something else, like `PhantomData<T>` or `Vec<T>`.
     impl<$tgens> From<$ttype> for $ftype {
         fn from(self_: $ttype) -> $ftype {
             self_.$fname
@@ -535,9 +539,18 @@ mod ed25519impl {
 
     impl NormalItemArgument for Ed25519AlgorithmString {}
 
-    /// An Ed25519 public key found in a micro descriptor `id` line.
+    /// Ed25519 public key in the form `<keyword> id <base64>`
+    ///
+    ///  * `id` in microdescriptors:
+    ///    <https://spec.torproject.org/dir-spec/computing-microdescriptors.html>
+    ///
+    ///  * `identity-ed25519` in routerdescs:
+    ///    <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:identity-ed25519>
+    ///
+    ///  * `id` in votes' routerstatus entries:
+    ///    <https://spec.torproject.org/dir-spec/consensus-formats.html#item:id>
     #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
-    #[derive_deftly(ItemValueParseable)]
+    #[derive_deftly(ItemValueEncodable, ItemValueParseable)]
     #[non_exhaustive]
     pub struct Ed25519IdentityLine {
         /// Fixed magic identifier (`ed25519`) for this line.
@@ -682,6 +695,72 @@ mod ignored_impl {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Default)]
     #[allow(clippy::exhaustive_structs)]
     pub struct NoMoreArguments;
+
+    /// An item that only matters in terms of presence of absence.
+    ///
+    /// Useful for items such as `tunnelled-dir-server` where the mere presence
+    /// implies a truthful value.
+    ///
+    /// This wrapper implements [`ItemValueParseable`] and [`ItemValueEncodable`]
+    /// rejecting all arguments and objects and just expecting/emitting the
+    /// keyword (or not).
+    ///
+    /// # Examples
+    ///
+    /// The following shows an except from a hypothetical netdoc with a
+    /// [`ItemPresent`] item.
+    ///
+    /// ```
+    /// use derive_deftly::Deftly;
+    /// use tor_netdoc::types::*;
+    /// use tor_netdoc::parse2::*;
+    /// use tor_netdoc::*;
+    ///
+    /// #[derive(Debug, Default)]
+    /// struct Hello;
+    ///
+    /// #[derive(Deftly, Debug)]
+    /// #[derive_deftly(NetdocParseable)]
+    /// struct TestDoc {
+    ///     intro: Ignored,
+    ///     hello: Option<ItemPresent<Hello>>,
+    /// }
+    ///
+    /// // hello is not present.
+    /// let doc = parse_netdoc::<TestDoc>(&ParseInput::new("intro\n", "")).unwrap();
+    /// assert!(doc.hello.is_none());
+    ///
+    /// // hello is present.
+    /// let doc = parse_netdoc::<TestDoc>(&ParseInput::new("intro\nhello\n", "")).unwrap();
+    /// assert!(doc.hello.is_some());
+    ///
+    /// // hello has arguments which are ignored.
+    /// let doc = parse_netdoc::<TestDoc>(&ParseInput::new("intro\nhello world\n", "")).unwrap();
+    /// assert!(doc.hello.is_some());
+    ///
+    /// // hello is present twice which is not allowed.
+    /// let doc = parse_netdoc::<TestDoc>(&ParseInput::new("intro\nhello\nhello\n", "")).unwrap_err();
+    /// ```
+    //
+    // We cannot derive Transparent here, because it is not possible to
+    // implement `From<ItemPresent<T>> for T` due to orphan rule.
+    //
+    // Otherwise, a downstream crate could for example implement
+    // `From<ItemPresent<U>> for U` with `U` being a locally defined type,
+    // leading to a conflicting implementation.  A solution would be to cover
+    // `T` behind another generic type such as `PhantomData`, as this can't be
+    // a type in a downstream crate, but that level of indirection feels wrong.
+    #[derive(Debug, Copy, Clone, Default, Ord, PartialOrd, Eq, PartialEq, Hash)]
+    //
+    #[derive(
+        derive_more::From,
+        derive_more::Deref,
+        derive_more::DerefMut,
+        derive_more::AsRef,
+        derive_more::AsMut,
+    )]
+    #[allow(clippy::exhaustive_structs)]
+    pub struct ItemPresent<T: Default>(pub T);
 
     impl ItemSetMethods for P2MultiplicitySelector<NotPresent> {
         type Each = NotPresentEachValue;
@@ -853,6 +932,20 @@ mod ignored_impl {
             Ok(())
         }
     }
+
+    impl<T: Default> ItemValueParseable for ItemPresent<T> {
+        fn from_unparsed(item: UnparsedItem<'_>) -> StdResult<Self, EP> {
+            item.check_no_object()?;
+            Ok(Self::default())
+        }
+    }
+
+    impl<T: Default> ItemValueEncodable for ItemPresent<T> {
+        fn write_item_value_onto(&self, out: ItemEncoder) -> StdResult<(), Bug> {
+            out.finish();
+            Ok(())
+        }
+    }
 }
 
 // ============================================================
@@ -987,6 +1080,93 @@ impl<T: PartialOrd> PartialOrd for Unknown<T> {
         }
     }
 }
+
+// ============================================================
+
+/// A finite floating point number
+///
+/// Suitable for `stats` items in voites' routerstatus entries:
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:stats>
+///
+/// Invariants:
+///
+///  * Is finite.  (So not NaN or Inf.)  Might be denormal.
+///
+/// String representation:
+///
+///  * Parses any valid C-like notation.
+///
+///  * Never uses exponential notation to display.
+///
+///  * Output can be rather large, up to 326 characters!
+///    This is a spec bug.  The spec forbids us from using exponential notation.
+///    <https://gitlab.torproject.org/tpo/core/torspec/-/work_items/416>
+///
+/// We may to change this in the future to use exponentials notation for output.
+/// See <https://gitlab.torproject.org/tpo/core/torspec/-/work_items/416>
+//
+// TODO torspec#416 Consider replacing our F64Finite with finite f64 newtype from some crate
+//
+// What a palaver!
+//
+// This type is here rather than in rs.rs, in case similar things appears in other documents.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)] //
+#[derive(derive_more::Deref, derive_more::Into, derive_more::Display)]
+pub struct F64Finite(f64);
+
+/// Error converting an [`F64Finite`] from an `f64`: the value wasn't finite
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error, amplify::Getters)]
+#[error("FP value {} ({bits:#x}) is not finite", f64::from_bits(self.bits))]
+pub struct F64FiniteError {
+    /// The raw bits (as from [`f64::to_bits`])
+    //
+    // We store it this way rather than as `f64` so that `Eq` etc. make sense.
+    bits: u64,
+}
+
+impl TryFrom<f64> for F64Finite {
+    type Error = F64FiniteError;
+
+    fn try_from(v: f64) -> Result<Self, F64FiniteError> {
+        v.is_finite()
+            .then_some(F64Finite(v))
+            .ok_or_else(|| F64FiniteError { bits: v.to_bits() })
+    }
+}
+
+/// Error parsing [`F64Finite`] from a string
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum F64FiniteParseError {
+    /// Syntax error
+    #[error("syntax error")]
+    Syntax(#[from] std::num::ParseFloatError),
+
+    /// Value is not finite
+    #[error("bad value")]
+    NotFinite(#[from] F64FiniteError),
+}
+
+impl FromStr for F64Finite {
+    type Err = F64FiniteParseError;
+
+    fn from_str(s: &str) -> StdResult<Self, F64FiniteParseError> {
+        Ok(s.parse::<f64>()?.try_into()?)
+    }
+}
+
+impl Eq for F64Finite {}
+
+#[allow(clippy::derive_ord_xor_partial_ord)]
+impl Ord for F64Finite {
+    fn cmp(&self, other: &F64Finite) -> cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .expect("finite f64 partial_cmp gave None")
+    }
+}
+
+impl NormalItemArgument for F64Finite {}
 
 // ============================================================
 
@@ -1318,7 +1498,7 @@ mod rsa {
 /// Types for decoding Ed25519 certificates
 mod edcert {
     use std::result::Result as StdResult;
-    use std::time::{Duration, SystemTime};
+    use std::time::SystemTime;
 
     use crate::types::EmbeddedCert;
     use crate::{
@@ -1326,11 +1506,12 @@ mod edcert {
         parse2::{ErrorProblem, VerifyFailed},
         types::EmbeddableCertObject,
     };
-    use saturating_time::SaturatingTime;
-    use tor_cert::{CertType, Ed25519Cert, KeyUnknownCert};
+    use tor_cert::{CertType, CertifiedKey, Ed25519Cert, KeyUnknownCert};
+    use tor_checkable::signed::SignatureGated;
+    use tor_checkable::timed::TimerangeBound;
     use tor_checkable::{SelfSigned, Timebound};
     use tor_error::{Bug, into_internal};
-    use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey};
+    use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey, ValidatableEd25519Signature};
 
     /// An ed25519 certificate as parsed from a directory object, with
     /// signature not validated.
@@ -1405,26 +1586,21 @@ mod edcert {
         ///
         /// 1. MUST have the identity key in the `signed-with-ed25519-key` extension.
         /// 2. MUST have a valid signature by the identity key.
-        /// 3. MUST be valid at `now`.
-        /// 4. MUST be of [`CertType::IDENTITY_V_SIGNING`].
-        /// 5. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
-        /// 6. Both keys MUST be different.
-        /// 7. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
-        pub fn verify(
-            cert: KeyUnknownCert,
-            post_tolerance: Duration,
-            now: SystemTime,
-        ) -> StdResult<Self, VerifyFailed> {
+        /// 3. MUST be of [`CertType::IDENTITY_V_SIGNING`].
+        /// 4. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
+        /// 5. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
+        pub fn verify(cert: KeyUnknownCert) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
             let cert = cert
                 // 1. MUST have the identity key in the `signed-with-ed25519-key` extension.
                 .should_have_signing_key()
                 .map_err(|_| VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData))?
                 // 2. MUST have a valid signature by the identity key.
                 .check_signature()?
-                // 3. MUST be valid at `now`.
-                .check_valid_at(&now.saturating_sub(post_tolerance))?;
+                // Okay to call because we create TimerangeBound later.
+                // TODO DIRAUTH: Use TimerangeBound instead.
+                .dangerously_assume_timely();
 
-            // 4. MUST be of [`CertType::IDENTITY_V_SIGNING`].
+            // 3. MUST be of [`CertType::IDENTITY_V_SIGNING`].
             if cert.cert_type() != CertType::IDENTITY_V_SIGNING {
                 return Err(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData));
             }
@@ -1432,18 +1608,13 @@ mod edcert {
             // Bug is alright because .should_have_signing_key() assured us.
             let id_ed25519 = *cert.signing_key().ok_or(VerifyFailed::Bug)?;
 
-            // 5. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
+            // 4. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
             let sign_ed25519 = *cert
                 .subject_key()
                 .as_ed25519()
                 .ok_or(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData))?;
 
-            // 6. Both keys MUST be different.
-            if id_ed25519 == sign_ed25519 {
-                return Err(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData));
-            }
-
-            // 7. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
+            // 5. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
             // Unsure if this check is required or implied by (2) but defensive
             // programming does not hurt.
             if ed25519::PublicKey::try_from(id_ed25519).is_err()
@@ -1452,10 +1623,13 @@ mod edcert {
                 return Err(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData));
             }
 
-            Ok(Self {
-                id_ed25519,
-                sign_ed25519,
-            })
+            Ok(TimerangeBound::new(
+                Self {
+                    id_ed25519,
+                    sign_ed25519,
+                },
+                ..cert.expiry(),
+            ))
         }
 
         /// Creates a new signed [`Ed25519IdentityCert`].
@@ -1517,27 +1691,24 @@ mod edcert {
         ///
         /// 1. MUST have the `signed-with-ed25519-key` extension containing the family key.
         /// 2. MUST have a valid signature by the family key.
-        /// 3. MUST be valid at `now`.
-        /// 4. MUST be of of [`CertType::FAMILY_V_IDENTITY`].
-        /// 5. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
-        /// 6. `id_ed25519` MUST be the certified key.
-        /// 7. Both keys MUST be different.
-        /// 8. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
+        /// 3. MUST be of of [`CertType::FAMILY_V_IDENTITY`].
+        /// 4. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
+        /// 5. `id_ed25519` MUST be the certified key.
+        /// 6. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
         pub fn verify(
             id_ed25519: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-            post_tolerance: Duration,
-            now: SystemTime,
-        ) -> StdResult<Self, VerifyFailed> {
+        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
             let cert = cert
                 // 1. MUST have the `signed-with-ed25519-key` extension containing the family key.
                 .should_have_signing_key()?
                 // 2. MUST have a valid signature by the family key.
                 .check_signature()?
-                // 3. MUST be valid at `now`.
-                .check_valid_at(&now.saturating_sub(post_tolerance))?;
+                // Okay to call because we create TimerangeBound later.
+                // TODO DIRAUTH: Use TimerangeBound instead.
+                .dangerously_assume_timely();
 
-            // 4. MUST be of of [`CertType::FAMILY_V_IDENTITY`].
+            // 3. MUST be of of [`CertType::FAMILY_V_IDENTITY`].
             if cert.cert_type() != CertType::FAMILY_V_IDENTITY {
                 return Err(ErrorProblem::ObjectInvalidData.into());
             }
@@ -1545,30 +1716,28 @@ mod edcert {
             // Bug is alright because .should_have_signing_key() assured us.
             let family_ed25519 = *cert.signing_key().ok_or(VerifyFailed::Bug)?;
 
-            // 5. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
+            // 4. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
             let certified_key = *cert
                 .subject_key()
                 .as_ed25519()
                 .ok_or(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData))?;
 
-            // 6. `id_ed25519` MUST be the certified key.
+            // 5. `id_ed25519` MUST be the certified key.
             if certified_key != id_ed25519 {
                 return Err(VerifyFailed::VerifyFailed);
             }
 
-            // 7. Both keys MUST be different.
-            if id_ed25519 == family_ed25519 {
-                return Err(ErrorProblem::ObjectInvalidData.into());
-            }
-
-            // 8. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
+            // 6. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
             if ed25519::PublicKey::try_from(family_ed25519).is_err()
                 || ed25519::PublicKey::try_from(id_ed25519).is_err()
             {
                 return Err(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData));
             }
 
-            Ok(Self { family_ed25519 })
+            Ok(TimerangeBound::new(
+                Self { family_ed25519 },
+                ..cert.expiry(),
+            ))
         }
 
         /// Creates a new signed [`Ed25519FamilyCert`].
@@ -1594,6 +1763,186 @@ mod edcert {
                 },
                 cert,
             ))
+        }
+    }
+
+    /// Verified reverse cert by K_ntor on KP_relayid_ed
+    ///
+    /// This certificate is signed by KS_ntor
+    /// (the circuit extension key) and certifies
+    /// KP_relayid_ed25519 ed25519 identity key of the relay.
+    ///
+    /// The type itself is zero-sized because it provides no new useful
+    /// information that cannot be found elsewhere within the router descriptor.
+    /// It is intended for use within
+    /// [`EmbeddedCert`]`<Ed25519NtorCrossCert, KeyUnknownCert>`
+    ///
+    /// # Note on key conversion
+    ///
+    /// Keep in mind however that the ntor onion key is only provided as an
+    /// X25519 key and *not* an Ed25519 key, meaning that interfacing
+    /// applications have to convert it using a function such as
+    /// [`tor_llcrypto::pk::keymanip::convert_curve25519_to_ed25519_public()`].
+    /// This also requires obtaining the sign bit which is usually given as an
+    /// argument in the `ntor-onion-key-crosscert` item.  However, this is
+    /// outside of the scope of this struct and the code will assume that
+    /// callers have already converted the X25519 public key to an Ed25519
+    /// public key as outlined in the specifications.
+    ///
+    /// # See Also
+    ///
+    /// * <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:ntor-onion-key-crosscert>
+    /// * <https://spec.torproject.org/dir-spec/converting-to-ed25519.html>
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
+    pub struct Ed25519NtorCrossCert {
+        /// Explicit field, to avoid constructing this accidentally without
+        /// doing all the verification.
+        _promise_we_verified: (),
+    }
+
+    impl EmbeddableCertObject<KeyUnknownCert> for Ed25519NtorCrossCert {
+        const LABEL: &str = "ED25519 CERT";
+    }
+
+    impl Ed25519NtorCrossCert {
+        /// Verifies the validity of an [`Ed25519NtorCrossCert`].
+        ///
+        /// For such a certificate to be valid, the caller must provide a known
+        /// Ed25519 identity key and Ed25519 ntor onion key of the relay
+        /// beforehand.
+        ///
+        /// # Requirements
+        ///
+        /// 1. MUST be of [`CertType::NTOR_CC_IDENTITY`].
+        /// 2. Certified key MUST be of [`CertifiedKey::Ed25519`].
+        /// 3. Certified key MUST be equal to `id_ed25519`.
+        /// 4. MUST have a valid signature.
+        pub fn verify(
+            ntor_ed25519: ed25519::Ed25519Identity,
+            id_ed25519: ed25519::Ed25519Identity,
+            cert: KeyUnknownCert,
+        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+            Ok(
+                // .verify_inner() ensures 1-3.
+                Self::verify_inner(ntor_ed25519, id_ed25519, cert)?
+                    .0
+                    // 4. MUST have a valid signature.
+                    .check_signature()?,
+            )
+        }
+
+        /// Creates a new signed [`Ed25519NtorCrossCert`].
+        pub fn new_signed(
+            ntor_ed25519: &ed25519::ExpandedKeypair,
+            id_ed25519: ed25519::Ed25519Identity,
+            expiry: SystemTime,
+        ) -> StdResult<EmbeddedCert<Self, KeyUnknownCert>, Bug> {
+            let cert = Ed25519Cert::builder()
+                .expiration(expiry)
+                .cert_type(CertType::NTOR_CC_IDENTITY)
+                .cert_key(id_ed25519.into())
+                .encode_and_sign(ntor_ed25519)
+                .map_err(into_internal!("failed to encode and sign ntor cert"))?;
+
+            let cert =
+                Ed25519Cert::decode(&cert).map_err(into_internal!("decode just encoded cert"))?;
+
+            Ok(EmbeddedCert::new(
+                Self {
+                    _promise_we_verified: (),
+                },
+                cert,
+            ))
+        }
+
+        /// Verifies the validity of a [`KeyUnknownCert`] believed to be a
+        /// [`CertType::NTOR_CC_IDENTITY`].
+        ///
+        /// This function serves as glue between the legacy parser and
+        /// [`Self::verify()`].
+        ///
+        /// # Requirements
+        ///
+        /// 1. MUST be of [`CertType::NTOR_CC_IDENTITY`].
+        /// 2. Certified key MUST be of [`CertifiedKey::Ed25519`].
+        /// 3. Certified key MUST be equal to `id_ed25519`.
+        ///
+        /// # Return Type
+        ///
+        /// Actual signature and time validation is done by the caller, hence
+        /// why it returns a gated type as the first element of the tuple.
+        /// The other elements constitute the inner signature plus the
+        /// SystemTime denoting the expiry.  This is required for integration
+        /// with legacy parser in order to enable pushing it to the verification
+        /// batch, as the [`tor_checkable`] primitives do not provide access
+        /// to the inner signatures/expiries and also do not support operations
+        /// like cloning due to being dyn.
+        pub(crate) fn verify_inner(
+            ntor_ed25519: ed25519::Ed25519Identity,
+            id_ed25519: ed25519::Ed25519Identity,
+            cert: KeyUnknownCert,
+        ) -> StdResult<
+            (
+                SignatureGated<TimerangeBound<Self>>,
+                ValidatableEd25519Signature,
+                SystemTime,
+            ),
+            VerifyFailed,
+        > {
+            // 1. MUST be of [`CertType::NTOR_CC_IDENTITY`].
+            if cert.peek_cert_type() != CertType::NTOR_CC_IDENTITY {
+                return Err(ErrorProblem::ObjectInvalidData.into());
+            }
+
+            // 2. Certified key MUST be of [`CertifiedKey::Ed25519`].
+            // 3. Certified key MUST be equal to `id_ed25519`.
+            if cert.peek_subject_key() != &CertifiedKey::Ed25519(id_ed25519) {
+                return Err(VerifyFailed::VerifyFailed);
+            }
+
+            // Fish out the signature from the certificate and verify it later.
+            //
+            // It may fail if ntor_ed25519 is not a valid mapping to a public
+            // key.  This is okay.  The .should_be_signed_with() call is
+            // tor_cert boilerplate and only required to obtain an
+            // UncheckedCert, as ntor cross-certificates do not contain the
+            // signed-with extension.
+            let (cert, sig) = cert
+                .should_be_signed_with(&ntor_ed25519)?
+                .dangerously_split()?;
+
+            // Fish out the expiration date from the certificate.
+            //
+            // Important: We must not set SystemTime::UNIX_EPOCH as the lower
+            // bound, because with TimerangeBound, a lower-bound of zero is not
+            // equal to an absent lower bound!
+            let cert = cert.dangerously_assume_timely();
+            let expiration = ..cert.expiry();
+
+            Ok((
+                SignatureGated::new(
+                    TimerangeBound::new(
+                        Self {
+                            _promise_we_verified: (),
+                        },
+                        expiration,
+                    ),
+                    vec![Box::new(sig.clone())],
+                ),
+                sig,
+                expiration.end,
+            ))
+        }
+
+        /// Internal function for creating an unverified instance.
+        ///
+        /// This is only intended for testing and legacy parser compatibility
+        /// purposes.
+        pub(crate) fn dangerous_new_unverified() -> Self {
+            Self {
+                _promise_we_verified: (),
+            }
         }
     }
 }
@@ -1753,6 +2102,7 @@ mod fingerprint {
     use crate::parse2::{ArgumentError, ArgumentStream, ItemArgumentParseable};
     use crate::{Error, NetdocErrorKind as EK, Pos, Result};
     use base64ct::{Base64Unpadded, Encoding as _};
+    use itertools::Itertools;
     use tor_llcrypto::pk::rsa::RsaIdentity;
 
     /// A hex-encoded RSA key identity (fingerprint) with spaces in it.
@@ -1835,6 +2185,20 @@ mod fingerprint {
         }
     }
 
+    impl encode::ItemArgument for SpFingerprint {
+        fn write_arg_onto(&self, out: &mut ItemEncoder<'_>) -> StdResult<(), Bug> {
+            let res = self
+                .0
+                .to_bytes()
+                .chunks(2)
+                .map(|b| format!("{:02X}{:02X}", b[0], b[1]))
+                .join(" ");
+            debug_assert_eq!(res.len(), 4 * 10 + 9);
+            out.args_raw_string(&res);
+            Ok(())
+        }
+    }
+
     impl FromStr for Base64Fingerprint {
         type Err = Error;
         fn from_str(s: &str) -> Result<Base64Fingerprint> {
@@ -1871,12 +2235,9 @@ mod fingerprint {
     impl FromStr for LongIdent {
         type Err = Error;
         fn from_str(mut s: &str) -> Result<LongIdent> {
-            if s.starts_with('$') {
-                s = &s[1..];
-            }
-            if let Some(idx) = s.find(['=', '~']) {
-                s = &s[..idx];
-            }
+            s = s.strip_prefix('$').unwrap_or(s);
+            // Strip at '=' or '~' if found.
+            s = s.split_once(['=', '~']).map(|(a, _)| a).unwrap_or(s);
             let ident = parse_hex_ident(s)?;
             Ok(LongIdent(ident))
         }
@@ -2167,8 +2528,11 @@ mod boolean {
 
 /// Types for router descriptors.
 pub mod routerdesc {
+    use crate::types::EmbeddedCert;
+
     use super::*;
     use parse2::ErrorProblem as EP;
+    use tor_cert::KeyUnknownCert;
     use tor_llcrypto::pk::ed25519;
 
     /// Version argument found in an `overload-general` item.
@@ -2188,7 +2552,7 @@ pub mod routerdesc {
     ///
     /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:overload-general>
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Deftly)]
-    #[derive_deftly(ItemValueParseable)]
+    #[derive_deftly(ItemValueParseable, ItemValueEncodable)]
     #[non_exhaustive]
     pub struct OverloadGeneral {
         /// The version of the item.
@@ -2201,7 +2565,7 @@ pub mod routerdesc {
     ///
     /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:router>
     #[derive(Clone, Debug, PartialEq, Eq, Deftly)]
-    #[derive_deftly(ItemValueParseable)]
+    #[derive_deftly(ItemValueParseable, ItemValueEncodable)]
     #[non_exhaustive]
     pub struct RouterDescIntroItem {
         /// A valid router [`Nickname`].
@@ -2224,7 +2588,7 @@ pub mod routerdesc {
     ///
     /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:extra-info-digest>
     #[derive(Clone, Debug, PartialEq, Eq, Deftly)]
-    #[derive_deftly(ItemValueParseable)]
+    #[derive_deftly(ItemValueParseable, ItemValueEncodable)]
     #[non_exhaustive]
     pub struct ExtraInfoDigests {
         /// Mandatory SHA-1 of the signed data in base 16.
@@ -2411,6 +2775,33 @@ pub mod routerdesc {
         /// The estimate of the capacity this relay can handle.
         pub observed: u64,
     }
+
+    /// Ntor onion key cross-certificate.
+    ///
+    /// This struct contains an [`Ed25519NtorCrossCert`] alongside the `bit`
+    /// field required for converting the ntor X25519 key to an Ed25519 key.
+    ///
+    /// # See Also
+    ///
+    /// * [`Ed25519NtorCrossCert`]
+    /// * <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:ntor-onion-key-crosscert>
+    #[derive(Debug, Clone, Deftly, PartialEq, Eq)]
+    #[derive_deftly(ItemValueParseable, ItemValueEncodable)]
+    #[deftly(netdoc(no_extra_args))]
+    #[non_exhaustive]
+    pub struct NtorOnionKeyCrossCert {
+        /// True if X coordinate of the ntor onion key is negative, false if
+        /// positive.
+        // TODO spec: This name is very unfortunate, how about we change it
+        // to `is_negative`.  Also, using a boolean for storing a sign bit feels
+        // wrong to me due to the zero edge case, which would not be negative,
+        // but also not positive either.
+        pub bit: NumericBoolean,
+
+        /// The actual embedded ntor onion key certificate.
+        #[deftly(netdoc(object))]
+        pub cert: EmbeddedCert<Ed25519NtorCrossCert, KeyUnknownCert>,
+    }
 }
 
 #[cfg(test)]
@@ -2427,6 +2818,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use std::{
         fmt::Debug,
@@ -2438,10 +2830,19 @@ mod test {
     use base64ct::Encoding;
     use tor_basic_utils::test_rng::testing_rng;
     use tor_cert::{CertType, CertifiedKey, Ed25519Cert, KeyUnknownCert};
-    use tor_llcrypto::pk::ed25519::{self, Ed25519Identity, Ed25519PublicKey};
+    use tor_checkable::{Timebound, timed::TimerangeBound};
+    use tor_llcrypto::pk::ed25519::{self, Ed25519Identity, Ed25519PublicKey, ExpandedKeypair};
 
     use super::*;
-    use crate::{Pos, Result, parse2::VerifyFailed, types::EmbeddedCert};
+    use crate::{
+        Pos, Result,
+        encode::NetdocEncodable,
+        parse2::{ErrorProblem, ParseInput, VerifyFailed},
+        types::{
+            EmbeddedCert,
+            routerdesc::{NtorOnionKeyCrossCert, RouterDescIntroItem},
+        },
+    };
 
     /// Decode s as a multi-line base64 string, ignoring ascii whitespace.
     fn base64_decode_ignore_ws(s: &str) -> std::result::Result<Vec<u8>, base64ct::Error> {
@@ -2944,6 +3345,52 @@ mod test {
         assert!(NumericBoolean::from_str("10000").is_err());
     }
 
+    #[test]
+    fn f64_finite() {
+        let normalise_string = |i: &str, o: &str| {
+            let v: F64Finite = i.parse().expect(i);
+            assert_eq!(v.to_string(), o, "i={i:?}");
+        };
+        let roundtrip_string = |s: &str| normalise_string(s, s);
+        let roundtrip_value = |i: f64| {
+            let v: F64Finite = i.try_into().unwrap();
+            let s = v.to_string();
+            let o: F64Finite = s.parse().expect(&s);
+            assert_eq!(v, o, "{i:?} {s}");
+            assert_eq!(v.to_bits(), o.to_bits(), "{i:?} {s}");
+        };
+        let error_string = |s: &str| {
+            let _: F64FiniteParseError = s.parse::<F64Finite>().expect_err(s);
+        };
+
+        roundtrip_string("0");
+        roundtrip_string("0.5");
+        roundtrip_string("1");
+        roundtrip_string("42");
+        roundtrip_string("9007199254740991"); // f64::MAX_EXACT_INTEGER (as per Rust 1.96.0)
+        normalise_string("1e3", "1000");
+
+        roundtrip_value(f64::EPSILON);
+        roundtrip_value(f64::EPSILON + 1.0);
+        roundtrip_value(f64::MIN);
+        roundtrip_value(f64::MIN_POSITIVE);
+        roundtrip_value(-f64::MIN_POSITIVE);
+        roundtrip_value(f64::MAX);
+
+        error_string(&f64::NAN.to_string());
+        error_string(&f64::INFINITY.to_string());
+        error_string("");
+        error_string("garbage");
+
+        // TODO torspec#416 these ought to be more reasonable, but this is what it does now:
+        roundtrip_string(
+            "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022250738585072014",
+        ); // MIN_POSITIVE
+        roundtrip_string(
+            "179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        ); // MAX
+    }
+
     /// Test that ensures SpFingerprint matches the 10x4 requirement.
     #[test]
     fn sp_fingerprint() {
@@ -2953,20 +3400,31 @@ mod test {
         use crate::parse2::ErrorProblem;
 
         #[derive(Deftly)]
-        #[derive_deftly(NetdocParseable)]
+        #[derive_deftly(NetdocParseable, NetdocEncodable)]
         struct Wrapper {
             #[deftly(netdoc(single_arg))]
             fingerprint: SpFingerprint,
         }
 
         /// Small helper to parse an [`SpFingerprint`].
+        ///
+        /// In the case the parsing went successful, it also performs a
+        /// round-trip encoding test.
         fn parse2(s: &str) -> std::result::Result<SpFingerprint, ErrorProblem> {
             use crate::parse2::{self, ParseInput};
 
-            let s = format!("fingerprint {s}\n");
-            parse2::parse_netdoc::<Wrapper>(&ParseInput::new(&s, ""))
-                .map(|x| x.fingerprint)
-                .map_err(|x| x.problem)
+            let input = format!("fingerprint {s}\n");
+            let res = parse2::parse_netdoc::<Wrapper>(&ParseInput::new(&input, ""))
+                .map_err(|x| x.problem)?;
+
+            // Round-trip encoding; we only do .starts_with() because input
+            // may contain trailing parameters which will obviously not be
+            // encoded; trimming to remove the trailing "\n" afterwards.
+            let mut enc = NetdocEncoder::default();
+            res.encode_unsigned(&mut enc).unwrap();
+            assert!(input.starts_with(enc.finish().unwrap().trim_end()));
+
+            Ok(res.fingerprint)
         }
 
         // Test a valid one.
@@ -3003,6 +3461,150 @@ mod test {
         ));
     }
 
+    /// Verifies the parsing of [`ItemPresent`].
+    #[test]
+    fn item_present_parse2() {
+        #[derive(Default)]
+        struct Token;
+
+        #[derive(Deftly)]
+        #[derive_deftly(NetdocParseable)]
+        struct TestDoc {
+            #[allow(unused)]
+            intro: Ignored,
+            foo: Option<ItemPresent<Token>>,
+        }
+
+        // The test cases with their respective result; boolean indicating that
+        // it was present.
+        let tests = [
+            // Test valid present.
+            ("intro\nfoo\n", Ok(true)),
+            // Test valid absent.
+            ("intro\n", Ok(false)),
+            // Test repeated.
+            ("intro\nfoo\nfoo\n", Err(ErrorProblem::ItemRepeated)),
+            // Test repeated with unknown.
+            ("intro\nbar\nfoo\nfoo\n", Err(ErrorProblem::ItemRepeated)),
+            // Test with argument.
+            ("intro\nfoo bar\n", Ok(true)),
+            // Test with two arguments.
+            ("intro\nfoo bar baz\n", Ok(true)),
+            // Test with object.
+            (
+                "intro\nfoo\n-----BEGIN RSA PUBLIC KEY-----\n-----END RSA PUBLIC KEY-----\n",
+                Err(ErrorProblem::ObjectUnexpected),
+            ),
+        ];
+
+        for (input, expect) in tests {
+            println!("{input:?}, {expect:?}");
+
+            // Convert the result by calling .is_present() and extracting EP.
+            let got = parse2::parse_netdoc::<TestDoc>(&ParseInput::new(input, ""))
+                .map(|x| x.foo.is_some())
+                .map_err(|e| e.problem);
+            assert_eq!(got, expect);
+        }
+    }
+
+    #[test]
+    fn item_present_encode() {
+        #[derive(Default)]
+        struct Token;
+
+        #[derive(Deftly)]
+        #[derive_deftly(NetdocEncodable)]
+        struct TestDoc {
+            #[allow(unused)]
+            intro: (),
+            foo: Option<ItemPresent<Token>>,
+        }
+
+        let tests = [
+            (Some(ItemPresent(Token)), "intro\nfoo\n"),
+            (None, "intro\n"),
+        ];
+
+        for (present, output) in tests {
+            let mut encoder = NetdocEncoder::new();
+            TestDoc {
+                intro: (),
+                foo: present,
+            }
+            .encode_unsigned(&mut encoder)
+            .unwrap();
+            assert_eq!(encoder.finish().unwrap(), output);
+        }
+    }
+
+    #[test]
+    fn ntor_onion_key_cross_cert() {
+        // Dummy helper for parsing a subset of a router desc.
+        #[derive(Debug, Deftly)]
+        #[derive_deftly(NetdocParseable)]
+        #[allow(unused)]
+        struct TestDoc {
+            /// Intro item.
+            router: RouterDescIntroItem,
+
+            /// Timestamp used for `now` in certificate validation.
+            #[deftly(netdoc(single_arg))]
+            published: Iso8601TimeSp,
+
+            /// Required to ensure certified key of the crosscert.
+            #[deftly(netdoc(single_arg))]
+            master_key_ed25519: Ed25519Public,
+
+            /// Required to obtain the key signing the crosscert.
+            #[deftly(netdoc(single_arg))]
+            ntor_onion_key: Curve25519Public,
+
+            /// The actual crosscert.
+            ntor_onion_key_crosscert: NtorOnionKeyCrossCert,
+        }
+
+        impl TestDoc {
+            // Quick verify helper.
+            fn verify(&self, now: SystemTime) {
+                Ed25519NtorCrossCert::verify(
+                    // Converts X25519 to Ed25519.
+                    tor_llcrypto::pk::keymanip::convert_curve25519_to_ed25519_public(
+                        &self.ntor_onion_key.0,
+                        self.ntor_onion_key_crosscert.bit.0.into(),
+                    )
+                    .unwrap()
+                    .into(),
+                    self.master_key_ed25519.0,
+                    self.ntor_onion_key_crosscert.cert.raw_unverified().clone(),
+                )
+                .unwrap()
+                .is_valid_at(&now)
+                .unwrap();
+            }
+        }
+
+        let descs = include_str!("../../testdata2/cached-descriptors.new");
+        let descs = parse2::parse_netdoc_multiple::<TestDoc>(&ParseInput::new(
+            descs,
+            "cached-descriptors.new",
+        ))
+        .unwrap();
+
+        // Find the first with negative and first with positive X coordinate.
+        let negative_rd = descs
+            .iter()
+            .find(|rd| rd.ntor_onion_key_crosscert.bit.0)
+            .unwrap();
+        let positive_rd = descs
+            .iter()
+            .find(|rd| !rd.ntor_onion_key_crosscert.bit.0)
+            .unwrap();
+
+        negative_rd.verify(negative_rd.published.0);
+        positive_rd.verify(positive_rd.published.0);
+    }
+
     /// Helper to call methods for edcerts.
     trait Ed25519CertTest: Sized + PartialEq + Eq + Debug {
         /// Creates a new instance.
@@ -3031,11 +3633,10 @@ mod test {
         /// The method verifies a certificate given a pre-known certified key,
         /// the actual certificate, and a timestamp.
         fn verify(
+            signing_key: Option<ed25519::Ed25519Identity>,
             certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-            post_tolerance: Duration,
-            now: SystemTime,
-        ) -> StdResult<Self, VerifyFailed>;
+        ) -> StdResult<TimerangeBound<Self>, VerifyFailed>;
     }
 
     impl Ed25519CertTest for Ed25519IdentityCert {
@@ -3062,12 +3663,11 @@ mod test {
         }
 
         fn verify(
+            _signing_key: Option<ed25519::Ed25519Identity>,
             _certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-            post_tolerance: Duration,
-            now: SystemTime,
-        ) -> StdResult<Self, VerifyFailed> {
-            Self::verify(cert, post_tolerance, now)
+        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+            Self::verify(cert)
         }
     }
 
@@ -3094,12 +3694,40 @@ mod test {
         }
 
         fn verify(
+            _signing_key: Option<ed25519::Ed25519Identity>,
             certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-            post_tolerance: Duration,
-            now: SystemTime,
-        ) -> StdResult<Self, VerifyFailed> {
-            Self::verify(certified_key, cert, post_tolerance, now)
+        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+            Self::verify(certified_key, cert)
+        }
+    }
+
+    impl Ed25519CertTest for Ed25519NtorCrossCert {
+        fn new(
+            _signing_key: ed25519::Ed25519Identity,
+            _certified_key: ed25519::Ed25519Identity,
+        ) -> Self {
+            Self::dangerous_new_unverified()
+        }
+
+        fn cert_type() -> CertType {
+            CertType::NTOR_CC_IDENTITY
+        }
+
+        fn new_signed(
+            signing_key: &ed25519::Keypair,
+            certified_key: ed25519::Ed25519Identity,
+            expiry: SystemTime,
+        ) -> StdResult<EmbeddedCert<Self, KeyUnknownCert>, Bug> {
+            Self::new_signed(&ExpandedKeypair::from(signing_key), certified_key, expiry)
+        }
+
+        fn verify(
+            signing_key: Option<ed25519::Ed25519Identity>,
+            certified_key: ed25519::Ed25519Identity,
+            cert: KeyUnknownCert,
+        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+            Self::verify(signing_key.unwrap(), certified_key, cert)
         }
     }
 
@@ -3140,25 +3768,28 @@ mod test {
 
         // Finally, see if .verify() agrees.
         T::verify(
+            Some(signing_key.public_key().into()),
             certified_key.public_key().into(),
             unverified.clone(),
-            Duration::ZERO,
-            now,
         )
+        .unwrap()
+        .is_valid_at(&now)
         .unwrap();
 
         // See if .verify() also agrees when expired but with toleration.
         T::verify(
+            Some(signing_key.public_key().into()),
             certified_key.public_key().into(),
             unverified,
-            Duration::from_secs(60 * 60),
-            expiry,
         )
+        .unwrap()
+        .extend_tolerance(Duration::from_secs(60 * 60))
+        .is_valid_at(&now)
         .unwrap();
     }
 
     /// Tests invalid Ed25519 certificates by violating various constraints.
-    fn ed25519_cert_invalid<T: Ed25519CertTest>() {
+    fn ed25519_cert_invalid<T: Ed25519CertTest + 'static>(requires_signed_with_ext: bool) {
         let mut rng = testing_rng();
         let now = str_to_st("2000-01-01 06:00:00");
         let expiry = str_to_st("2000-01-01 12:00:00");
@@ -3167,24 +3798,15 @@ mod test {
         let certified_key = ed25519::Keypair::generate(&mut rng);
         let certified_pk = ed25519::Ed25519Identity::from(certified_key.public_key());
 
-        let tests: [(_, _, CertifiedKey, _, _); _] = [
-            // Violate absence of `signed-with-ed25519-key`.
-            (
-                T::cert_type(),
-                expiry,
-                certified_pk.into(),
-                None,
-                &signing_key,
-            ),
-            // ---
+        let mut tests: Vec<(_, _, CertifiedKey, _, _)> = vec![
             // Testing a violation of the signature is hard because the encoder
             // refuses to emit such a thing.
             // ---
             // Violate timestamp.
             (
                 T::cert_type(),
-                // We achieve this by setting expiry to now.
-                now,
+                // We achieve this by setting expiry to now - 1 day.
+                now - Duration::from_secs(64 * 64 * 24),
                 certified_pk.into(),
                 Some(&signing_pk),
                 &signing_key,
@@ -3192,7 +3814,7 @@ mod test {
             // Violate cert type.
             (
                 // Just picking something completely out of place here.
-                CertType::NTOR_CC_IDENTITY,
+                CertType::LINK_AUTH_X509,
                 expiry,
                 certified_pk.into(),
                 Some(&signing_pk),
@@ -3207,20 +3829,23 @@ mod test {
                 Some(&signing_pk),
                 &signing_key,
             ),
-            // Violate both keys must be different.
-            (
-                T::cert_type(),
-                expiry,
-                // Just pass the signing key twice.
-                signing_pk.into(),
-                Some(&signing_pk),
-                &signing_key,
-            ),
             // ---
             // Missing test for violating both keys MUST be valid mappings to a
             // [`ed25519::PublicKey`].  I was unable to find a single test
             // vector for this, even in curve25591-dalek. :/
         ];
+
+        // Violate absence of `signed-with-ed25519-key`.
+        // This is not a violation in Ed25519NtorCrossCert.
+        if requires_signed_with_ext {
+            tests.push((
+                T::cert_type(),
+                expiry,
+                certified_pk.into(),
+                None,
+                &signing_key,
+            ));
+        }
 
         for (ctype, expiry, certified_key, signing_key, signing_kp) in tests {
             let mut builder = Ed25519Cert::builder()
@@ -3237,32 +3862,26 @@ mod test {
             // in order to make it possible to test for invalid certified
             // key types.
             T::verify(
+                signing_key.copied(),
                 Ed25519Identity::from_bytes(certified_key.as_bytes()).unwrap(),
                 cert,
-                Duration::ZERO,
-                now,
             )
+            .and_then(|expired| expired.is_valid_at(&now).map_err(|e| e.into()))
             .unwrap_err();
         }
     }
 
     #[test]
-    fn ed25519_identity_cert_rng() {
+    fn ed25519_cert_rng_test() {
         ed25519_cert_rng::<Ed25519IdentityCert>();
-    }
-
-    #[test]
-    fn ed25519_identity_cert_invalid() {
-        ed25519_cert_invalid::<Ed25519IdentityCert>();
-    }
-
-    #[test]
-    fn ed25519_family_cert_rng() {
         ed25519_cert_rng::<Ed25519FamilyCert>();
+        ed25519_cert_rng::<Ed25519NtorCrossCert>();
     }
 
     #[test]
-    fn ed25519_family_cert_invalid() {
-        ed25519_cert_invalid::<Ed25519FamilyCert>();
+    fn ed25519_cert_invalid_test() {
+        ed25519_cert_invalid::<Ed25519IdentityCert>(true);
+        ed25519_cert_invalid::<Ed25519FamilyCert>(true);
+        ed25519_cert_invalid::<Ed25519NtorCrossCert>(false);
     }
 }

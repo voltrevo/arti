@@ -145,8 +145,11 @@ fn parse_one_value(from: &str) -> Result<(String, &str), &'static str> {
         (ret, chars.as_str())
     } else {
         // Simple: just find the space
-        let space = from.find(' ').unwrap_or(from.len());
-        (from[0..space].into(), &from[space..])
+        if let Some((start, rest)) = from.split_once(' ') {
+            (start.to_string(), rest)
+        } else {
+            (from.to_string(), "")
+        }
     })
 }
 
@@ -331,14 +334,13 @@ impl FromStr for PtMessage {
                 let message = words.join(" ");
                 let mut message = &message as &str;
                 while !message.is_empty() {
-                    let equals = message
-                        .find('=')
+                    let (k, rest) = message
+                        .split_once('=')
                         .ok_or_else(|| Cow::from(format!("failed to find = in '{}'", message)))?;
-                    let k = &message[..equals];
-                    if equals + 1 == message.len() {
+                    if rest.is_empty() {
                         return Err(Cow::from("key with no value"));
                     }
-                    let (v, rest) = parse_one_value(&message[(equals + 1)..]).map_err(Cow::from)?;
+                    let (v, rest) = parse_one_value(rest).map_err(Cow::from)?;
                     if ret.contains_key(k) {
                         // At least check our assumption that this is actually k/v
                         // and not Vec<(String, String)>.
@@ -346,8 +348,8 @@ impl FromStr for PtMessage {
                     }
                     ret.insert(k.to_owned(), v);
                     message = rest;
-                    if message.starts_with(' ') {
-                        message = &message[1..];
+                    if let Some(remainder) = message.strip_prefix(" ") {
+                        message = remainder;
                     }
                 }
                 Self::Status(PtStatus { data: ret })
@@ -1145,6 +1147,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use crate::ipc::{PtMessage, PtStatus};

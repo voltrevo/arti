@@ -18,9 +18,9 @@ state directory, which you might have overridden in the configuration.
 
 ```
 $ arti -c keys.toml keys list-keystores
- Keystores:
+Keystores:
 
- - "arti"
+- "arti"
 
 
 ```
@@ -34,59 +34,49 @@ By default the command displays the content of all the keystores. If the
 flag `--keystore-id` is provided, only the content of the specified
 keystore will be displayed.
 
-This command provides a way of listing both recognized and unrecognized entries.
-
-- Recognized: keys that present a valid path.
-- Unrecognized: keys that are in a valid location but do not present a
-valid filename.
-- Unrecognized paths: filesystem objects that should not be in the state directory.
+This command provides a way of listing both valid and broken
+(i.e. unrecognized by Arti, or otherwise corrupt) entries.
 
 Some of the information displayed by `keys list` can be used as input for other
 commands. For instance: "Location", is the raw identifier of the entry; and
 "Keystore ID", the identifier, of the keystore. These can be used together
 with `arti keys-raw remove-by-id`.
 
+By default, `keys list` pretty-prints human-readable output.
+You can use the `--compact` option to get it to display
+a more compact representation.
+
+> NOTE: in the future, we plan to support machine-readable output too
+
 Example usage:
 
 <details>
-<summary>With `-k`:</summary>
+<summary>With `--keystore-id`:</summary>
 
-```ignore
-$ arti -c keys.toml keys list -k arti
- ===== Keystore entries =====
+```
+$ arti -c with-ctor.toml keys list --keystore-id arti
+Role: ks_hsc_desc_enc
+Summary: Descriptor decryption key
+KeystoreItemType: X25519StaticKeypair
+Location: client/mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad/ks_hsc_desc_enc.x25519_private
+Extra info:
+- hs_id: […]tad.onion
+
+Role: ks_hs_id
+Summary: Long-term identity keypair
+KeystoreItemType: Ed25519ExpandedKeypair
+Location: hss/allium-cepa/ks_hs_id.ed25519_expanded_private
+Extra info:
+- nickname: allium-cepa
 
 
- Keystore ID: arti
- Role: ks_hsc_desc_enc
- Summary: Descriptor decryption key
- KeystoreItemType: X25519StaticKeypair
- Location: client/mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad/ks_hsc_desc_enc.x25519_private
- Extra info:
- - hs_id: mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad.onion
+Broken entries
 
- --------------------------------------------------------------------------------
+Location: hss/allium-cepa/unrecognized-entry
+Error: Key has invalid path: hss/allium-cepa/unrecognized-entry
 
- Keystore ID: arti
- Unrecognized path: unrecognized-path-dir/ks_hs_id.ed25519_expanded_private
-
- --------------------------------------------------------------------------------
-
- Keystore ID: arti
- Role: ks_hs_id
- Summary: Long-term identity keypair
- KeystoreItemType: Ed25519ExpandedKeypair
- Location: hss/allium-cepa/ks_hs_id.ed25519_expanded_private
- Extra info:
- - nickname: allium-cepa
-
- --------------------------------------------------------------------------------
-
- Unrecognized entry
- Keystore ID: arti
- Location: hss/allium-cepa/Ks_hs_id.ed25519_expanded_private
- Error: Key has invalid path: hss/allium-cepa/Ks_hs_id.ed25519_expanded_private
-
- --------------------------------------------------------------------------------
+Location: unrecognized-path-dir/ks_hs_id.ed25519_expanded_private
+Error: Unrecognized
 
 
 ```
@@ -95,65 +85,79 @@ $ arti -c keys.toml keys list -k arti
 <details>
 <summary>Default behavior</summary>
 
-```ignore
-$ arti -c keys.toml keys list
- ===== Keystore entries =====
+```
+$ arti -c with-ctor.toml keys list
+Keystore ID: arti
+Role: ks_hsc_desc_enc
+Summary: Descriptor decryption key
+KeystoreItemType: X25519StaticKeypair
+Location: client/mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad/ks_hsc_desc_enc.x25519_private
+Extra info:
+- hs_id: […]tad.onion
+
+Keystore ID: arti
+Role: ks_hs_id
+Summary: Long-term identity keypair
+KeystoreItemType: Ed25519ExpandedKeypair
+Location: hss/allium-cepa/ks_hs_id.ed25519_expanded_private
+Extra info:
+- nickname: allium-cepa
+
+Keystore ID: ctor
+Role: kp_hs_id
+Summary: Public part of the identity key
+KeystoreItemType: Ed25519PublicKey
+Location: hs_ed25519_public_key
+Extra info:
+- nickname: allium-cepa
+
+Keystore ID: ctor
+Role: ks_hs_id
+Summary: Long-term identity keypair
+KeystoreItemType: Ed25519ExpandedKeypair
+Location: hs_ed25519_secret_key
+Extra info:
+- nickname: allium-cepa
 
 
- Keystore ID: arti
- Role: ks_hsc_desc_enc
- Summary: Descriptor decryption key
- KeystoreItemType: X25519StaticKeypair
- Location: client/mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad/ks_hsc_desc_enc.x25519_private
- Extra info:
- - hs_id: mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad.onion
+Broken entries
 
- --------------------------------------------------------------------------------
+Keystore ID: ctor
+Location: hostname
+Error: Key hostname is malformed
 
- Keystore ID: arti
- Unrecognized path: unrecognized-path-dir/ks_hs_id.ed25519_expanded_private
+Keystore ID: ctor
+Location: hs_unrecognized_entry
+Error: Key hs_unrecognized_entry is malformed
 
- --------------------------------------------------------------------------------
+Keystore ID: arti
+Location: hss/allium-cepa/unrecognized-entry
+Error: Key has invalid path: hss/allium-cepa/unrecognized-entry
 
- Keystore ID: arti
- Role: ks_hs_id
- Summary: Long-term identity keypair
- KeystoreItemType: Ed25519ExpandedKeypair
- Location: hss/allium-cepa/ks_hs_id.ed25519_expanded_private
- Extra info:
- - nickname: allium-cepa
+Keystore ID: *not available*
+Location: unrecognized-path-dir/ks_hs_id.ed25519_expanded_private
+Error: Unrecognized
 
- --------------------------------------------------------------------------------
 
- Unrecognized entry
- Keystore ID: arti
- Location: hss/allium-cepa/Ks_hs_id.ed25519_expanded_private
- Error: Key has invalid path: hss/allium-cepa/Ks_hs_id.ed25519_expanded_private
+```
+</details>
 
- --------------------------------------------------------------------------------
+<details>
+<summary>Compact output</summary>
 
- CTor service key
- Hidden service nickname: allium-cepa
- Keystore ID: ctor
- KeystoreItemType: Ed25519ExpandedKeypair
- Location: hs_ed25519_secret_key
+```
+$ arti -c with-ctor.toml keys list --compact
+client/mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad/ks_hsc_desc_enc.x25519_private
+hss/allium-cepa/ks_hs_id.ed25519_expanded_private
+hs_ed25519_public_key
+hs_ed25519_secret_key
 
- --------------------------------------------------------------------------------
+Broken entries
 
- Unrecognized entry
- Keystore ID: ctor
- Location: hostname
- Error: Key hostname is malformed
-
- --------------------------------------------------------------------------------
-
- CTor service key
- Hidden service nickname: allium-cepa
- Keystore ID: ctor
- KeystoreItemType: Ed25519PublicKey
- Location: hs_ed25519_public_key
-
- --------------------------------------------------------------------------------
+hostname
+hs_unrecognized_entry
+hss/allium-cepa/unrecognized-entry
+unrecognized-path-dir/ks_hs_id.ed25519_expanded_private
 
 ```
 </details>
@@ -235,10 +239,10 @@ hostname
 </details>
 
 <details>
-<summary>With `-k` and `-s`</summary>
+<summary>With `--keystore-id` and `--sweep`</summary>
 
 ```ignore
-$ arti keys check-integrity -k arti -s
+$ arti keys check-integrity --keystore-id arti --sweep
 Found problems in keystore: arti.
 
 Invalid keystore entries in keystore arti:
@@ -285,7 +289,7 @@ Remove all invalid entries? (type yes or no):
 <summary>If no invalid entry is encountered</summary>
 
 ```ignore
-$ arti keys check-integrity -k arti
+$ arti keys check-integrity --keystore-id arti
 arti: OK.
 ```
 </details>

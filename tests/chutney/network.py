@@ -34,10 +34,16 @@ def make_network(config: config_module.Config) -> chutney.TorNet.Network:
     configs += NodeConfig(
         tag="a", authority=True, relay=True, launch_phase=LAUNCH_PHASE_DIR_AUTHS
     ).getN(4)
-    # Exits. We don't need many since authorities also function as exits,
-    # but let's have at least 1 non-authority exit relay.
+    # We need at least 6 non-Authority relays.
+    # A hidden service needs using vanguards-lite needs 2 guards, and 4 vanguards.
+    # Authorities are generally disqualified because they are Unmeasured.
+    configs += NodeConfig(tag="rm", relay=True, launch_phase=LAUNCH_PHASE_RELAYS).getN(
+        6
+    )
+    # Let's also have some exits that are not authorities (so can be considered
+    # Measured), and that can be non-overlapping with a full guard+vanguard set.
     configs += NodeConfig(
-        tag="r", relay=True, exit=True, launch_phase=LAUNCH_PHASE_RELAYS
+        tag="re", relay=True, exit=True, launch_phase=LAUNCH_PHASE_RELAYS
     ).getN(2)
     # Simple tor client. Useful as a baseline check for "chutney verify",
     # and used in arti-bench for comparison.

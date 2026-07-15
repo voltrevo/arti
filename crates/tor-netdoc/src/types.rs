@@ -17,7 +17,7 @@ pub mod version;
 
 pub use embedded_cert::*;
 
-pub use misc::{Ed25519FamilyCert, Ed25519IdentityCert};
+pub use misc::{Ed25519FamilyCert, Ed25519IdentityCert, Ed25519NtorCrossCert};
 
 pub use misc::KeywordOrString;
 pub use misc::RetainedOrderVec;
@@ -30,9 +30,12 @@ pub use misc::InvalidContactInfo;
 pub use misc::NotPresentEachValue;
 pub use misc::RsaSha1Signature;
 pub use misc::{B16, B16U, B64, FixedB16U, FixedB64};
-pub use misc::{Base64Fingerprint, Fingerprint, Ignored, IgnoredItemOrObjectValue, SpFingerprint};
+pub use misc::{
+    Base64Fingerprint, Fingerprint, Ignored, IgnoredItemOrObjectValue, ItemPresent, SpFingerprint,
+};
 pub use misc::{Curve25519Public, Ed25519AlgorithmString, Ed25519IdentityLine, Ed25519Public};
 pub use misc::{DigestName, IdentifiedDigest};
+pub use misc::{F64Finite, F64FiniteParseError};
 pub use misc::{Iso8601TimeNoSp, Iso8601TimeSp};
 
 pub use misc::routerdesc;

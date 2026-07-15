@@ -25,6 +25,7 @@ use tor_rtcompat::{NetStreamProvider, Runtime};
 
 use crate::client::RelayClient;
 use crate::config::TorRelayConfig;
+use crate::stream::RequestFilter;
 use crate::tasks::channel::build_circ_net_params;
 use crate::tasks::crypto::InitKeyMaterial;
 
@@ -241,6 +242,7 @@ impl<R: Runtime> TorRelay<R> {
             Arc::downgrade(&chanmgr) as Weak<_>,
             circ_net_params,
             init_key_material.ntor_keys,
+            Box::new(|| Box::new(RequestFilter::default()) as Box<_>),
         );
         let create_request_handler = Arc::new(create_request_handler);
 

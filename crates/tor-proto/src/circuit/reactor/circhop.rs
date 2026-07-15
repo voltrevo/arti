@@ -4,7 +4,7 @@
 
 use crate::circuit::HOPS;
 use crate::circuit::circhop::{CircHopInbound, HopSettings};
-use crate::circuit::reactor::stream::StreamMsg;
+use crate::circuit::reactor::stream::CtrlMsg;
 use crate::congestion::CongestionControl;
 use crate::{HopNum, Result};
 use std::sync::{Arc, Mutex};
@@ -20,7 +20,7 @@ pub(crate) struct CircHop {
     /// A sender for sending relay messages to this hop's stream reactor.
     ///
     /// Set to `None` if we haven't yet spawned a stream reactor for this hop.
-    pub(crate) tx: Option<mpsc::Sender<StreamMsg>>,
+    pub(crate) tx: Option<mpsc::Sender<CtrlMsg>>,
     /// The congestion control state.
     ///
     /// This is shared with `CircHopOutbound`.

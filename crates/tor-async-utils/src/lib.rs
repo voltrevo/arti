@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 mod join_read_write;
@@ -55,6 +56,7 @@ mod watch;
 
 pub mod counting_streams;
 pub mod peekable_stream;
+pub mod rate_limited_writer;
 pub mod stream_peek;
 
 pub use join_read_write::*;

@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 pub mod builder;
@@ -311,15 +312,19 @@ impl<R: Runtime> ChanMgr<R> {
     /// need to pass them so they can be sent in the NETINFO cell.
     ///
     /// The channel may or may not be authenticated. This method will wait until the channel is
-    /// usable, and may return an error if we already have an existing channel to this peer, or if
-    /// there are already too many open connections with this peer or subnet (as a dos defence).
+    /// usable, and may return an error if we already have an existing channel to this peer.
     #[cfg(feature = "relay")]
     pub async fn handle_incoming(
         &self,
         src: Sensitive<std::net::SocketAddr>,
         stream: <R as tor_rtcompat::NetStreamProvider>::Stream,
     ) -> Result<Arc<Channel>> {
-        self.mgr.handle_incoming(src, stream).await
+        let result = self.mgr.handle_incoming(src, stream).await;
+
+        #[cfg(feature = "metrics")]
+        self.mgr.metrics.increment_inbound_channels_built(&result);
+
+        result
     }
 
     /// Try to get a suitable channel to the provided `target`,

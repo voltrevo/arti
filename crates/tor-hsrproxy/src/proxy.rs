@@ -16,7 +16,8 @@ use tor_cell::relaycell::msg as relaymsg;
 use tor_error::{ErrorKind, HasKind, debug_report};
 use tor_hsservice::{HsNickname, RendRequest, StreamRequest};
 use tor_log_ratelim::log_ratelim;
-use tor_proto::client::stream::{DataStream, IncomingStreamRequest};
+use tor_proto::client::stream::DataStream;
+use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::{Runtime, SpawnExt as _};
 
 use crate::config::{
@@ -253,7 +254,12 @@ async fn run_action<R: Runtime>(
         ProxyAction::Forward(encap, target) => match (encap, target) {
             (Encapsulation::Simple, ref addr @ TargetAddr::Inet(a)) => {
                 let rt_clone = runtime.clone();
-                forward_connection(rt_clone, request, runtime.connect(&a), nickname, addr).await?;
+
+                // We don't use any custom options on the socket.
+                let connect_options = Default::default();
+                let stream = runtime.connect(&a, &connect_options);
+
+                forward_connection(rt_clone, request, stream, nickname, addr).await?;
             } /* TODO (#1246)
                 (Encapsulation::Simple, TargetAddr::Unix(_)) => {
                     // TODO: We need to implement unix connections.

@@ -899,9 +899,9 @@ pub(crate) mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use crate::channel::{Canonicity, ChannelMode, ClosedUnexpectedly, UniqId};
+    use crate::circuit::test::fake_mpsc;
     use crate::client::circuit::CircParameters;
     use crate::client::circuit::padding::new_padding;
-    use crate::fake_mpsc;
     use crate::peer::{PeerAddr, PeerInfo};
     use crate::util::{DummyTimeoutEstimator, fake_mq};
     use futures::sink::SinkExt;

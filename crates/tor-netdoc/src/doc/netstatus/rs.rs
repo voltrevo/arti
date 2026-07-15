@@ -11,17 +11,20 @@ pub(crate) mod plain;
 pub(crate) mod vote;
 
 use super::{ConsensusFlavor, ConsensusMethods, consensus_methods_comma_separated};
-use crate::doc::netstatus::NetstatusKwd;
-use crate::doc::netstatus::{IgnoredPublicationTimeSp, Protocols, RelayWeight, RelayWeightsItem};
-use crate::encode::ItemEncoder;
+use crate::doc::netstatus::{
+    IgnoredPublicationTimeSp, NetParams, NetstatusKwd, Protocols, RelayWeight, RelayWeightsItem,
+};
+use crate::encode::{EncodeOrd, ItemEncoder};
 use crate::parse::parser::Section;
 use crate::parse2::ItemArgumentParseable;
 use crate::types::misc::*;
+use crate::types::policy::PortPolicy;
 use crate::types::relay_flags::{self, DocRelayFlags, RelayFlag, RelayFlags};
 use crate::types::version::TorVersion;
 use crate::{Error, NetdocErrorKind as EK, Result};
 use derive_deftly::Deftly;
 use itertools::chain;
+use std::cmp::Ordering;
 use std::sync::Arc;
 use std::{net, time};
 use tor_basic_utils::intern::InternCache;
@@ -37,6 +40,7 @@ use tor_llcrypto::pk::rsa::RsaIdentity;
 #[non_exhaustive]
 pub enum SoftwareVersion {
     /// A Tor version
+    #[display("Tor {_0}")]
     CTor(TorVersion),
     /// A string we couldn't parse.
     Other(Arc<str>),
@@ -46,6 +50,7 @@ pub enum SoftwareVersion {
 ///
 /// We use this because we expect there not to be very many distinct versions of
 /// relay software in existence.
+// TODO DIRAUTH: Improve the caching here.
 static OTHER_VERSION_CACHE: InternCache<str> = InternCache::new();
 
 /// `m` item in votes
@@ -87,7 +92,9 @@ impl std::str::FromStr for SoftwareVersion {
             }
         }
 
-        Ok(SoftwareVersion::Other(OTHER_VERSION_CACHE.intern_ref(s)))
+        Ok(SoftwareVersion::Other(
+            OTHER_VERSION_CACHE.intern_ref(s).into(),
+        ))
     }
 }
 

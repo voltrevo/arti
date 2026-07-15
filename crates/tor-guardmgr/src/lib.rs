@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -1971,8 +1972,10 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
+    use itertools::Itertools;
     use tor_linkspec::{HasAddrs, HasRelayIds};
     use tor_persist::TestingStateMgr;
     use tor_rtcompat::test_with_all_runtimes;
@@ -2002,8 +2005,7 @@ mod test {
             // so that we can test the "restrictive" guard sample behavior, and to avoid
             "guard-meaningful-restriction-percent=75",
         ];
-        let param_overrides: String =
-            itertools::Itertools::intersperse(param_overrides.into_iter(), " ").collect();
+        let param_overrides: String = param_overrides.into_iter().join(" ");
         let override_p = param_overrides.parse().unwrap();
         let mut netdir = PartialNetDir::new(con, Some(&override_p));
         for md in mds {

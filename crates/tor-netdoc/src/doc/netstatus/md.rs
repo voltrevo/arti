@@ -8,6 +8,9 @@ use super::*;
 // Import `each_variety.rs`, appropriately variegated
 ns_do_variety_md! {}
 
+/// Used for reporting errors when parsing this document type
+const NETSTATUS_DOCTYPE_FOR_ERROR: &str = "md consensus";
+
 define_constant_string! {
     /// The `md` keyword in a microdescriptor consensus heading line
     ///

@@ -1,9 +1,9 @@
 [package]
 name = "hashx"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["The Tor Project, Inc.", "Micah Elizabeth Scott <beth@torproject.org>"]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Hash function family designed for ASIC-resistant client puzzles"
 keywords = ["cryptography"]

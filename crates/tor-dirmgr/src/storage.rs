@@ -113,7 +113,7 @@ impl InputString {
         // we got with `validated`
 
         match self {
-            InputString::Utf8(s) => Ok(&s[..]),
+            InputString::Utf8(s) => Ok(s.as_ref()),
             InputString::UncheckedBytes { bytes, validated } => {
                 if *validated.borrow() {
                     unsafe { Ok(std::str::from_utf8_unchecked(&bytes[..])) }
@@ -382,6 +382,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use tempfile::tempdir;

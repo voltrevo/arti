@@ -32,10 +32,11 @@
 //!
 //! Most of this module is only available when this crate is built with the
 //! `routerdesc` feature enabled.
+use crate::encode::{ItemEncoder, ItemValueEncodable};
 use crate::parse::keyword::Keyword;
 use crate::parse::parser::{Section, SectionRules};
 use crate::parse::tokenize::{ItemResult, NetDocReader};
-use crate::parse2::{ArgumentError, ArgumentStream, ItemArgumentParseable};
+use crate::parse2::{ArgumentError, ErrorProblem, ItemValueParseable, UnparsedItem};
 use crate::types::family::{RelayFamily, RelayFamilyIds};
 use crate::types::policy::*;
 use crate::types::routerdesc::*;
@@ -47,9 +48,10 @@ use crate::{AllowAnnotations, Error, KeywordEncodable, NetdocErrorKind as EK, Re
 use derive_deftly::Deftly;
 use ll::pk::ed25519::Ed25519Identity;
 use saturating_time::SaturatingTime;
-use std::sync::Arc;
+use std::fmt::Display;
 use std::sync::LazyLock;
 use std::{iter, net, time};
+use tor_basic_utils::intern::Intern;
 use tor_cert::{CertType, KeyUnknownCert};
 use tor_checkable::{Timebound, signed, timed};
 use tor_error::{internal, into_internal};
@@ -105,7 +107,8 @@ pub struct RouterAnnotation {
 /// # Specification
 ///
 /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deftly, PartialEq, Eq)]
+#[derive_deftly(NetdocParseableUnverified)]
 #[non_exhaustive]
 pub struct RouterDesc {
     /// `router` --- Introduce a router descriptor.
@@ -123,6 +126,7 @@ pub struct RouterDesc {
     /// * `master-key-ed25519 <master key>`
     /// * Exactly once.
     // TODO DIRAUTH when implementing verification, don't forget to check this!
+    #[deftly(netdoc(single_arg))]
     pub master_key_ed25519: Ed25519Public,
 
     /// `bandwidth` --- Report router's network bandwidth.
@@ -141,18 +145,28 @@ pub struct RouterDesc {
     ///
     /// * `published <date> <time>`
     /// * Exactly once.
+    #[deftly(netdoc(single_arg))]
     pub published: Iso8601TimeSp,
 
     /// `fingerprint` --- Redundant hash of ASN-1 encoding of router identity key.
     ///
     /// * `fingerprint <spaced fingerprint>`
     /// * At most once.
+    #[deftly(netdoc(single_arg))]
     pub fingerprint: Option<SpFingerprint>,
+
+    /// `hibernating` --- Whether the relay is hibernating.
+    ///
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:hibernating>
+    // TODO DIRAUTH: Mark this as `netdoc(default)` and skip during encoding if false.
+    #[deftly(netdoc(single_arg, default))]
+    pub hibernating: NumericBoolean,
 
     /// `uptime` --- How long this relay has been continously running
     ///
     /// * `uptime <number>`
     /// * At most once.
+    #[deftly(netdoc(single_arg))]
     pub uptime: Option<u64>,
 
     /// `onion-key` --- Relay's obsolete RSA tap key.
@@ -166,7 +180,13 @@ pub struct RouterDesc {
     ///
     /// * `ntor-onion-key <base64 padded key>`
     /// * Exactly once.
+    #[deftly(netdoc(single_arg))]
     pub ntor_onion_key: Curve25519Public,
+
+    /// `ntor-onion-key-crosscert` --- Reverse cert by K_ntor on KP_relayid_ed
+    ///
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:ntor-onion-key-crosscert>
+    pub ntor_onion_key_crosscert: NtorOnionKeyCrossCert,
 
     /// `signing-key` --- Obsolete RSA identity key.
     ///
@@ -180,20 +200,35 @@ pub struct RouterDesc {
     /// * Any number of times.
     // TODO: these polices can get bulky too. Perhaps we should
     // de-duplicate them too.
+    #[deftly(netdoc(flatten))]
     pub ipv4_policy: AddrPolicy,
 
     /// `ipv6-policy` --- Exit plicy summary for IPv6
     ///
     /// * `ipv6-policy <accept/reject> PortList`
     /// * At most once.
-    pub ipv6_policy: Arc<PortPolicy>,
+    #[deftly(netdoc(default))]
+    pub ipv6_policy: Intern<PortPolicy>,
+
+    /// `overload-general` --- Relay is overloaded.
+    ///
+    /// * `overload-general 1 <time>`
+    /// * At most once.
+    // TODO in OverloadGeneral use ConstantString (from !3985) for version
+    pub overload_general: Option<OverloadGeneral>,
+
+    /// `contact` --- Server administrator contact information.
+    ///
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:contact>
+    pub contact: Option<ContactInfo>,
 
     /// `family` --- Group relays for the purpose of path selection.
     ///
     /// * `family <LongIdent> ...`
     /// * One or more `LongIdent` arguments.
     /// * At most once.
-    pub family: Arc<RelayFamily>,
+    #[deftly(netdoc(default))]
+    pub family: Intern<RelayFamily>,
 
     /// `family-cert` --- Prove membership in a relay family.
     ///
@@ -206,11 +241,22 @@ pub struct RouterDesc {
     /// * `caches-extra-info`
     /// * At most once.
     /// * No extra arguments.
-    pub caches_extra_info: bool,
+    pub caches_extra_info: Option<ItemPresent<CachesExtraInfoToken>>,
+
+    /// `extra-info-digest` --- Hash of the extra-info document.
+    ///
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:extra-info-digest>
+    pub extra_info_digest: Option<ExtraInfoDigests>,
+
+    /// `hidden-service-dir` --- Declares this router to be a hidden service directory
+    ///
+    /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:hidden-service-dir>
+    pub hidden_service_dir: Option<ItemPresent<HiddenServiceDirToken>>,
 
     /// `or-address` --- Alternative ORport address and port
     ///
     /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:or-address>
+    #[deftly(netdoc(single_arg))]
     pub or_address: Vec<net::SocketAddr>,
 
     /// `tunnelled-dir-server` --- Accepts a `BEGIN_DIR` relay message.
@@ -218,7 +264,7 @@ pub struct RouterDesc {
     /// * `tunnelled-dir-server`
     /// * At most once.
     /// * No extra arguments.
-    pub tunnelled_dir_server: bool,
+    pub tunnelled_dir_server: Option<ItemPresent<TunnelledDirServerToken>>,
 
     /// `proto` --- Subprotocol capabilities supported.
     ///
@@ -230,7 +276,7 @@ pub struct RouterDesc {
 /// Signatures of a [`RouterDesc`].
 ///
 /// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:router-sig-ed25519>
-#[derive(Clone, Debug, Deftly)]
+#[derive(Clone, Debug, PartialEq, Eq, Deftly)]
 #[derive_deftly(NetdocParseableSignatures)]
 #[deftly(netdoc(signatures(hashes_accu = "RouterHashAccu")))]
 #[non_exhaustive]
@@ -249,16 +295,37 @@ pub struct RouterDescSignatures {
     pub router_signature: RouterSignature,
 }
 
+// TODO: Implement a .verify() method.
+impl RouterDescUnverified {}
+
 /// Description of the software a relay is running.
+///
+/// `platform` line in a routerstatus.
+/// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:platform>
 // TODO: Move this to types/misc.rs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RelayPlatform {
     /// Software advertised to be some version of Tor, on some platform.
-    Tor(TorVersion, String),
+    Tor(TorVersion, Option<String>),
     /// Software not advertised to be Tor.
     Other(String),
 }
+
+/// Zero-sized token type for use in [`RouterDesc::caches_extra_info`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct CachesExtraInfoToken;
+
+/// Zero-sized token type for use in [`RouterDesc::hidden_service_dir`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct HiddenServiceDirToken;
+
+/// Zero-sized token type for use in [`RouterDesc::tunnelled_dir_server`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct TunnelledDirServerToken;
 
 impl std::str::FromStr for RelayPlatform {
     type Err = Error;
@@ -266,8 +333,10 @@ impl std::str::FromStr for RelayPlatform {
         if args.starts_with("Tor ") {
             let v: Vec<_> = args.splitn(4, ' ').collect();
             match &v[..] {
-                ["Tor", ver, "on", p] => Ok(RelayPlatform::Tor(ver.parse()?, (*p).to_string())),
-                ["Tor", ver, ..] => Ok(RelayPlatform::Tor(ver.parse()?, "".to_string())),
+                ["Tor", ver, "on", p] => {
+                    Ok(RelayPlatform::Tor(ver.parse()?, Some((*p).to_string())))
+                }
+                ["Tor", ver, ..] => Ok(RelayPlatform::Tor(ver.parse()?, None)),
                 _ => unreachable!(),
             }
         } else {
@@ -276,11 +345,35 @@ impl std::str::FromStr for RelayPlatform {
     }
 }
 
-impl ItemArgumentParseable for RelayPlatform {
-    fn from_args<'s>(args: &mut ArgumentStream<'s>) -> std::result::Result<Self, ArgumentError> {
+impl Display for RelayPlatform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Self::Tor(v, Some(p)) => write!(f, "Tor {v} on {p}"),
+            Self::Tor(v, None) => write!(f, "Tor {v}"),
+            Self::Other(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+impl ItemValueParseable for RelayPlatform {
+    fn from_unparsed(item: UnparsedItem<'_>) -> std::result::Result<Self, ErrorProblem> {
+        let mut args = item.args_copy();
+        item.check_no_object()?;
         args.into_remaining()
             .parse()
-            .map_err(|_| ArgumentError::Invalid)
+            .map_err(|_| args.handle_error("platform", ArgumentError::Invalid))
+    }
+}
+
+impl ItemValueEncodable for RelayPlatform {
+    fn write_item_value_onto(
+        &self,
+        mut out: ItemEncoder,
+    ) -> std::result::Result<(), tor_error::Bug> {
+        // Adding a raw string is fine because this is effectively a free form
+        // field.
+        out.args_raw_string(&self);
+        Ok(())
     }
 }
 
@@ -486,8 +579,8 @@ impl RouterDesc {
     }
 
     /// Return the declared family of this descriptor.
-    pub fn family(&self) -> Arc<RelayFamily> {
-        Arc::clone(&self.family)
+    pub fn family(&self) -> Intern<RelayFamily> {
+        Intern::clone(&self.family)
     }
 
     /// Return the authenticated family IDs of this descriptor.
@@ -540,6 +633,11 @@ impl RouterDesc {
     /// * [`RouterDesc::bandwidth`]
     /// * [`RouterDesc::or_address`]
     ///     * Extracts only the first IPv6 address.
+    /// * [`RouterDesc::hibernating`]
+    /// * [`RouterDesc::overload_general`]
+    /// * [`RouterDesc::contact`]
+    /// * [`RouterDesc::extra_info_digest`]
+    /// * [`RouterDesc::hidden_service_dir`]
     pub fn parse(s: &str) -> Result<UncheckedRouterDesc> {
         let mut reader = crate::parse::tokenize::NetDocReader::new(s)?;
         let result = Self::parse_internal(&mut reader).map_err(|e| e.within(s))?;
@@ -659,7 +757,10 @@ impl RouterDesc {
             let mut d = ll::d::Sha256::new();
             d.update(&b"Tor router descriptor signature v1"[..]);
             let signed_end = ed_sig_pos + b"router-sig-ed25519 ".len();
-            d.update(&s[start_offset..signed_end]);
+            d.update(
+                s.get(start_offset..signed_end)
+                    .ok_or(internal!("chopped utf8"))?,
+            );
             let d = d.finalize();
             let sig: [u8; 64] = ed_sig
                 .parse_arg::<B64>(0)?
@@ -673,7 +774,10 @@ impl RouterDesc {
         let rsa_signature: ll::pk::rsa::ValidatableRsaSignature = {
             let mut d = ll::d::Sha1::new();
             let signed_end = rsa_sig_pos + b"router-signature\n".len();
-            d.update(&s[start_offset..signed_end]);
+            d.update(
+                s.get(start_offset..signed_end)
+                    .ok_or(internal!("chopped utf8"))?,
+            );
             let d = d.finalize();
             let sig = rsa_sig.obj("SIGNATURE")?;
             // TODO: we need to accept prefixes here. COMPAT BLOCKER.
@@ -709,7 +813,7 @@ impl RouterDesc {
         // ntor key
         let ntor_onion_key: Curve25519Public = body.required(NTOR_ONION_KEY)?.parse_arg(0)?;
         // ntor crosscert
-        let crosscert_cert: tor_cert::UncheckedCert = {
+        let (cc_sig, cc_expiry, cc_cert) = {
             let cc = body.required(NTOR_ONION_KEY_CROSSCERT)?;
             let sign: u8 = cc.parse_arg(0)?;
             if sign != 0 && sign != 1 {
@@ -723,12 +827,23 @@ impl RouterDesc {
                             .with_msg("Uncheckable crosscert")
                     })?;
 
-            cc.parse_obj::<UnvalidatedEdCert>("ED25519 CERT")?
-                .check_cert_type(tor_cert::CertType::NTOR_CC_IDENTITY)?
-                .check_subject_key_is(identity_cert.peek_signing_key())?
-                .into_unchecked()
-                .should_be_signed_with(&ntor_as_ed.into())
-                .map_err(|err| EK::BadSignature.err().with_source(err))?
+            let cert = cc
+                .parse_obj::<UnvalidatedEdCert>("ED25519 CERT")?
+                .into_unchecked();
+            let (_, sig, expiry) = Ed25519NtorCrossCert::verify_inner(
+                ntor_as_ed.into(),
+                ed25519_identity_key,
+                cert.clone(),
+            )
+            .map_err(|_| EK::BadSignature.err())?;
+
+            let cert = NtorOnionKeyCrossCert {
+                bit: NumericBoolean(sign != 0),
+                // Okay to call because we added the signature to the batch.
+                cert: EmbeddedCert::new(Ed25519NtorCrossCert::dangerous_new_unverified(), cert),
+            };
+
+            (sig, expiry, cert)
         };
 
         // TAP key
@@ -772,10 +887,11 @@ impl RouterDesc {
         };
 
         // tunneled-dir-server
-        let is_dircache = (dirport != 0) || body.get(TUNNELLED_DIR_SERVER).is_some();
+        let is_dircache = ((dirport != 0) || body.get(TUNNELLED_DIR_SERVER).is_some())
+            .then_some(ItemPresent::default());
 
         // caches-extra-info
-        let is_extrainfo_cache = body.get(CACHES_EXTRA_INFO).is_some();
+        let is_extrainfo_cache = body.get(CACHES_EXTRA_INFO).map(|_| ItemPresent::default());
 
         // fingerprint: check for consistency with RSA identity.
         if let Some(fp_tok) = body.get(FINGERPRINT) {
@@ -885,11 +1001,6 @@ impl RouterDesc {
                 .with_msg("missing public key")
                 .with_source(err)
         })?;
-        let (crosscert_cert, cc_sig) = crosscert_cert.dangerously_split().map_err(|err| {
-            EK::BadObjectVal
-                .with_msg("missing public key")
-                .with_source(err)
-        })?;
         let mut signatures: Vec<Box<dyn ll::pk::ValidatableSignature>> = vec![
             Box::new(rsa_signature),
             Box::new(ed_signature),
@@ -901,13 +1012,12 @@ impl RouterDesc {
         }
 
         let identity_cert = identity_cert.dangerously_assume_timely();
-        let crosscert_cert = crosscert_cert.dangerously_assume_timely();
         let mut expirations = vec![
             published
                 .0
                 .saturating_add(time::Duration::new(ROUTER_EXPIRY_SECONDS, 0)),
             identity_cert.expiry(),
-            crosscert_cert.expiry(),
+            cc_expiry,
         ];
 
         // As outlined above, we have to do this ... :/
@@ -955,15 +1065,21 @@ impl RouterDesc {
             platform,
             published,
             fingerprint: Some(rsa_identity.into()),
+            hibernating: Default::default(),
             uptime,
             onion_key: tap_onion_key,
             ntor_onion_key,
+            ntor_onion_key_crosscert: cc_cert,
             signing_key: rsa_identity_key,
             ipv4_policy,
             ipv6_policy: ipv6_policy.intern(),
+            overload_general: Default::default(),
+            contact: Default::default(),
             family,
             family_cert: embedded_family_certs.into(),
             caches_extra_info: is_extrainfo_cache,
+            extra_info_digest: Default::default(),
+            hidden_service_dir: Default::default(),
             or_address: ipv6addr,
             tunnelled_dir_server: is_dircache,
             proto,
@@ -1090,7 +1206,10 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+    use crate::parse2::{self, NetdocParseableUnverified, ParseInput};
+
     use super::*;
     const TESTDATA: &str = include_str!("../../testdata/routerdesc1.txt");
     const TESTDATA2: &str = include_str!("../../testdata/routerdesc2.txt");
@@ -1273,27 +1392,41 @@ mod test {
 
     #[test]
     fn test_platform() {
-        let p = "Tor 0.4.4.4-alpha on a flying bison".parse::<RelayPlatform>();
-        assert!(p.is_ok());
-        assert_eq!(
-            p.unwrap(),
-            RelayPlatform::Tor(
-                "0.4.4.4-alpha".parse().unwrap(),
-                "a flying bison".to_string()
-            )
-        );
+        let tests = [
+            // Test with platform.
+            (
+                "Tor 0.4.4.4-alpha on a flying bison",
+                RelayPlatform::Tor(
+                    "0.4.4.4-alpha".parse().unwrap(),
+                    Some("a flying bison".to_string()),
+                ),
+            ),
+            // Test without platform but potentially weird spacing.
+            (
+                "Tor 0.4.4.4-alpha on",
+                RelayPlatform::Tor("0.4.4.4-alpha".parse().unwrap(), None),
+            ),
+            (
+                "Tor 0.4.4.4-alpha ",
+                RelayPlatform::Tor("0.4.4.4-alpha".parse().unwrap(), None),
+            ),
+            (
+                "Tor 0.4.4.4-alpha",
+                RelayPlatform::Tor("0.4.4.4-alpha".parse().unwrap(), None),
+            ),
+            // Test other.
+            ("arti 0.0.0", RelayPlatform::Other("arti 0.0.0".to_string())),
+        ];
+        for (input, output) in tests {
+            assert_eq!(input.parse::<RelayPlatform>().unwrap(), output);
 
-        let p = "Tor 0.4.4.4-alpha on".parse::<RelayPlatform>();
-        assert!(p.is_ok());
-
-        let p = "Tor 0.4.4.4-alpha ".parse::<RelayPlatform>();
-        assert!(p.is_ok());
-        let p = "Tor 0.4.4.4-alpha".parse::<RelayPlatform>();
-        assert!(p.is_ok());
-
-        let p = "arti 0.0.0".parse::<RelayPlatform>();
-        assert!(p.is_ok());
-        assert_eq!(p.unwrap(), RelayPlatform::Other("arti 0.0.0".to_string()));
+            // Round-trip test with input stripped of " on" suffix and trimmed.
+            // Otherwise we cannot really make this work because certain inputs
+            // contain redundant data on purpose.
+            let input = input.strip_suffix(" on").unwrap_or(input);
+            let input = input.trim();
+            assert_eq!(output.to_string(), input);
+        }
     }
 
     #[test]
@@ -1316,5 +1449,38 @@ mod test {
         );
 
         Ok(())
+    }
+
+    // TODO: For now, this only tests if decoding works with a few field checks.
+    // It should be extended to a full roundtrip test with failed verification
+    // at one point eventually ...
+    #[test]
+    fn test_parse2() {
+        let input = ParseInput::new(
+            include_str!("../../testdata2/cached-descriptors.new"),
+            "cached-descriptors.new",
+        );
+        let rd = parse2::parse_netdoc_multiple::<RouterDescUnverified>(&input)
+            .unwrap()
+            .into_iter()
+            .map(|rd| rd.unwrap_unverified().0)
+            .collect::<Vec<RouterDesc>>();
+        assert_eq!(rd.len(), 20);
+        assert_eq!(
+            rd[0].router,
+            RouterDescIntroItem {
+                nickname: "test002a".parse().unwrap(),
+                address: net::Ipv4Addr::LOCALHOST,
+                orport: 5102,
+                socksport: 0,
+                dirport: 7102
+            }
+        );
+        assert_eq!(
+            rd[0].fingerprint.unwrap(),
+            "257D 06F0 360B B224 6388 724F 109E C089 5A1D 41FB"
+                .parse()
+                .unwrap()
+        );
     }
 }

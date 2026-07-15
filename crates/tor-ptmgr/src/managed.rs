@@ -152,14 +152,10 @@ impl<R: Runtime> PtReactor<R> {
     pub(crate) async fn run_one_step(&mut self) -> err::Result<bool> {
         use futures::future::Either;
 
-        // FIXME(eta): This allocates a lot, which is technically unnecessary but requires careful
-        //             engineering to get right. It's not really in the hot path, at least.
         let mut all_next_messages = self
             .running
             .iter_mut()
-            // We could avoid the Box, but that'd require using unsafe to replicate what tokio::pin!
-            // does under the hood.
-            .map(|pt| Box::pin(pt.next_message()))
+            .map(|pt| pt.next_message())
             .collect::<Vec<_>>();
 
         // We can't construct a select_all if all_next_messages is empty.

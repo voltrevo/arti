@@ -4,11 +4,11 @@ use super::*;
 
 use crate::doc::{self, authcert};
 use crate::types;
-use authcert::{AuthCert as DirAuthKeyCert, AuthCertKeyIds};
+use authcert::AuthCert as DirAuthKeyCert;
 pub use doc::netstatus::Signature as NdiDirectorySignature;
 use doc::netstatus::{
-    ConsensusAuthoritySection, DirectorySignaturesHashesAccu, VoteAuthoritySection,
-    VoteStatusConsensus, VoteStatusVote,
+    ConsensusAuthoritySection, DirectorySignaturesHashesAccu, VerifyGeneralTrustedAuthorities,
+    VoteAuthoritySection, VoteStatusConsensus, VoteStatusVote,
 };
 
 mod ns_per_flavour_macros;
@@ -49,48 +49,15 @@ fn verify_general_timeless(
     signatures: &[NdiDirectorySignature],
     trusted: &[pk::rsa::RsaIdentity],
     certs: &[&DirAuthKeyCert],
-    threshold: usize,
 ) -> Result<(), VF> {
-    let mut ok = HashSet::<pk::rsa::RsaIdentity>::new();
+    let group = crate::doc::netstatus::SignatureGroup {
+        hashes: *hashes,
+        signatures: signatures.iter().cloned().collect_vec(),
+    };
 
-    for sig in signatures {
-        let NdiDirectorySignature {
-            digest_algo: hash_algo,
-            key_ids:
-                AuthCertKeyIds {
-                    id_fingerprint: h_kp_auth_id_rsa,
-                    sk_fingerprint: h_kp_auth_sign_rsa,
-                },
-            signature: rsa_signature,
-        } = sig;
-
-        if let Some(h) = hashes.hash_slice_for_verification(hash_algo) {
-            let Some(authority) = ({
-                trusted
-                    .iter()
-                    .find(|trusted| **trusted == *h_kp_auth_id_rsa)
-            }) else {
-                // unknown kp_auth_id_rsa, ignore it
-                continue;
-            };
-            let Some(cert) = ({
-                certs
-                    .iter()
-                    .find(|cert| cert.dir_signing_key.to_rsa_identity() == *h_kp_auth_sign_rsa)
-            }) else {
-                // no cert for this kp_auth_sign_rsa, ignore it
-                continue;
-            };
-
-            let () = cert.dir_signing_key.verify(h, rsa_signature)?;
-
-            ok.insert(*authority);
-        }
-    }
-
-    if ok.len() < threshold {
-        return Err(VF::InsufficientTrustedSigners);
-    }
-
-    Ok(())
+    group.verify_general(
+        VerifyGeneralTrustedAuthorities::TrustThese { trusted },
+        &certs.iter().copied().cloned().collect_vec(),
+        |tv| tv.verify(),
+    )
 }

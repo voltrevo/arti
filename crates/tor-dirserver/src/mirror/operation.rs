@@ -27,6 +27,7 @@ use rusqlite::Transaction;
 use strum::IntoEnumIterator;
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
+use tor_checkable::Timebound;
 use tor_dirclient::request::{AuthCertRequest, ConsensusRequest, Requestable};
 use tor_dircommon::{authority::AuthorityContacts, config::DirTolerance};
 use tor_error::{internal, into_internal};
@@ -38,7 +39,7 @@ use tor_netdoc::{
     parse2::{
         self,
         poc::netstatus::{cons, md},
-        NetdocParseable, NetdocUnverified, ParseInput,
+        NetdocParseable, NetdocParseableUnverified, ParseInput,
     },
 };
 use tor_rtcompat::PreferredRuntime;
@@ -480,6 +481,7 @@ impl StaticEngine {
 
     /// Fetches a consensus from an upstream authority.
     // TODO DIRMIRROR: Add logging.
+    #[allow(clippy::string_slice)] // TODO
     async fn fetch_consensus(
         &self,
         data: &mut ConsensusBoundData,
@@ -535,6 +537,7 @@ impl StaticEngine {
     // AND to ignore all ID PKs we do not recognize.  Also, it would probably
     // be best to move the v3idents structure to a HashMap based implementation,
     // as well as the signatories result.
+    #[allow(clippy::string_slice)] // TODO
     async fn auth_certs(
         &self,
         pool: &Pool<SqliteConnectionManager>,
@@ -593,12 +596,14 @@ impl StaticEngine {
                     return None;
                 }
 
-                let verified = unverified.verify(
-                    self.authorities.v3idents(),
-                    self.tolerance.pre_valid_tolerance(),
-                    self.tolerance.post_valid_tolerance(),
-                    now.into(),
-                );
+                let verified = unverified
+                    .verify(self.authorities.v3idents())
+                    .and_then(|v| {
+                        Ok(self
+                            .tolerance
+                            .extend_tolerance(v)
+                            .check_valid_at(&now.into())?)
+                    });
                 let verified = match verified {
                     Ok(v) => v,
                     Err(e) => {
@@ -736,6 +741,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use std::time::{Duration, SystemTime};
@@ -746,7 +752,7 @@ mod test {
         net::TcpListener,
     };
     use tor_basic_utils::test_rng::testing_rng;
-    use tor_netdoc::parse2::NetdocUnverified;
+    use tor_netdoc::parse2::NetdocParseableUnverified;
 
     use crate::database::sql;
 

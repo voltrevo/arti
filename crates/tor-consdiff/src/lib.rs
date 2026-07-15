@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use std::fmt::{Display, Formatter, Write};
@@ -157,7 +158,9 @@ fn split_directory_signatures(input: &str) -> Result<(&str, &str)> {
         match item {
             Some(DIRECTORY_SIGNATURE_KEYWORD) => {
                 let offset = items.byte_position();
-                return Ok((&input[..offset], &input[offset..]));
+                return Ok(input
+                    .split_at_checked(offset)
+                    .ok_or_else(|| internal!("Calculated an invalid offset"))?);
             }
             Some(_) => {
                 // Consume the just peeked item.
@@ -591,11 +594,8 @@ impl<'a> DiffCommand<'a> {
         }
 
         let (range, command) = command.split_at(command.len() - 1);
-        let (low, high) = if let Some(comma_pos) = range.find(',') {
-            (
-                range[..comma_pos].parse::<usize>()?,
-                Some(range[comma_pos + 1..].parse::<RangeEnd>()?),
-            )
+        let (low, high) = if let Some((lo, hi)) = range.split_once(',') {
+            (lo.parse::<usize>()?, Some(hi.parse::<RangeEnd>()?))
         } else {
             (range.parse::<usize>()?, None)
         };
@@ -808,6 +808,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use rand::seq::IndexedRandom;
