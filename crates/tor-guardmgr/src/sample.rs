@@ -1250,7 +1250,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn sampling_and_usage() {
         let netdir = netdir();
         let params = GuardParams {

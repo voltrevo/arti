@@ -1,1 +1,1 @@
-DEPRECATED: `derive::assert_not_impl`; use it in `tor-basic-utils` instead
+BREAKING: `mistrust::BuilderExt` no longer has a `Built` type parameter

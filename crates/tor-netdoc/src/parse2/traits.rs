@@ -73,7 +73,7 @@ pub trait NetdocParseable: Sized {
 /// Normally [derived](derive_deftly_template_NetdocParseableFields).
 pub trait NetdocParseableFields: Sized {
     /// The partially-parsed set of items.
-    type Accumulator: Sized + Debug + Send + Sync + 'static;
+    type Accumulator: Default + Debug + Send + Sync + 'static;
 
     /// Is this one of the keywords in this struct
     fn is_item_keyword(kw: KeywordRef<'_>) -> bool;

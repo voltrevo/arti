@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -573,14 +573,14 @@ mod test {
         assert_eq!(sv.len(), 2);
 
         assert!(!flags::unsafe_logging_enabled());
-        assert_eq!(format!("{:?}", &sv), "[scrubbed]");
+        assert_eq!(format!("{:?}", sv), "[scrubbed]");
         assert_eq!(format!("{:?}", sv.as_ref()), "[scrubbed]");
         assert_eq!(format!("{:?}", sv.as_inner()), "[104, 49]");
-        let normal = with_safe_logging_suppressed(|| format!("{:?}", &sv));
+        let normal = with_safe_logging_suppressed(|| format!("{:?}", sv));
         assert_eq!(normal, "[104, 49]");
 
         let _g = disable_safe_logging().unwrap();
-        assert_eq!(format!("{:?}", &sv), "[104, 49]");
+        assert_eq!(format!("{:?}", sv), "[104, 49]");
 
         assert_eq!(sv, SVec::from(vec![104, 49]));
         assert_eq!(sv.clone().into_inner(), vec![104, 49]);
@@ -605,7 +605,7 @@ mod test {
         let closure1 = || {
             format!(
                 "{:?}, {}, {:o}, {:x}, {:X}, {:b}",
-                &val, &val, &val, &val, &val, &val,
+                val, val, val, val, val, val,
             )
         };
         let s1 = closure1();
@@ -622,7 +622,7 @@ mod test {
         let n = 1.0E32;
         let val = Sensitive::<f64>::new(n);
         let expect = format!("{:?}, {}, {:e}, {:E}", n, n, n, n);
-        let closure2 = || format!("{:?}, {}, {:e}, {:E}", &val, &val, &val, &val);
+        let closure2 = || format!("{:?}, {}, {:e}, {:E}", val, val, val, val);
         let s1 = closure2();
         let s2 = with_safe_logging_suppressed(closure2);
         assert_eq!(s1, "[scrubbed], [scrubbed], [scrubbed], [scrubbed]");

@@ -696,7 +696,6 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
     }
 
     /// Run one iteration of the reactor loop.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor
     async fn run_once(&mut self) -> Result<ShutdownStatus, FatalError> {
         let mut netdir_events = self.dir_provider.events();
 
@@ -1341,7 +1340,6 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
     /// The results are received and processed in the main loop of the reactor.
     ///
     /// Returns an error if it fails to spawn a task, or if an internal error occurs.
-    #[allow(clippy::cognitive_complexity)] // TODO #2010: Refactor
     async fn upload_all(&mut self) -> Result<(), FatalError> {
         trace!("starting descriptor upload task...");
 
@@ -1457,7 +1455,6 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
     /// Failed uploads are retried
     /// (see [`upload_descriptor_with_retries`](Reactor::upload_descriptor_with_retries)).
     #[allow(clippy::too_many_arguments)] // TODO: refactor
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor
     async fn upload_for_time_period(
         hs_dirs: Vec<RelayIds>,
         netdir: &Arc<NetDir>,
@@ -1598,6 +1595,7 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
                                 &imm.keymgr,
                                 &imm.pow_manager,
                                 &config,
+                                netdir.params(),
                                 authorized_clients.as_deref(),
                                 ipts,
                                 time_period,
@@ -1921,7 +1919,6 @@ macro_rules! watch_path {
 }
 
 /// Add the specified directories to the watcher.
-#[allow(clippy::cognitive_complexity)]
 fn watch_dirs<R: Runtime>(
     watcher: &mut FileWatcherBuilder<R>,
     dirs: &DirectoryKeyProviderList,

@@ -19,8 +19,8 @@
 #![allow(dead_code)] // TODO CGO: Remove this once we actually use CGO encryption.
 
 use aes::{Aes128, Aes128Dec, Aes128Enc, Aes256, Aes256Dec, Aes256Enc};
-use cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, BlockSizeUser, StreamCipher as _};
-use digest::KeyInit;
+use cipher::common::array::Array;
+use cipher::{BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeyInit, StreamCipher as _};
 use polyval::{Polyval, universal_hash::UniversalHash};
 use tor_cell::{
     chancell::{CELL_DATA_LEN, ChanCmd},
@@ -59,9 +59,7 @@ type Block = [u8; BLK_LEN];
 ///
 /// Not sealed because it is never used outside of this crate.
 #[cfg_attr(feature = "bench", visibility::make(pub))]
-pub(crate) trait BlkCipher:
-    BlockCipher + KeyInit + BlockSizeUser<BlockSize = BlockLen> + Clone
-{
+pub(crate) trait BlkCipher: KeyInit + BlockSizeUser<BlockSize = BlockLen> + Clone {
     /// Length of the key used by this block cipher.
     const KEY_LEN: usize;
 }
@@ -71,14 +69,14 @@ pub(crate) trait BlkCipher:
 ///
 /// Not sealed because it is never used outside of this crate.
 #[cfg_attr(feature = "bench", visibility::make(pub))]
-pub(crate) trait BlkCipherEnc: BlkCipher + BlockEncrypt {}
+pub(crate) trait BlkCipherEnc: BlkCipher + BlockCipherEncrypt {}
 
 /// Helper trait to define the features we need from a block cipher,
 /// and make our "where" declarations smaller.
 ///
 /// Not sealed because it is never used outside of this crate.
 #[cfg_attr(feature = "bench", visibility::make(pub))]
-pub(crate) trait BlkCipherDec: BlkCipher + BlockDecrypt {}
+pub(crate) trait BlkCipherDec: BlkCipher + BlockCipherDecrypt {}
 
 impl BlkCipher for Aes128 {
     const KEY_LEN: usize = 16;
@@ -179,11 +177,14 @@ mod et {
                 return Err(internal!("Invalid seed length").into());
             }
             let (kb, ku) = seed.split_at(BC::key_size());
+            let kb: &Array<_, _> = kb
+                .try_into()
+                .expect("Incorrect key size, even though it was validated!?");
             let ku: &[u8; 16] = ku
                 .try_into()
                 .expect("Incorrect key size, even though it was validated!?");
             Ok(Self {
-                kb: BC::new(kb.into()),
+                kb: BC::new(kb),
                 ku: Polyval::new(ku.into()),
             })
         }
@@ -264,11 +265,15 @@ mod prf {
                 return Err(internal!("Invalid seed length").into());
             }
             let (k, b) = seed.split_at(BC::key_size());
+            let k: &Array<_, _> = k
+                .try_into()
+                .expect("Incorrect key size, even though it was validated!?");
+
             let b: &[u8; 16] = b
                 .try_into()
                 .expect("Incorrect key size, even though it was validated!?");
             Ok(Self {
-                k: BC::new(k.into()),
+                k: BC::new(k),
                 b: Polyval::new(b.into()),
             })
         }

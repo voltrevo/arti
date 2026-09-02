@@ -1,0 +1,59 @@
+router Akka 95.216.33.58 443 0 0
+identity-ed25519
+-----BEGIN ED25519 CERT-----
+AQQAB5OcAexTHz2/vwRFYHNN/kTvpj9Y7L646sQX2WV9qdpH7xAVAQAgBAAJVON/
+Wh5ovrXqEf7X5S9hnw6CTAXfPtQwhO8nObmvsFMY1RVAmcYeN1esUTSXW9L3WqWU
+otYQBq4E3lc/MTQHoXpvpvwwYut9WgnepoluTRIF0TtS/Lmcw05VVxCNDgA=
+-----END ED25519 CERT-----
+master-key-ed25519 CVTjf1oeaL616hH+1+UvYZ8OgkwF3z7UMITvJzm5r7A
+or-address [2a01:4f9:2a:2145::2]:443
+platform Tor 0.4.9.5 on Linux
+proto Conflux=1 Cons=1-2 Desc=1-4 DirCache=2 FlowCtrl=1-2 HSDir=2 HSIntro=4-5 HSRend=1-2 Link=3-5 LinkAuth=3 Microdesc=1-3 Padding=2 Relay=2-6
+published 2026-07-27 08:14:35
+fingerprint 5692 7E61 B51E 6F36 3FB5 5498 150A 6DDF CF70 77F2
+uptime 13027595
+bandwidth 1073741824 1073741824 69831782
+extra-info-digest E5CA770507B126F53E93F6EE36AD0256AF04C986 SzJ0nIl6jatNR90YO/xNyPYxW63rTMfis0g8zURSbtM
+onion-key
+-----BEGIN RSA PUBLIC KEY-----
+MIGJAoGBAOqDuiB7MpqHMbln9e6HybPqHgIW1Nen5txvFBNhvCq6G+iO/yJTU9jE
+nS54K2/tWWzD+VEeWI7pguXNudRZv3I964klPJrTbDoOzLcH1j20O4h1F48ffqvv
+ZoBBkzCwDJSOGrM4y96SHJNV9I3c7b8cQWaXLFUP7hfNTBcSqYfDAgMBAAE=
+-----END RSA PUBLIC KEY-----
+signing-key
+-----BEGIN RSA PUBLIC KEY-----
+MIGJAoGBAK80WEEF/igG0tm96sSKWxHhdcgpf0qt/JrIEOGWeuaw8iLR0+J85cf6
+53BG/x5dCex6Tsa91I3vCmZkTs9f5IJ1A8gBBiJscdwIfrH0rCwzADpvuZeS4V/U
+Uy43bcxUtjsocTi2RS0Z071EOu9zWitRL/uLgDWVzave/xxIsPOLAgMBAAE=
+-----END RSA PUBLIC KEY-----
+onion-key-crosscert
+-----BEGIN CROSSCERT-----
+5mFGnLAtD13aNV5c7amuFpPhz/YtKYx8myt/mcIV9CBedREHa6DEyeGUnAlPm93/
+N856/eW2+AtPtQTvn0P/Pjjd98RgOEgNJwh9Zrn3iba9Ovl6piqfZGXTgsIjSmyi
+T9US6ziCYyHysN8725KxI4O0B+8ykJUQn4ClHj2LkyM=
+-----END CROSSCERT-----
+ntor-onion-key-crosscert 1
+-----BEGIN ED25519 CERT-----
+AQoAB5OhAQlU439aHmi+teoR/tflL2GfDoJMBd8+1DCE7yc5ua+wAE43GqjpbSfk
+4TVKyvBhAl4g3r/KopnEZk/kV5e1CzjFgWULsjP47ocQi4Mow/bS5FNekwwAQM2i
+hEaFXZFUDw0=
+-----END ED25519 CERT-----
+family $303509AB910EF207B7438C27435C4A2FD579F1B1 $56927E61B51E6F363FB55498150A6DDFCF7077F2
+hidden-service-dir
+family-cert
+-----BEGIN FAMILY CERT-----
+AQwAB5PRAQlU439aHmi+teoR/tflL2GfDoJMBd8+1DCE7yc5ua+wAQAgBADGJELh
+9hTKPelE7Id4Cbl1B6ttQwesuR44mkbbW99/jlQOkxYVL28rgIxgCPWEch7hQiG0
+XW6cJ+Vr8hGs5mhXGCvNOkLqa8Fc3hNsdmbx3qRcJLnXo/QYv25OBFpN4wI=
+-----END FAMILY CERT-----
+contact Alexander Faeroey <ahf@0x90.dk> (0x61A208E16E7CB435)
+ntor-onion-key KiOnrAtPDoGduyYKe9MBY3aBJ60JYJKbkP5cvF4TRmk
+reject *:*
+tunnelled-dir-server
+router-sig-ed25519 0Sg+int3+Kkj8iaA5+/CRDmKRiODEnwRbwQuiaFcvBNiHcePVHmTRHe9AAhIjIYDiEvIrjW7JNjpz8DMxjZDBw
+router-signature
+-----BEGIN SIGNATURE-----
+Vqt8oTyCT8zw7IBYdlWnpzYVwXYoR37Fe3Bnxn87Kfcqpvv9hPFZ5k/IBo56kj07
+9v9iM2csk3Hrt8VOaImFgtqijFAJaY/BOB3BVBQrhcp6BI4aPyr7Z6yTbwU+BlpQ
+xgUh7Nlj1eRJ4URDZL4UOzL3aLL11EiHkq+cdMz0mHM=
+-----END SIGNATURE-----

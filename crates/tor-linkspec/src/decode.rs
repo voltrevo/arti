@@ -166,7 +166,7 @@ mod test {
             .unwrap()
             .build()
             .unwrap();
-        assert_eq!(format!("{:?}", &ct), format!("{:?}", ct2));
+        assert_eq!(format!("{:?}", ct), format!("{:?}", ct2));
     }
 
     #[test]

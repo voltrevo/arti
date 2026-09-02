@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -58,7 +58,6 @@ mod managed;
 
 use crate::config::{TransportConfig, TransportOptions};
 use crate::err::PtError;
-use oneshot_fused_workaround as oneshot;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -68,8 +67,6 @@ use tor_config_path::CfgPathResolver;
 use tor_linkspec::PtTransportName;
 use tor_rtcompat::Runtime;
 use tor_socksproto::SocksVersion;
-#[cfg(any(feature = "tor-channel-factory", feature = "managed-pts"))]
-use tracing::info;
 use tracing::warn;
 #[cfg(feature = "managed-pts")]
 use {
@@ -88,6 +85,8 @@ use {
     },
     tracing::trace,
 };
+#[cfg(all(feature = "managed-pts", feature = "tor-channel-factory"))]
+use {oneshot_fused_workaround as oneshot, tracing::info};
 
 /// Shared mutable state between the `PtReactor` and `PtMgr`.
 #[derive(Default, Debug)]
@@ -95,7 +94,7 @@ struct PtSharedState {
     /// Connection information for pluggable transports from currently running binaries.
     ///
     /// Unmanaged pluggable transports are not included in this map.
-    #[allow(dead_code)]
+    #[cfg(feature = "managed-pts")]
     managed_cmethods: HashMap<PtTransportName, PtClientMethod>,
     /// Current configured set of pluggable transports.
     configured: HashMap<PtTransportName, TransportOptions>,
@@ -132,11 +131,19 @@ impl<R: Runtime> PtMgr<R> {
             }
         }
         for opt in ret.values() {
-            if let TransportOptions::Unmanaged(u) = opt {
-                if !u.is_localhost() {
-                    warn!(
-                        "Configured to connect to a PT on a non-local addresses. This is usually insecure! We recommend running PTs on localhost only."
-                    );
+            match opt {
+                TransportOptions::Unmanaged(u) => {
+                    if !u.is_localhost() {
+                        warn!(
+                            "Configured to connect to a PT on a non-local addresses. This is usually insecure! We recommend running PTs on localhost only."
+                        );
+                    }
+                }
+                #[cfg(feature = "managed-pts")]
+                TransportOptions::Managed(_) => {
+                    // Nothing to check here,
+                    // since we should spawn the managed PT and
+                    // we shouldn't know what address it will listen on yet.
                 }
             }
         }
@@ -148,11 +155,12 @@ impl<R: Runtime> PtMgr<R> {
     pub fn new(
         transports: Vec<TransportConfig>,
         #[allow(unused)] state_dir: PathBuf,
-        path_resolver: Arc<CfgPathResolver>,
+        #[allow(unused)] path_resolver: Arc<CfgPathResolver>,
         outbound_proxy: Option<ProxyProtocol>,
         rt: R,
     ) -> Result<Self, PtError> {
         let state = PtSharedState {
+            #[cfg(feature = "managed-pts")]
             managed_cmethods: Default::default(),
             configured: Self::transform_config(transports)?,
             outbound_proxy,
@@ -224,7 +232,6 @@ impl<R: Runtime> PtMgr<R> {
         &self,
         transport: &PtTransportName,
     ) -> Result<Option<PtClientMethod>, PtError> {
-        #[allow(unused)]
         let (cfg, managed_cmethod) = {
             // NOTE(eta): This is using a RwLock inside async code (but not across an await point).
             //            Arguably this is fine since it's just a small read, and nothing should ever
@@ -234,6 +241,9 @@ impl<R: Runtime> PtMgr<R> {
             let managed_cmethod = inner.managed_cmethods.get(transport);
             (cfg.cloned(), managed_cmethod.cloned())
         };
+
+        #[cfg(not(feature = "managed-pts"))]
+        let _ = managed_cmethod; // avoid unused variable warning
 
         match cfg {
             Some(TransportOptions::Unmanaged(cfg)) => {

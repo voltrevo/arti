@@ -199,7 +199,7 @@ Essentially, this design is:
     slow), unless we implemented some separate mechanism for each verification thread to only lock
     the mutex to obtain a `Arc<Verifier>`, which would force us to implement some other method to
     invalidate those on expiry. While that's definitely doable (for instance, by using a
-    `TimerangeBound<Verifier>`), it seems more complex than using a `RwLock`.
+    `TimeRangeBound<Verifier>`), it seems more complex than using a `RwLock`.
   * This would also force updating the `ReplayLog` and updating the `Effort` to block each other,
     which, while only a small slowdown, would be better avoided.
 * Put entire `HashMap<SeedHead, ReplayLog>` in a `Mutex`

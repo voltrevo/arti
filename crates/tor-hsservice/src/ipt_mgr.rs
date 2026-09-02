@@ -584,9 +584,9 @@ impl Debug for IptRelay {
                     Some(IsCurrent) => "cur",
                     None => "old",
                 },
-                &ipt.lid,
-                &ipt.status_last,
-                &ipt.last_descriptor_expiry_including_slop,
+                ipt.lid,
+                ipt.status_last,
+                ipt.last_descriptor_expiry_including_slop,
             )?;
         }
         Ok(())
@@ -802,7 +802,7 @@ impl<R: Runtime, M: Mockable<R>> IptManager<R, M> {
         /// Return value which means "we changed something, please run me again"
         ///
         /// In each case, if we make any changes which indicate we might
-        /// want to restart, , we `return CONTINUE`, and
+        /// want to restart, we `return CONTINUE`, and
         /// our caller will just call us again.
         ///
         /// This approach simplifies the logic: everything here is idempotent.
@@ -1070,7 +1070,6 @@ impl<R: Runtime, M: Mockable<R>> IptManager<R, M> {
     /// This function is at worst O(N) where N is the number of IPTs.
     /// See the performance note on [`run_once()`](Self::run_once).
     #[allow(clippy::unnecessary_wraps)] // for regularity
-    #[allow(clippy::cognitive_complexity)] // this function is in fact largely linear
     fn compute_iptsetstatus_publish(
         &mut self,
         now: &TrackingNow,
@@ -1327,7 +1326,6 @@ impl<R: Runtime, M: Mockable<R>> IptManager<R, M> {
     /// See the comment in [`IptManager::import_new_expiry_times`].
     /// If that invariant is violated, we would delete on-disk files for the affected IPTs.
     /// That's fine since we couldn't re-establish them anyway.)
-    #[allow(clippy::cognitive_complexity)] // Splitting this up would make it worse
     fn expire_old_ipts_external_persistent_state(&self) -> Result<(), StateExpiryError> {
         self.state
             .mockable
@@ -1436,7 +1434,6 @@ impl<R: Runtime, M: Mockable<R>> IptManager<R, M> {
     /// (Note that the number of IPTs can be significantly larger than
     /// the maximum target of 20, if the service is very busy so the intro points
     /// are cycling rapidly due to the need to replace the replay database.)
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor?
     async fn run_once(
         &mut self,
         // This is a separate argument for borrowck reasons

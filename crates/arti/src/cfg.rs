@@ -757,7 +757,7 @@ mod test {
 
         eprintln!(
             "declared config exceptions for this configuration:\n{:#?}",
-            &out
+            out
         );
         out
     }
@@ -1587,7 +1587,7 @@ example config file {which:?}, uncommented={uncommented:?}
                     .map(|(i, _)| i);
                 let i = if exactly_one {
                     i.clone().exactly_one().unwrap_or_else(|_| {
-                        panic!("RE={:?} I={:#?} L={:#?}", re, i.collect_vec(), &self.lines)
+                        panic!("RE={:?} I={:#?} L={:#?}", re, i.collect_vec(), self.lines)
                     })
                 } else {
                     i.clone().next()?
@@ -1603,7 +1603,7 @@ example config file {which:?}, uncommented={uncommented:?}
             let end = find_index(end, start + 1, false, [0, 1]).unwrap_or(self.lines.len());
             eprintln!("{:?} {:?}", start, end);
             // don't tolerate empty
-            assert!(start < end, "empty, from {:#?}", &self.lines);
+            assert!(start < end, "empty, from {:#?}", self.lines);
             self.lines = self.lines.drain(..).take(end).skip(start).collect_vec();
         }
 
@@ -1640,7 +1640,7 @@ example config file {which:?}, uncommented={uncommented:?}
         /// Panic if the section cannot be parsed.
         fn parse(&self) -> tor_config::ConfigurationTree {
             let s = self.build_string();
-            eprintln!("parsing\n  --\n{}\n  --", &s);
+            eprintln!("parsing\n  --\n{}\n  --", s);
             let mut sources = tor_config::ConfigurationSources::new_empty();
             sources.push_source(
                 tor_config::ConfigurationSource::from_verbatim(s.clone()),

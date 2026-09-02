@@ -1,0 +1,156 @@
+router d2d4 185.129.61.129 443 0 0
+identity-ed25519
+-----BEGIN ED25519 CERT-----
+AQQAB5NGAdTtuYRZ/26AEpm8bcHg/PB4Ez7ndox+pEm5XBS9PTODAQAgBABJJwRX
+Gu8kiBJ3k9BE5UDju9eIRmhaZvo8NjRjuMIcjXZv4A6jcZdacko1y4KFrf6ga0q7
+mWzxDyonIBG/I3YU2B8Iw4HIAk2E7RJW/5C65rPM7ouxvQ7oXEMYSNefHgQ=
+-----END ED25519 CERT-----
+master-key-ed25519 SScEVxrvJIgSd5PQROVA47vXiEZoWmb6PDY0Y7jCHI0
+or-address [2001:67c:89c:666::1]:443
+platform Tor 0.5.0.0-alpha-dev on Linux
+proto Conflux=1 Cons=1-2 Desc=1-4 DirCache=2 FlowCtrl=1-2 HSDir=2 HSIntro=4-5 HSRend=1-2 Link=3-5 LinkAuth=3 Microdesc=1-3 Padding=2 Relay=2-6
+published 2026-07-27 08:39:11
+fingerprint 5048 5E03 CA39 D393 BD54 D315 CEBA 65E6 DD0F DDB9
+uptime 3956420
+bandwidth 1073741824 1073741824 21884184
+extra-info-digest 2A4A091622B6F60695171C736FD1C5BD438A1C01 0gtGofeTxEmwNxB6yfrw7MKxqsQWsPkwWkfnNAPqqAI
+onion-key
+-----BEGIN RSA PUBLIC KEY-----
+MIGJAoGBAP5gDfqw93WdExKOiXVEZ9kms1zD4GLTfbXbGjHQbaJvkBTTcuTkzO/e
+7KSHVjDat5gr5oeXN8mc88D2OdVr0awZvv9yr1DVFvrf5SBXqTf8usUIuANLORGu
+CfMaj7KuJgyIzxtzhKodMJm9+wgc1KD/bxKTB1v8aaAwuRWYXCXXAgMBAAE=
+-----END RSA PUBLIC KEY-----
+signing-key
+-----BEGIN RSA PUBLIC KEY-----
+MIGJAoGBALi/HlkDZUeU7jya10Sa8r//x8LWQqfhncd8zSUQjMv4Yc8g0YrOql4L
+jymJj0LDUjNrtPCSRYi2Ns0sJtGgfsBzg/6IaP4qK+78gcHkbIuya78MN0e8cZ0C
+1xzVca5ZgAzeOsnZ3CbvoVQka2Y93AxPQz7Q99iwoumgkQneEGezAgMBAAE=
+-----END RSA PUBLIC KEY-----
+onion-key-crosscert
+-----BEGIN CROSSCERT-----
+Ooaau0kXNQG6ZwaGveGwOwKmfhlEC/F6m1LgkGweyHQDyrxSld5xge2KCFly7oIo
+b0ecd6BbirY51FheoccwLtE2MrVG1cjDjL4W3LrII5FPzDf2T7bGYHPZPvnNtmS6
+Z6LQWCqamTfRjM53EXldrdQSsp7/djPJZQliBtU8YJA=
+-----END CROSSCERT-----
+ntor-onion-key-crosscert 1
+-----BEGIN ED25519 CERT-----
+AQoAB5OhAUknBFca7ySIEneT0ETlQOO714hGaFpm+jw2NGO4whyNAGj02oT/2g1X
+6gbcbTK5tc2/ejo860ZQUXmNxHjjUw5mTYOzEQoOfhrPP2kOYoQLLpQf61lHqcbE
+zXzWyceY9g0=
+-----END ED25519 CERT-----
+family $50485E03CA39D393BD54D315CEBA65E6DD0FDDB9 $FAF0A8829E39063669FA609B904E0FB8D5E1F23F
+hidden-service-dir
+contact gk@torproject.org
+ntor-onion-key 6xXRR08fb9zL1JFuXqdfU1a1s2mzgAai2pSynTuAwng
+reject 0.0.0.0/8:*
+reject 169.254.0.0/16:*
+reject 127.0.0.0/8:*
+reject 192.168.0.0/16:*
+reject 10.0.0.0/8:*
+reject 172.16.0.0/12:*
+reject 185.129.61.129:*
+accept *:20
+accept *:21
+accept *:22
+accept *:23
+accept *:43
+accept *:53
+accept *:79
+accept *:80
+accept *:81
+accept *:88
+accept *:110
+accept *:143
+accept *:194
+accept *:220
+accept *:389
+accept *:443
+accept *:464
+accept *:531
+accept *:543
+accept *:544
+accept *:554
+accept *:563
+accept *:636
+accept *:706
+accept *:749
+accept *:873
+accept *:902
+accept *:903
+accept *:904
+accept *:981
+accept *:989
+accept *:990
+accept *:991
+accept *:992
+accept *:993
+accept *:994
+accept *:995
+accept *:1194
+accept *:1220
+accept *:1293
+accept *:1500
+accept *:1533
+accept *:1677
+accept *:1723
+accept *:1755
+accept *:1863
+accept *:2082
+accept *:2083
+accept *:2086
+accept *:2087
+accept *:2095
+accept *:2096
+accept *:2102
+accept *:2103
+accept *:2104
+accept *:2200
+accept *:2220
+accept *:3128
+accept *:3389
+accept *:3690
+accept *:4321
+accept *:4643
+accept *:5050
+accept *:5190
+accept *:5222
+accept *:5223
+accept *:5228
+accept *:5900
+accept *:6660
+accept *:6661
+accept *:6662
+accept *:6663
+accept *:6664
+accept *:6665
+accept *:6666
+accept *:6667
+accept *:6668
+accept *:6669
+accept *:6679
+accept *:6697
+accept *:8000
+accept *:8008
+accept *:8074
+accept *:8080
+accept *:8087
+accept *:8088
+accept *:8332
+accept *:8333
+accept *:8443
+accept *:8888
+accept *:9418
+accept *:9999
+accept *:10000
+accept *:11371
+accept *:19294
+accept *:19638
+reject *:*
+ipv6-policy accept 20-23,43,53,79-81,88,110,143,194,220,389,443,464,531,543-544,554,563,636,706,749,873,902-904,981,989-995,1194,1220,1293,1500,1533,1677,1723,1755,1863,2082-2083,2086-2087,2095-2096,2102-2104,2200,2220,3128,3389,3690,4321,4643,5050,5190,5222-5223,5228,5900,6660-6669,6679,6697,8000,8008,8074,8080,8087-8088,8332-8333,8443,8888,9418,9999-10000,11371,19294,19638
+router-sig-ed25519 bNNBRoMM/uu4zGeZAE75T2pJHTKFQKuRxeJEw7VRcICNPjN8J1kZ4yh9FX1kKTwIl09Qel55YMXWIzlblDZDCA
+router-signature
+-----BEGIN SIGNATURE-----
+lVYwUWB/IuDb9ztbsQ3uZ+rwXlmc1Z7hfyVv+KBb268hg4pVFvo+nAe5xxuifRSD
+o9PmbDFTPrFXTBnbWOPrGRHboUQYrVqpGLefh8rHTauusKLqvATs1WQFsdVQ02uF
+vP7IX1mSEw3Hre67DONqU5HBE4CZA/JbgDW39MnMDo4=
+-----END SIGNATURE-----

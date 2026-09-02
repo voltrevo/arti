@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -811,7 +811,6 @@ impl<B: AbstractTunnelBuilder<R> + 'static, R: Runtime> CircMgrInner<B, R> {
     /// Exit when we notice that `circmgr` has been dropped.
     ///
     /// This is a daemon task: it runs indefinitely in the background.
-    #[allow(clippy::cognitive_complexity)] // because of tracing
     #[instrument(level = "trace", skip_all)]
     async fn update_persistent_state<S>(
         mut sched: TaskSchedule<R>,
@@ -939,7 +938,6 @@ impl<B: AbstractTunnelBuilder<R> + 'static, R: Runtime> CircMgrInner<B, R> {
     ///
     /// This function is invoked periodically from
     /// `continually_preemptively_build_circuits()`.
-    #[allow(clippy::cognitive_complexity)]
     #[instrument(level = "trace", skip_all)]
     async fn launch_circuits_preemptively(
         &self,

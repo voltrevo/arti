@@ -45,8 +45,7 @@ type DocDigestB64 = FixedB64<DOC_DIGEST_LEN>;
 /// <https://spec.torproject.org/dir-spec/computing-consensus.html#flavor:microdesc>
 /// `r` item.
 #[derive(Debug, Clone, Deftly)]
-#[derive_deftly(ItemValueParseable)]
-#[cfg_attr(feature = "incomplete", derive_deftly(ItemValueEncodable))] // untested
+#[derive_deftly(ItemValueEncodable, ItemValueParseable)]
 #[non_exhaustive]
 pub struct RouterStatusIntroItem {
     /// The nickname for this relay.
@@ -93,8 +92,7 @@ pub struct RouterStatusIntroItem {
 // entry keywords are chosen to be very short to minimise the consensus size, so we
 // use longer names in the struct and specify the keyword separately.
 #[derive(Debug, Clone, Deftly)]
-#[derive_deftly(NetdocParseable)]
-#[cfg_attr(feature = "incomplete", derive_deftly(NetdocEncodable))] // untested
+#[derive_deftly(NetdocEncodable, NetdocParseable)]
 #[non_exhaustive]
 pub struct RouterStatus {
     /// `r` --- Introduce a routerstatus entry
@@ -164,14 +162,11 @@ pub struct RouterStatus {
     ///
     /// This field is not properly parsed in plain consensuses by the old parser.
     #[deftly(netdoc(keyword = "p"))]
-    pub port_policy: ns_type!(Option<Arc<PortPolicy>>, NotPresent, Option<Arc<PortPolicy>>),
+    pub port_policy: ns_type!(Option<Intern<PortPolicy>>, NotPresent, Option<Intern<PortPolicy>>),
 
     /// `id` --- Relay’s (ed25519) identity
     ///
     /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:id>
-    //
-    // TODO DIRAUTH: this is only right if torspec!499 is approved.
-    // otherwise, we are missing handling of `id none`.
     #[deftly(netdoc(keyword = "id"))] 
     pub ed25519_id: ns_type!(NotPresent, NotPresent, Ed25519IdentityLine),
 

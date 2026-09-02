@@ -25,7 +25,9 @@ use tor_llcrypto::pk::ed25519;
 use tor_llcrypto::pk::keymanip::convert_curve25519_to_ed25519_public;
 
 use base64ct::{Base64, Encoding};
+use tor_protover::Protocols;
 
+use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use smallvec::SmallVec;
@@ -49,6 +51,19 @@ pub(super) struct HsDescInner<'a> {
     pub(super) intro_auth_key_cert_expiry: SystemTime,
     /// The expiration time of an introduction point encryption key certificate.
     pub(super) intro_enc_key_cert_expiry: SystemTime,
+
+    /// If present, a sendme increment and a set of FlowCtrl capabilities to
+    /// advertise with it.
+    ///
+    /// If this is None, we don't advertise any flowctrl capabilities.
+    ///
+    /// For historical reasons, the protocols capabilities here are separate
+    /// from `supported_protos`.    
+    pub(super) flow_control: Option<&'a (Protocols, u8)>,
+
+    /// If present, a set of subprotocol capabilities that we want to advertise.
+    pub(super) protos: Protocols,
+
     /// Proof-of-work parameters
     #[cfg(feature = "hs-pow-full")]
     pub(super) pow_params: Option<&'a PowParams>,
@@ -65,7 +80,8 @@ fn encode_pow_params(
 
     // It's safe to call dangerously_into_parts here, since we encode the
     // expiration alongside the value.
-    let (seed, (_, expiration)) = pow_params.seed().clone().dangerously_into_parts();
+    let (seed, expiration) = pow_params.seed().clone().dangerously_into_parts();
+    let expiration = expiration.end();
 
     seed.write_arg_onto(&mut pow_params_enc)?;
 
@@ -96,6 +112,8 @@ impl<'a> NetdocBuilder for HsDescInner<'a> {
             intro_points,
             intro_auth_key_cert_expiry,
             intro_enc_key_cert_expiry,
+            flow_control,
+            protos,
             #[cfg(feature = "hs-pow-full")]
             pow_params,
         } = self;
@@ -121,6 +139,15 @@ impl<'a> NetdocBuilder for HsDescInner<'a> {
 
         if is_single_onion_service {
             encoder.item(SINGLE_ONION_SERVICE);
+        }
+
+        if let Some((fcp, inc)) = flow_control {
+            let fcp = flowctrl_protocols(fcp);
+            encoder.item(FLOW_CONTROL).arg(&fcp).arg(inc);
+        }
+
+        if !protos.is_empty() {
+            encoder.item(PROTO).args_raw_string(&protos.to_string());
         }
 
         #[cfg(feature = "hs-pow-full")]
@@ -234,6 +261,30 @@ impl<'a> NetdocBuilder for HsDescInner<'a> {
     }
 }
 
+/// Return a string encoding all of the `FlowCtrl` protocols in `p` that we should
+/// encode in a `flow-control` item.
+///
+/// This is an inelegant function because the `flow-control` item pre-dates
+/// the `proto` item by some time.  Don't make any more functions like this one!
+/// Instead, put new subprotocol capabilities into the `proto` item.
+fn flowctrl_protocols(p: &Protocols) -> String {
+    use tor_protover::ProtoKind;
+    // We only encode FlowCtrl protocols 1-2 here.  If we decide that we would like to implement
+    // more, we will decide later whether to advertise them in a flow-control line or in a 'proto'
+    // line.
+    static ALL_FLOWCTRL: LazyLock<Protocols> = LazyLock::new(|| {
+        Protocols::from_kind_and_versions(ProtoKind::FlowCtrl, "1-2")
+            .expect("Internal protocol list could not be parsed")
+    });
+
+    ALL_FLOWCTRL
+        .intersection(p)
+        .to_string()
+        .strip_prefix("FlowCtrl=")
+        .expect("FlowCtrl protocols were not encoded correctly.")
+        .to_string()
+}
+
 #[cfg(test)]
 mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
@@ -260,7 +311,7 @@ mod test {
     use std::net::Ipv4Addr;
     use std::time::UNIX_EPOCH;
     use tor_basic_utils::test_rng::Config;
-    use tor_checkable::timed::TimerangeBound;
+    use tor_checkable::timed::TimeRangeBound;
     #[cfg(feature = "hs-pow-full")]
     use tor_hscrypto::pow::v1::{Effort, Seed};
     use tor_linkspec::LinkSpec;
@@ -271,6 +322,8 @@ mod test {
         auth_required: Option<&SmallVec<[IntroAuthType; 2]>>,
         is_single_onion_service: bool,
         intro_points: &[IntroPointDesc],
+        flow_control: Option<(Protocols, u8)>,
+        protos: Protocols,
         pow_params: Option<&PowParams>,
     ) -> Result<String, EncodeError> {
         let hs_desc_sign = ed25519::Keypair::generate(&mut Config::Deterministic.into_rng());
@@ -283,6 +336,8 @@ mod test {
             intro_points,
             intro_auth_key_cert_expiry: UNIX_EPOCH,
             intro_enc_key_cert_expiry: UNIX_EPOCH,
+            flow_control: flow_control.as_ref(),
+            protos,
             #[cfg(feature = "hs-pow-full")]
             pow_params,
         }
@@ -298,6 +353,8 @@ mod test {
             true,                   /* is_single_onion_service */
             &[],                    /* intro_points */
             None,
+            Default::default(),
+            None,
         )
         .unwrap();
 
@@ -309,6 +366,8 @@ mod test {
             None,                   /* auth_required */
             false,                  /* is_single_onion_service */
             &[],                    /* intro_points */
+            None,
+            Default::default(),
             None,
         )
         .unwrap();
@@ -335,6 +394,8 @@ mod test {
             None,   /* auth_required */
             false,  /* is_single_onion_service */
             intros, /* intro_points */
+            None,
+            Default::default(),
             None,
         )
         .unwrap();
@@ -410,6 +471,8 @@ o7Ct/ZB0j8YRB5lKSd07YAjA6Zo8kMnuZYX2Mb67TxWDQ/zlYJGOwLlj7A8=
             false,                  /* is_single_onion_service */
             intros,                 /* intro_points */
             None,
+            Default::default(),
+            None,
         )
         .unwrap_err();
 
@@ -430,6 +493,8 @@ o7Ct/ZB0j8YRB5lKSd07YAjA6Zo8kMnuZYX2Mb67TxWDQ/zlYJGOwLlj7A8=
             Some(&auth),            /* auth_required */
             false,                  /* is_single_onion_service */
             intros,                 /* intro_points */
+            None,
+            Default::default(),
             None,
         )
         .unwrap();
@@ -468,7 +533,7 @@ eNThmyleMYdmFucrbgPcZNDO6S81MZD1r7q61Hectpha37ioha85fpNt+/yDfebh
 
         let pow_expiration = parse_rfc3339("1994-04-29T00:00:00Z").unwrap();
         let pow_params = PowParams::V1(PowParamsV1::new(
-            TimerangeBound::new(Seed::from([0; 32]), ..pow_expiration),
+            TimeRangeBound::new(Seed::from([0; 32]), ..pow_expiration),
             Effort::new(64),
         ));
 
@@ -477,6 +542,8 @@ eNThmyleMYdmFucrbgPcZNDO6S81MZD1r7q61Hectpha37ioha85fpNt+/yDfebh
             None,                   /* auth_required */
             false,                  /* is_single_onion_service */
             intros,                 /* intro_points */
+            None,
+            Default::default(),
             Some(&pow_params),
         )
         .unwrap();
@@ -484,5 +551,32 @@ eNThmyleMYdmFucrbgPcZNDO6S81MZD1r7q61Hectpha37ioha85fpNt+/yDfebh
         assert!(hs_desc.contains(
             "\npow-params v1 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 64 1994-04-29T00:00:00\n"
         ));
+    }
+
+    #[test]
+    fn inner_hsdesc_protos_flowctl() {
+        let mut rng = Config::Deterministic.into_rng();
+        let link_specs = &[LinkSpec::OrPort(Ipv4Addr::LOCALHOST.into(), 8080)];
+        let intros = &[create_intro_point_descriptor(&mut rng, link_specs)];
+
+        let protos = "Relay=1-20 Wombat=12 Link=4".parse().unwrap();
+        let fcp = "FlowCtrl=1-6".parse().unwrap();
+        let flow_control = Some((fcp, 33));
+
+        let hs_desc = create_inner_desc(
+            &[HandshakeType::NTOR],
+            None,
+            false,
+            intros,
+            flow_control,
+            protos,
+            None,
+        )
+        .unwrap();
+
+        // Only FlowCtrl 1-2 can make it through.
+        assert!(hs_desc.contains("\nflow-control 1-2 33\n"));
+        // All declared protocols make it into the `proto` line.
+        assert!(hs_desc.contains("\nproto Link=4 Relay=1-20 Wombat=12\n"));
     }
 }

@@ -21,6 +21,7 @@ disallowed-methods = [
 #    { path = "std::time::SystemTime::now", reason = "prefer using SleepProvider::wallclock instead when possible" },
     { path = "std::path::Path::exists", reason = "Prefer using std::Path::try_exists or std::fs::exists" },
     { path = "retry_error::RetryError::push", reason = "Use push_timed with mockable time sources instead of push which calls SystemTime::now" },
+    { path = "tor_checkable::TimeBound::if_valid_now", reason = "Use if_valid_at with mockable time sources instead of if_valid_now which calls SystemTime::now" },
     { path = "retry_error::RetryError::extend", reason = "Use push_timed in a loop with mockable time sources instead of extend which calls push internally" },
     # This appears to be a fairly ugly bug, and since `weak_table` appears to be unmaintained, let's try to catch this early.
     { path = "weak_table::WeakHashSet::retain", reason = "`WeakHashSet::retain` is buggy; see https://github.com/tov/weak-table-rs/issues/22" },

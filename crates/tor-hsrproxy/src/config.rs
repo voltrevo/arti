@@ -1,12 +1,13 @@
 //! Configuration logic for onion service reverse proxy.
-
 use derive_deftly::Deftly;
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, ops::RangeInclusive, str::FromStr};
+use std::{net::SocketAddr, ops::RangeInclusive, str::FromStr, sync::Arc};
 use tor_config::ConfigBuildError;
 use tor_config::derive::prelude::*;
 use tracing::warn;
 
+#[cfg(unix)]
+use std::os::unix::net::SocketAddr as UnixSocketAddr;
 /// Configuration for a reverse proxy running for one onion service.
 #[derive(Clone, Debug, Deftly, Eq, PartialEq)]
 #[derive_deftly(TorConfig)]
@@ -238,16 +239,36 @@ pub enum ProxyAction {
 }
 
 /// The address to which we forward an accepted connection.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum TargetAddr {
     /// An address that we can reach over the internet.
     Inet(SocketAddr),
-    /* TODO (#1246): Put this back.
-    /// An address of a local unix domain socket.
-    Unix(PathBuf),
-    */
+    /// And address for Unix Socket
+    /// (Only supported on Unix platforms, std::os::unix::net::SocketAddr
+    /// and ignored on non-Unix platforms Void::void).
+    ///
+    // TODO: we need more tests for Unix Socket support
+    // I will open a issue or just finish it in this MR
+    // (UnixTests)
+    #[cfg(unix)]
+    Unix(UnixSocketAddr),
 }
+
+impl PartialEq for TargetAddr {
+    /// Implement equality for TargetAddr,
+    /// which we can't automatically derived because UnixSocketAddr does not implement Eq.
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (TargetAddr::Inet(a), TargetAddr::Inet(b)) => a == b,
+            #[cfg(unix)]
+            (TargetAddr::Unix(a), TargetAddr::Unix(b)) => a.as_pathname() == b.as_pathname(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for TargetAddr {}
 
 impl TargetAddr {
     /// Return true if this target is sufficiently private that we can be
@@ -256,14 +277,10 @@ impl TargetAddr {
     fn is_sufficiently_private(&self) -> bool {
         use std::net::IpAddr;
         match self {
-            /* TODO(#1246) */
-            // TargetAddr::Unix(_) => true,
+            // Unix Socket is private, because it's local
+            #[cfg(unix)]
+            TargetAddr::Unix(_) => true,
 
-            // NOTE: We may want to relax these rules in the future!
-            // NOTE: Contrast this with is_local in arti_client::address,
-            // which has a different purpose. Also see #1159.
-            // The purpose of _this_ test is to make sure that the address is
-            // one that will _probably_ not go over the public internet.
             TargetAddr::Inet(sa) => match sa.ip() {
                 IpAddr::V4(ip) => ip.is_loopback() || ip.is_unspecified() || ip.is_private(),
                 IpAddr::V6(ip) => ip.is_loopback() || ip.is_unspecified(),
@@ -285,11 +302,16 @@ impl FromStr for TargetAddr {
                     .map(|rhs| rhs.starts_with(|c: char| c.is_ascii_hexdigit() || c == ':'))
                     .unwrap_or(false)
         }
-        /* TODO (#1246): Put this back
+
+        #[cfg(unix)]
         if let Some(path) = s.strip_prefix("unix:") {
-            Ok(Self::Unix(PathBuf::from(path)))
-        } else
-        */
+            return Ok(Self::Unix(UnixSocketAddr::from_pathname(path).map_err(
+                |e| ProxyConfigError::InvalidUnixAddr {
+                    path: s.to_string(),
+                    source_error: Arc::new(e),
+                },
+            )?));
+        }
         if let Some(addr) = s.strip_prefix("inet:") {
             Ok(Self::Inet(addr.parse().map_err(|e| {
                 PCE::InvalidTargetAddr(addr.to_string(), e)
@@ -307,11 +329,15 @@ impl FromStr for TargetAddr {
 }
 
 impl std::fmt::Display for TargetAddr {
+    #![allow(clippy::disallowed_methods)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TargetAddr::Inet(a) => write!(f, "inet:{}", a),
-            // TODO (#1246): Put this back.
-            // TargetAddr::Unix(p) => write!(f, "unix:{}", p.display()),
+            #[cfg(unix)]
+            TargetAddr::Unix(p) => match p.as_pathname() {
+                Some(path) => write!(f, "unix:{}", path.display()),
+                None => write!(f, "unix:<unnamed>"),
+            },
         }
     }
 }
@@ -372,6 +398,17 @@ pub enum ProxyConfigError {
     /// A socket address could not be parsed to be invalid.
     #[error("Could not parse onion service target address {0:?}")]
     InvalidTargetAddr(String, #[source] std::net::AddrParseError),
+
+    /// A unix socket address could not be parsed to be invalid.
+    /// Only supported on Unix platforms.
+    #[error("Invalid unix socket address:'{path}': '{source_error}'")]
+    InvalidUnixAddr {
+        /// The path that was attempted to be parsed as a unix socket address.
+        path: String,
+        #[source]
+        /// The error that was encountered while parsing the unix socket address.
+        source_error: Arc<std::io::Error>,
+    },
 
     /// A socket rule had an source port that couldn't be parsed as a `u16`.
     #[error("Could not parse onion service source port {0:?}")]

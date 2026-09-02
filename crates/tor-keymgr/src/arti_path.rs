@@ -370,7 +370,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn arti_path_validation() {
         const VALID_ARTI_PATH_COMPONENTS: &[&str] = &["my-hs-client-2", "hs_client"];
         const VALID_ARTI_PATHS: &[&str] = &[
@@ -455,7 +454,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn arti_path_with_denotator() {
         const VALID_ARTI_DENOTATORS: &[&str] = &[
             "foo",

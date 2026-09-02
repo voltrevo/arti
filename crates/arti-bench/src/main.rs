@@ -14,7 +14,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -172,7 +172,6 @@ impl TimingSummary {
 const RECV_BUF_LEN: usize = 8192;
 
 /// Run the timing routine
-#[allow(clippy::cognitive_complexity)]
 fn run_timing(mut stream: TcpStream, send: &Arc<[u8]>, receive: &Arc<[u8]>) -> Result<()> {
     let peer_addr = stream.peer_addr()?;
     let mut received = vec![0_u8; RECV_BUF_LEN];
@@ -288,7 +287,6 @@ async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     })
 }
 
-#[allow(clippy::cognitive_complexity)]
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 

@@ -317,7 +317,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn lookup() {
         let rsa1: RsaIdentity = (*b"12345678901234567890").into();
         let rsa2: RsaIdentity = (*b"abcefghijklmnopqrstu").into();
@@ -427,7 +426,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn remove_exact() {
         let rsa1: RsaIdentity = (*b"12345678901234567890").into();
         let rsa2: RsaIdentity = (*b"abcefghijklmnopqrstu").into();
@@ -495,7 +493,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn all_subset() {
         let rsa1: RsaIdentity = (*b"12345678901234567890").into();
         let rsa2: RsaIdentity = (*b"abcefghijklmnopqrstu").into();
@@ -553,7 +550,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn list_by_relay_ids() {
         #[derive(Clone, Debug)]
         struct ErsatzChannel<T> {

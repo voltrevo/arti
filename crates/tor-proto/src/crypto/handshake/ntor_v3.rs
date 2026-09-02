@@ -149,7 +149,7 @@ fn hash(t: &Encap<'_>, data: &[u8]) -> DigestVal {
 fn encrypt(key: &EncKey, m: &[u8]) -> Vec<u8> {
     let mut d = m.to_vec();
     let zero_iv = Default::default();
-    let mut cipher = Aes256Ctr::new(key.as_ref().into(), &zero_iv);
+    let mut cipher = Aes256Ctr::new((&**key).into(), &zero_iv);
     cipher.apply_keystream(&mut d);
     d
 }

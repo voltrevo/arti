@@ -8,7 +8,7 @@ use std::str::FromStr;
 use crate::encode::{ItemEncoder, ItemValueEncodable};
 use crate::parse2::{ErrorProblem as EP, ItemValueParseable, UnparsedItem};
 
-use super::{PolicyError, PortRanges, RuleKind};
+use super::{PolicyError, PortRange, PortRanges, RuleKind};
 use tor_basic_utils::derive_deftly_template_GloballyInternable;
 use tor_basic_utils::intern::{GloballyInternable, Intern};
 use tor_error::Bug;
@@ -77,6 +77,34 @@ impl PortPolicy {
         Self {
             allowed: PortRanges::from_iter(ports),
         }
+    }
+
+    /// Create a PortPolicy from an iterator of allowed port ranges.
+    ///
+    /// All other ports will be rejected.
+    ///
+    /// The input iterator must yield increasing nonoverlapping ranges,
+    /// or it's a [`PolicyError`].
+    pub fn from_ordered_allowed_ranges(
+        allowed: impl IntoIterator<Item = PortRange>,
+    ) -> Result<Self, PolicyError> {
+        let allowed = allowed
+            .into_iter()
+            .try_fold(PortRanges::new(), |mut b, i| {
+                b.push_ordered(i)?;
+                Ok(b)
+            })?;
+        Ok(Self::from_allowed_port_ranges(allowed))
+    }
+
+    /// Create a PortPolicy from a set of allowed port ranges.
+    ///
+    /// All other ports will be rejected.
+    ///
+    /// Unlike `from_allowed_ranges`, `from_allowed_port_ranges` does not iterate
+    /// over the input (which is a `Vec` underneath) and collect into a new `Vec`.
+    pub(super) fn from_allowed_port_ranges(allowed: PortRanges) -> Self {
+        Self { allowed }
     }
 
     /// Return true iff `port` is allowed by this policy.

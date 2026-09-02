@@ -1420,7 +1420,6 @@ impl<R: Runtime> TorClient<R> {
     /// and circuits, but rather affect only future streams and circuits.  Those
     /// are also explicitly documented.
     #[instrument(skip_all, level = "trace")]
-    #[allow(clippy::cognitive_complexity)]
     pub fn reconfigure(
         &self,
         new_config: &TorClientConfig,

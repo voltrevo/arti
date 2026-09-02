@@ -300,7 +300,6 @@ use ns_do_variety_md;
 /// Include variety-agnostic items, for a vote, from `each_variety.rs`.
 ///
 /// Use within `vote.rs`.
-#[allow(unused)] // TODO DIRAUTH
 macro_rules! ns_do_variety_vote { {} => { ns_do_one_variety! { vote : plain md vote $ } } }
 #[cfg(doc)]
 use ns_do_variety_vote;
@@ -339,12 +338,9 @@ macro_rules! ns_export_each_variety {
     {
         @ [ $($case:tt)* ] [$($infix:tt)*] $id:ident
     } => { paste::paste!{
-        pub use { plain ::$id as [<plain   $($case)* $($infix)* $id>] };
-        // unconditional
-        pub use { md  ::$id as [<md   $($case)* $($infix)* $id>] };
-        #[cfg(feature = "incomplete")]
-        #[cfg_attr(docsrs, doc(cfg(feature = "incomplete")))]
-        pub use { vote::$id as [<vote $($case)* $($infix)* $id>] };
+        pub use { plain ::$id as [<plain $($case)* $($infix)* $id>] };
+        pub use { md    ::$id as [<md    $($case)* $($infix)* $id>] };
+        pub use { vote  ::$id as [<vote  $($case)* $($infix)* $id>] };
     } };
 }
 
@@ -370,8 +366,7 @@ macro_rules! ns_export_each_flavor {
     {
         @ [ $($case:tt)* ] [$($infix:tt)*] $id:ident
     } => { paste::paste!{
-        pub use { plain ::$id as [<plain   $($case)* $($infix)* $id>] };
-        // unconditional
-        pub use { md  ::$id as [<md   $($case)* $($infix)* $id>] };
+        pub use { plain ::$id as [<plain $($case)* $($infix)* $id>] };
+        pub use { md    ::$id as [<md    $($case)* $($infix)* $id>] };
     } };
 }

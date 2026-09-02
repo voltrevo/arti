@@ -526,7 +526,6 @@ where
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    #![allow(clippy::cognitive_complexity)]
     use super::*;
     #[test]
     fn bytecursor_read_ok() {

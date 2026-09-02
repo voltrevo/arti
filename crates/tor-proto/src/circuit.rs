@@ -92,6 +92,18 @@ pub struct CircParameters {
     pub n_outgoing_cells_permitted: Option<u32>,
 }
 
+tor_protover::subprotocol_restricted_set! {
+    /// The enabled/disabled status of subprotocols that are allowed to be requested through a
+    /// subprotocol request during a circuit handshake.
+    ///
+    /// The allowed subprotocols are defined in:
+    /// <https://spec.torproject.org/tor-spec/create-created-cells.html#subproto-request>
+    #[derive(Copy, Clone, Debug, Default)]
+    pub(crate) struct HandshakeSubprotocols {
+        RELAY_CRYPT_CGO,
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     #[cfg(feature = "relay")]
@@ -105,7 +117,6 @@ pub(crate) mod test {
     #[cfg(feature = "relay")]
     pub(crate) fn new_circ_net_params() -> CircNetParameters {
         CircNetParameters {
-            extend_by_ed25519_id: true,
             cc: CongestionControlNetParams::defaults_for_tests(),
         }
     }

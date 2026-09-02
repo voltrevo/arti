@@ -148,7 +148,7 @@ impl Display for Bug {
         writeln!(
             f,
             "{} at {}: {}",
-            self.0.kind, &self.0.location, &self.0.message
+            self.0.kind, self.0.location, self.0.message
         )?;
         Display::fmt(&self.0.backtrace, f)?;
         Ok(())

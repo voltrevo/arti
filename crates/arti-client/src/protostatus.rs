@@ -161,7 +161,6 @@ async fn watch_protocol_statuses<S, F, Fut>(
 /// - If no protocols are missing, return `Ok(())`.
 ///
 /// Note: This function should ONLY return an error when the error is fatal.
-#[allow(clippy::cognitive_complexity)] // complexity caused by trace macros.
 pub(crate) fn evaluate_protocol_status(
     recommendation_timestamp: SystemTime,
     recommendation: &ProtoStatuses,

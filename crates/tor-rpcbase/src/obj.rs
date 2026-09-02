@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use derive_deftly::define_derive_deftly;
 use downcast_rs::DowncastSync;
+use extend::ext;
 use serde::{Deserialize, Serialize};
 
 use self::cast::CastTable;
@@ -116,13 +117,20 @@ where
 ///
 /// assert_eq!(check_feet(Arc::new(Frog{})), 4);
 /// ```
-pub trait ObjectArcExt {
+#[ext(name = ObjectArcExt)]
+pub impl Arc<dyn Object> {
     /// Try to cast this `Arc<dyn Object>` to a `T`.  On success, return a reference to
     /// T; on failure, return None.
-    fn cast_to_trait<T: ?Sized + 'static>(&self) -> Option<&T>;
+    fn cast_to_trait<T: ?Sized + 'static>(&self) -> Option<&T> {
+        let obj: &dyn Object = self.as_ref();
+        obj.cast_to_trait()
+    }
 
     /// Try to cast this `Arc<dyn Object>` to an `Arc<T>`.
-    fn cast_to_arc_trait<T: ?Sized + 'static>(self) -> Result<Arc<T>, Arc<dyn Object>>;
+    fn cast_to_arc_trait<T: ?Sized + 'static>(self) -> Result<Arc<T>, Arc<dyn Object>> {
+        let table = self.get_cast_table();
+        table.cast_object_to_arc(self.clone())
+    }
 }
 
 impl dyn Object {
@@ -134,17 +142,6 @@ impl dyn Object {
     pub fn cast_to_trait<T: ?Sized + 'static>(&self) -> Option<&T> {
         let table = self.get_cast_table();
         table.cast_object_to(self)
-    }
-}
-
-impl ObjectArcExt for Arc<dyn Object> {
-    fn cast_to_trait<T: ?Sized + 'static>(&self) -> Option<&T> {
-        let obj: &dyn Object = self.as_ref();
-        obj.cast_to_trait()
-    }
-    fn cast_to_arc_trait<T: ?Sized + 'static>(self) -> Result<Arc<T>, Arc<dyn Object>> {
-        let table = self.get_cast_table();
-        table.cast_object_to_arc(self.clone())
     }
 }
 

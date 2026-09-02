@@ -4,11 +4,11 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use rusqlite::{params, Transaction};
+use rusqlite::{Transaction, params};
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    database::{sql, DocumentId},
+    database::{DocumentId, sql},
     err::DatabaseError,
 };
 

@@ -105,7 +105,7 @@ impl std::fmt::Display for ConnPtDescription {
         write!(
             f,
             "connect point in {}, from {}",
-            &self.location, &self.source
+            self.location, self.source
         )
     }
 }

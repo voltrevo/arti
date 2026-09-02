@@ -30,6 +30,15 @@ pub enum ConfigBuildError {
         /// A description of the problem.
         problem: String,
     },
+    /// At least one of a set of fields must be present,
+    /// but none were.
+    #[error("At least {min_required} of these fields must be provided: {fields:?}")]
+    MissingOneOf {
+        /// The minimum number of fields that must be provided.
+        min_required: usize,
+        /// The names of the fields.
+        fields: Vec<String>,
+    },
     /// Multiple fields are inconsistent.
     #[error("Fields {fields:?} are inconsistent: {problem}")]
     Inconsistent {
@@ -81,6 +90,13 @@ impl ConfigBuildError {
         match self {
             MissingField { field } => MissingField {
                 field: addprefix(field),
+            },
+            MissingOneOf {
+                min_required,
+                fields,
+            } => MissingOneOf {
+                min_required: *min_required,
+                fields: fields.iter().map(|f| addprefix(f)).collect(),
             },
             Invalid { field, problem } => Invalid {
                 field: addprefix(field),

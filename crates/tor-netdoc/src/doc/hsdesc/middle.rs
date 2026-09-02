@@ -259,7 +259,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use hex_literal::hex;
-    use tor_checkable::{SelfSigned, Timebound};
+    use tor_checkable::{SelfSigned, TimeBound};
 
     use super::*;
     use crate::doc::hsdesc::{

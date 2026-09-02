@@ -7,6 +7,7 @@
 use super::{ListenerIsolation, ProxyContext};
 use anyhow::{Context as _, anyhow};
 use arti_client::{StreamPrefs, TorAddr};
+use extend::ext;
 use futures::{AsyncRead, AsyncWrite, io::BufReader};
 use http::{Method, StatusCode, response::Builder as ResponseBuilder};
 use hyper::{Response, server::conn::http1::Builder as ServerBuilder, service::service_fn};
@@ -454,19 +455,8 @@ fn find_conn_target<R: Runtime>(
 }
 
 /// Extension trait on ResponseBuilder
-trait RespBldExt {
-    /// Return a response for a successful builder.
-    fn ok(self, method: &Method) -> anyhow::Result<Response<Body>, HttpConnectError>;
-
-    /// Return a response for an error message.
-    fn err(
-        self,
-        method: &Method,
-        message: impl Into<String>,
-    ) -> Result<Response<Body>, HttpConnectError>;
-}
-
-impl RespBldExt for ResponseBuilder {
+#[ext]
+impl ResponseBuilder {
     fn ok(self, method: &Method) -> Result<Response<Body>, HttpConnectError> {
         let bld = add_common_headers(self, method);
         Ok(bld

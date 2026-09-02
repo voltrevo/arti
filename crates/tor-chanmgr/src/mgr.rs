@@ -523,7 +523,6 @@ impl<CF: AbstractChannelFactory + Clone> AbstractChanMgr<CF> {
     }
 
     /// Get a channel whose identity is `ident` - internal implementation
-    #[allow(clippy::cognitive_complexity)]
     #[instrument(skip_all, level = "trace")]
     async fn get_or_launch_internal(
         &self,

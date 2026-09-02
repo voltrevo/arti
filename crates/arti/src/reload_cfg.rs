@@ -100,7 +100,6 @@ pub(crate) fn watch_for_config_changes<R: Runtime>(
 /// Start watching for configuration changes.
 ///
 /// Spawned from `watch_for_config_changes`.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor? Partly due to tracing.
 #[instrument(level = "trace", skip_all)]
 async fn run_watcher<R: Runtime>(
     runtime: R,
@@ -155,7 +154,6 @@ async fn run_watcher<R: Runtime>(
 }
 
 /// Reload the configuration.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor? Partly due to tracing.
 #[instrument(level = "trace", skip_all)]
 async fn reload_configuration<R: Runtime>(
     runtime: R,
@@ -298,7 +296,6 @@ impl Application {
 impl ReconfigurableModule for Application {
     // TODO: This should probably take "how: Reconfigure" as an argument, and
     // pass it down as appropriate. See issue #1156.
-    #[allow(clippy::cognitive_complexity)]
     #[instrument(level = "trace", skip_all)]
     fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()> {
         let original = &self.original_config;

@@ -524,7 +524,7 @@ mod test {
         ) {
             let tc: TestConfigFile = toml::from_str(s).expect(s);
             let ll = tc.listen.unwrap();
-            eprintln!("s={:?} ll={:?}", &s, &ll);
+            eprintln!("s={:?} ll={:?}", s, ll);
             assert_eq!(ll.0.items().cloned().collect::<Vec<_>>(), exp_i);
             assert_eq!(
                 ll.ip_addrs()

@@ -18,9 +18,15 @@ use ipnet::IpNet;
 
 use super::{PolicyError, PortRange, RuleKind};
 
-/// A sequence of rules that are applied to an address:port until one
-/// matches.
+/// Sequence of `accept` and `reject` rules
 ///
+/// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:accept>
+///
+/// Encodable in netdocs, and parseable as [`NetdocParseableFields`].
+///
+/// A specific address:port is tested against them in order;
+/// first match wins.
+//
 /// Each rule is of the form "accept PATTERN" or "reject PATTERN",
 /// where every pattern describes a set of addresses and ports.
 /// Address sets are given as a prefix of 0-128 bits that the address
@@ -86,6 +92,13 @@ impl AddrPolicy {
     /// if accept is false, the rule rejects such addresses.
     pub fn push(&mut self, kind: RuleKind, pattern: AddrPortPattern) {
         self.rules.push(AddrPolicyRule { kind, pattern });
+    }
+
+    /// List the rules in this pattern
+    pub fn rules(&self) -> impl DoubleEndedIterator<Item = (RuleKind, AddrPortPattern)> + '_ {
+        self.rules
+            .iter()
+            .map(|rule| (rule.kind, rule.pattern.clone()))
     }
 }
 
@@ -175,6 +188,10 @@ impl Display for AddrPolicyRule {
 /// addresses by prefix, and a port pattern, which matches a range of
 /// ports.
 ///
+/// When trying to process a policy, rather than merely construct one,
+/// match the struct with an exhaustive pattern,
+/// so that any new fields break the build rather than being silently ignored.
+///
 /// # Example
 ///
 /// ```
@@ -187,28 +204,33 @@ impl Display for AddrPolicyRule {
 /// assert!(pat.matches(&localhost, 22));
 /// assert!(! pat.matches(&not_localhost, 22));
 /// ```
-#[derive(
-    Clone, Debug, Eq, PartialEq, serde_with::SerializeDisplay, serde_with::DeserializeFromStr,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)] //
+#[derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)]
+#[allow(clippy::exhaustive_structs)]
 pub struct AddrPortPattern {
     /// A pattern to match somewhere between zero and all IP addresses.
-    pattern: IpPattern,
+    pub addrs: IpPattern,
     /// A pattern to match a range of ports.
-    ports: PortRange,
+    pub ports: PortRange,
 }
 
 impl AddrPortPattern {
+    /// Return an AddrPortPattern matching specified ports on specified addresses
+    pub fn new(addrs: IpPattern, ports: PortRange) -> Self {
+        Self { addrs, ports }
+    }
+
     /// Return an AddrPortPattern matching all targets.
     pub const fn new_all() -> Self {
         Self {
-            pattern: IpPattern::All,
+            addrs: IpPattern::All,
             ports: PortRange::new_all(),
         }
     }
 
     /// Return true iff this pattern matches a given address and port.
     pub fn matches(&self, addr: &IpAddr, port: u16) -> bool {
-        self.pattern.matches(addr) && self.ports.contains(port)
+        self.addrs.matches(addr) && self.ports.contains(port)
     }
     /// As matches, but accept a SocketAddr.
     pub fn matches_sockaddr(&self, addr: &SocketAddr) -> bool {
@@ -219,9 +241,9 @@ impl AddrPortPattern {
 impl Display for AddrPortPattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.ports.is_all() {
-            write!(f, "{}:*", self.pattern)
+            write!(f, "{}:*", self.addrs)
         } else {
-            write!(f, "{}:{}", self.pattern, self.ports)
+            write!(f, "{}:{}", self.addrs, self.ports)
         }
     }
 }
@@ -229,39 +251,50 @@ impl Display for AddrPortPattern {
 impl FromStr for AddrPortPattern {
     type Err = PolicyError;
     fn from_str(s: &str) -> Result<Self, PolicyError> {
-        let (pattern, ports_s) = s.rsplit_once(':').ok_or(PolicyError::InvalidPolicy)?;
-        let pattern: IpPattern = pattern.parse()?;
+        let (addrs, ports_s) = s.rsplit_once(':').ok_or(PolicyError::InvalidPolicy)?;
+        let addrs: IpPattern = addrs.parse()?;
         let ports: PortRange = if ports_s == "*" {
             PortRange::new_all()
         } else {
             ports_s.parse()?
         };
 
-        Ok(AddrPortPattern { pattern, ports })
+        Ok(AddrPortPattern { addrs, ports })
     }
 }
 
 impl NormalItemArgument for AddrPortPattern {}
 
 /// A pattern that matches one or more IP addresses.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum IpPattern {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, derive_more::From)]
+// We don't expect to extend this, and users (eg, tor-dirauth)
+// will need to match it exhaustively to make sense of a policy.
+#[allow(clippy::exhaustive_enums)]
+pub enum IpPattern {
     /// Match all addresses.
+    ///
+    /// String representation: `*`.
+    ///
+    /// This is not the same as (say) `0.0.0.0/0`, because that matches only IPv4 addresses,
+    /// whereas `*` matches both IPv4 and IPv6.
     All,
     /// Match addresses of a particular IP version, beginning with a given prefix.
-    Net(IpNet),
+    ///
+    /// String representation: `n.n.n.n/prefix` or `[IPv6]/prefix`.
+    /// If the prefix is maximum it is optional, and omitted by `Display`.
+    Net(#[from] IpNet),
 }
 
 impl IpPattern {
     /// Construct an IpPattern that matches the first `prefix_len` bits of `addr`.
-    fn from_addr_and_prefix_len(addr: IpAddr, prefix_len: u8) -> Result<Self, PolicyError> {
+    pub fn from_addr_and_prefix_len(addr: IpAddr, prefix_len: u8) -> Result<Self, PolicyError> {
         IpNet::new(addr, prefix_len)
             .map(IpPattern::Net)
             .map_err(|_: ipnet::PrefixLenError| PolicyError::InvalidMask)
     }
 
     /// Return true iff `addr` is matched by this pattern.
-    fn matches(&self, addr: &IpAddr) -> bool {
+    pub fn matches(&self, addr: &IpAddr) -> bool {
         match self {
             IpPattern::All => true,
             IpPattern::Net(n) => n.contains(addr),

@@ -79,7 +79,7 @@ use tor_error::{Bug, internal};
 /// # Example
 ///
 /// See `crates/tor-netdoc/src/types/embedded_cert/test.rs`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EmbeddedCert<VD, UR> {
     /// The verified form, if this `EmbeddedCert` is verified.
     verified: Option<VD>,

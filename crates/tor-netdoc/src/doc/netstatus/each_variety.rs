@@ -25,7 +25,6 @@ ns_use_this_variety! {
 #[derive_deftly(Constructor, NetdocEncodable, NetdocParseableUnverified)]
 #[deftly(netdoc(doctype_for_error = NETSTATUS_DOCTYPE_FOR_ERROR))]
 #[allow(clippy::exhaustive_structs)]
-#[cfg(feature = "incomplete")] // untested
 pub struct NetworkStatus {
     /// The `network-status-version` intro item
     ///

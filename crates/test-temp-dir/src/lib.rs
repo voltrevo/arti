@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -145,12 +145,12 @@ impl TestTempDir {
         let path = (|| {
             let (crate_, m_mod) = mod_path
                 .split_once("::")
-                .ok_or_else(|| anyhow!("module path {:?} doesn't contain `::`", &mod_path))?;
+                .ok_or_else(|| anyhow!("module path {:?} doesn't contain `::`", mod_path))?;
             let thread = std::thread::current();
             let thread = thread.name().context("get current thread name")?;
             let (t_mod, fn_) = thread
                 .rsplit_once("::")
-                .ok_or_else(|| anyhow!("current thread name {:?} doesn't contain `::`", &thread))?;
+                .ok_or_else(|| anyhow!("current thread name {:?} doesn't contain `::`", thread))?;
             if m_mod != t_mod {
                 return Err(anyhow!(
  "module path {:?} implies module name {:?} but thread name {:?} implies module name {:?}",

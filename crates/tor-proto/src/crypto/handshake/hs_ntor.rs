@@ -282,7 +282,7 @@ fn encrypt_and_mac(
     let mut ciphertext = plaintext.to_vec();
     // Encrypt the introduction data using 'enc_key'
     let zero_iv = Default::default();
-    let mut cipher = Aes256Ctr::new(enc_key.as_ref().into(), &zero_iv);
+    let mut cipher = Aes256Ctr::new((&**enc_key).into(), &zero_iv);
     cipher.apply_keystream(&mut ciphertext);
 
     // Now staple the other INTRODUCE1 data right before the ciphertext to
@@ -384,7 +384,7 @@ fn server_receive_intro_no_keygen(
 
     // Decrypt the ENCRYPTED_DATA from the intro cell
     let zero_iv = Default::default();
-    let mut cipher = Aes256Ctr::new(dec_key.as_ref().into(), &zero_iv);
+    let mut cipher = Aes256Ctr::new((&*dec_key).into(), &zero_iv);
     cipher.apply_keystream(ciphertext);
     let plaintext = ciphertext; // it's now decrypted
 

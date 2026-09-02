@@ -365,7 +365,7 @@ impl sealed::RequestableInner for AuthCertRequest {
             })
             .collect();
 
-        let uri = format!("/tor/keys/fp-sk/{}", &ids.join("+"));
+        let uri = format!("/tor/keys/fp-sk/{}", ids.join("+"));
 
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
@@ -425,7 +425,7 @@ impl sealed::RequestableInner for MicrodescRequest {
         let d_encode_b64 = |d: &[u8; 32]| Base64Unpadded::encode_string(&d[..]);
         let ids = digest_list_stringify(&self.digests, d_encode_b64, "-")
             .ok_or(RequestError::EmptyRequest)?;
-        let uri = format!("/tor/micro/d/{}", &ids);
+        let uri = format!("/tor/micro/d/{}", ids);
         let req = http::Request::builder().method("GET").uri(uri);
 
         let req = add_common_headers(req, self.anonymized());

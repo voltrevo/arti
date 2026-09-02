@@ -597,7 +597,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn basic() {
         let mut list = Tuple2List::new();
         assert!(list.is_empty());

@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -98,7 +98,7 @@ pub fn create_legacy_rsa_id_cert<Rng: CryptoRng>(
     if !public.exponent_is(EXPECT_ID_EXPONENT) {
         return Err(X509CertError::InvalidSigningKey("Invalid exponent".into()));
     }
-    if !public.bits() == EXPECT_ID_BITS {
+    if public.bits() != EXPECT_ID_BITS {
         return Err(X509CertError::InvalidSigningKey(
             "Invalid key length".into(),
         ));
@@ -434,6 +434,26 @@ mod test {
         // but afaict most of them sensibly refuse to handle RSA1024.
         //
         // I've checked the above-generated cert using `openssl verify`, but that's it.
+    }
+
+    #[test]
+    fn identity_cert_generation_size_check() {
+        let mut rng = testing_rng();
+        let keypair = rsa::RsaPrivateKey::new(&mut RngCompat::new(&mut rng), 2048).unwrap();
+        let keypair: RsaKeypair = keypair.into();
+
+        // This fails since it's not 1024 bits.
+        assert!(
+            create_legacy_rsa_id_cert(
+                &mut rng,
+                SystemTime::get(),
+                "www.house-of-pancakes.example.com",
+                &keypair,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid key length")
+        );
     }
 
     #[test]

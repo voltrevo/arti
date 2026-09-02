@@ -92,9 +92,9 @@ impl TransportConfigBuilder {
                 fields: vec!["path".into(), "proxy_addr".into()],
                 problem: "Cannot provide both path and proxy_addr".into(),
             }),
-            // TODO: There is no ConfigBuildError for "one of two fields is missing."
-            (None, None) => Err(ConfigBuildError::MissingField {
-                field: "{path or proxy_addr}".into(),
+            (None, None) => Err(ConfigBuildError::MissingOneOf {
+                min_required: 1,
+                fields: vec!["path".into(), "proxy_addr".into()],
             }),
             (None, Some(_)) => {
                 if self.arguments.as_ref().is_some_and(|v| !v.is_empty()) {

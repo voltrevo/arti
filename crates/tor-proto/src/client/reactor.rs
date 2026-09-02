@@ -41,7 +41,7 @@ use conflux::ConfluxSet;
 use control::ControlHandler;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use tor_cell::relaycell::flow_ctrl::XonKbpsEwma;
+use tor_cell::relaycell::flow_ctrl::XonKBpsEwma;
 use tor_cell::relaycell::msg::Sendme;
 use tor_cell::relaycell::{AnyRelayMsgOuter, RelayCellFormat, StreamId, UnparsedRelayMsg};
 use tor_error::{Bug, bad_api_usage, debug_report, internal, into_bad_api_usage};
@@ -203,7 +203,7 @@ enum RunOnceCmdInner {
     /// Consider sending an XON message with the given `rate`.
     MaybeSendXon {
         /// The drain rate to advertise in the XON message.
-        rate: XonKbpsEwma,
+        rate: XonKBpsEwma,
         /// The ID of the stream to send the message on.
         stream_id: StreamId,
         /// The location of the hop on the tunnel.
@@ -637,7 +637,7 @@ impl Reactor {
     #[allow(clippy::type_complexity, clippy::too_many_arguments)] // TODO
     pub(super) fn new(
         channel: Arc<Channel>,
-        channel_id: CircId,
+        circ_id: CircId,
         unique_id: UniqId,
         input: CircuitRxReceiver,
         runtime: DynTimeProvider,
@@ -669,7 +669,7 @@ impl Reactor {
         let circuit_leg = Circuit::new(
             runtime.clone(),
             channel,
-            channel_id,
+            circ_id,
             unique_id,
             input,
             memquota,

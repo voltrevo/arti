@@ -7,7 +7,6 @@
 pub(crate) mod build;
 pub(crate) mod md;
 pub(crate) mod plain;
-#[cfg(feature = "incomplete")]
 pub(crate) mod vote;
 
 use super::{ConsensusFlavor, ConsensusMethods, consensus_methods_comma_separated};
@@ -25,9 +24,8 @@ use crate::{Error, NetdocErrorKind as EK, Result};
 use derive_deftly::Deftly;
 use itertools::chain;
 use std::cmp::Ordering;
-use std::sync::Arc;
 use std::{net, time};
-use tor_basic_utils::intern::InternCache;
+use tor_basic_utils::intern::{Intern, InternCache};
 use tor_error::{Bug, internal};
 use tor_llcrypto::pk::rsa::RsaIdentity;
 
@@ -43,7 +41,7 @@ pub enum SoftwareVersion {
     #[display("Tor {_0}")]
     CTor(TorVersion),
     /// A string we couldn't parse.
-    Other(Arc<str>),
+    Other(Intern<str>),
 }
 
 /// A cache of unparsable version strings.
@@ -69,8 +67,7 @@ static OTHER_VERSION_CACHE: InternCache<str> = InternCache::new();
 ///  * These non-invariants apply both within one instance of this struct,
 ///    and across multiple instances of it within a `RouterStatus`.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Deftly)]
-#[derive_deftly(ItemValueParseable)]
-#[cfg_attr(feature = "incomplete", derive_deftly(ItemValueEncodable))] // untested
+#[derive_deftly(ItemValueEncodable, ItemValueParseable)]
 #[non_exhaustive]
 pub struct RouterStatusMdDigestsVote {
     /// The methods for which this document is applicable.
@@ -92,9 +89,7 @@ impl std::str::FromStr for SoftwareVersion {
             }
         }
 
-        Ok(SoftwareVersion::Other(
-            OTHER_VERSION_CACHE.intern_ref(s).into(),
-        ))
+        Ok(SoftwareVersion::Other(OTHER_VERSION_CACHE.intern_ref(s)))
     }
 }
 

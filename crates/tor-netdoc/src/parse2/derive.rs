@@ -597,7 +597,7 @@ define_derive_deftly! {
     ///
     /// ```
     /// use derive_deftly::Deftly;
-    /// use tor_checkable::{Timebound, timed::TimerangeBound};
+    /// use tor_checkable::{TimeBound, timed::TimeRangeBound};
     /// use tor_netdoc::derive_deftly_template_AsMutSelf;
     /// use tor_netdoc::derive_deftly_template_NetdocParseableSignatures;
     /// use tor_netdoc::derive_deftly_template_NetdocParseableUnverified;
@@ -652,7 +652,7 @@ define_derive_deftly! {
     /// "#;
     ///
     /// impl NdThingUnverified {
-    ///     pub fn verify_foolish(self) -> Result<TimerangeBound<NdThing>, VerifyFailed> {
+    ///     pub fn verify_foolish(self) -> Result<TimeRangeBound<NdThing>, VerifyFailed> {
     ///         // See docs for derive_deftly_template_NetdocParseableUnverified
     ///         // for how to write a verify function.
     ///
@@ -663,7 +663,7 @@ define_derive_deftly! {
     ///             return Err(VerifyFailed::VerifyFailed);
     ///         }
     ///         let foolish_lack_of_validity_time_info = ..;
-    ///         let body = TimerangeBound::new(self.body, foolish_lack_of_validity_time_info);
+    ///         let body = TimeRangeBound::new(self.body, foolish_lack_of_validity_time_info);
     ///         Ok(body)
     ///     }
     /// }

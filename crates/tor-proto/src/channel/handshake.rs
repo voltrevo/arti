@@ -8,12 +8,12 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{debug, instrument, trace};
 
-use safelog::{MaybeSensitive, Redacted};
+use safelog::MaybeSensitive;
 use tor_cell::chancell::msg::AnyChanMsg;
 use tor_cell::chancell::{AnyChanCell, ChanMsg, msg};
 use tor_cell::restrict::{RestrictedMsg, restricted_msg};
 use tor_cert::CertType;
-use tor_checkable::{TimeValidityError, Timebound};
+use tor_checkable::{TimeBound, TimeValidityError};
 use tor_error::internal;
 use tor_linkspec::{
     ChanTarget, ChannelMethod, OwnedChanTarget, OwnedChanTargetBuilder, RelayIds, RelayIdsBuilder,
@@ -529,7 +529,7 @@ impl<
 
         debug!(
             stream_id = %self.unique_id,
-            "Completed handshake without authentication to {}", Redacted::new(&peer_target)
+            "Completed handshake without authentication to {}", peer_info
         );
 
         super::Channel::new(
@@ -797,16 +797,16 @@ pub(crate) fn verify_link_auth_cert(
 /// regardless of whether the certs are expired, so we can determine
 /// whether we got a plausible handshake with a skewed partner, or
 /// whether the handshake is definitely bad.
-pub(crate) fn check_cert_timeliness<C, CERT>(
+pub(crate) fn check_cert_timeliness<C>(
     checkable: C,
     now: SystemTime,
     clock_skew: ClockSkew,
-) -> (Result<()>, CERT)
+) -> (Result<()>, C::Inner)
 where
-    C: Timebound<CERT, Error = TimeValidityError>,
+    C: TimeBound,
 {
     let status = checkable
-        .is_valid_at(&now)
+        .check_valid_at(&now)
         .map_err(|e| match (e, clock_skew) {
             (TimeValidityError::Expired(expired_by), ClockSkew::Fast(skew))
                 if expired_by < skew =>
@@ -1309,12 +1309,16 @@ pub(crate) mod test {
                     );
                     RelayNtorKeys::new(ntor)
                 };
-                let create_handler = Arc::new(CreateRequestHandler::new(
+
+                let (create_handler, _stream_rx) = CreateRequestHandler::new(
                     Arc::downgrade(&chan_provider) as Weak<_>,
                     new_circ_net_params(),
                     ntor_keys,
                     Box::new(|| Box::new(AllowAllStreamsFilter) as Box<_>),
-                ));
+                    // The incoming stream command allow list can be empty
+                    // because this test doesn't actually open any streams
+                    &[],
+                );
                 let peer_target = OwnedChanTargetBuilder::default().build().unwrap();
                 let unverified = RelayInitiatorHandshake::new(
                     RelayMsgBuf(MsgBuf::new(input)),
@@ -1323,7 +1327,7 @@ pub(crate) mod test {
                     vec![SocketAddr::new(IpAddr::from([127, 0, 0, 1]), 6666)],
                     &peer_target,
                     fake_mq(),
-                    create_handler,
+                    Arc::new(create_handler),
                 )
                 .connect(move || now)
                 .await?;

@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use extend::ext;
 use std::sync::LazyLock;
 
 /// Cached value of our observed home directory.
@@ -51,7 +52,8 @@ const HOME_SUBSTITUTION: &str = {
 };
 
 /// An extension trait for [`Path`].
-pub trait PathExt {
+#[ext]
+pub impl Path {
     /// If this is a path within our home directory, try to replace the home
     /// directory component with a symbolic reference to our home directory.
     ///
@@ -69,10 +71,6 @@ pub trait PathExt {
     ///            "${HOME}/.config/arti.toml");
     /// panic!();
     /// ```
-    fn anonymize_home(&self) -> AnonHomePath<'_>;
-}
-
-impl PathExt for Path {
     fn anonymize_home(&self) -> AnonHomePath<'_> {
         AnonHomePath(self)
     }

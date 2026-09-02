@@ -123,7 +123,7 @@ impl TryRng for CautiousRng {
         // The idea is somewhat ludicrous, but we have to poll in _some_ order,
         // and just writing this code has put us into a world of tinfoil hats.
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
         if let Ok(mut rdrand) = rdrand::RdRand::new() {
             // We'll tolerate a failure from rdrand here,
             // since it can indicate a few different error conditions,
@@ -138,7 +138,6 @@ impl TryRng for CautiousRng {
             // In the worst case, we just add some NULs in this case, which is fine.
             xof.update(buf.as_ref());
         }
-        // TODO: Consider using rndr on aarch64.
 
         #[cfg(not(target_arch = "wasm32"))]
         {

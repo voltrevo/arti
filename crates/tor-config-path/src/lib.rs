@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -564,12 +564,12 @@ mod test_serde {
             let input = TestConfigFile { p };
             let s = match ser(&input) {
                 Ok(s) => s,
-                Err(e) if easy => panic!("ser failed {:?} e={:?}", &input, &e),
+                Err(e) if easy => panic!("ser failed {:?} e={:?}", input, e),
                 Err(_) => return,
             };
             dbg!(&input, &s);
             let output = deser(&s).expect("deser failed");
-            assert_eq!(&input, &output, "s={:?}", &s);
+            assert_eq!(&input, &output, "s={:?}", s);
         };
 
         case(true, CfgPath::new("string".into()));

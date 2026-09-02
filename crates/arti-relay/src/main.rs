@@ -21,7 +21,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -147,7 +147,6 @@ fn main_main(cli: cli::Cli) -> anyhow::Result<()> {
 }
 
 /// Initialize and start the relay.
-#[allow(clippy::cognitive_complexity)]
 // Pass by value so that we don't need to clone fields, which keeps the code simpler.
 #[allow(clippy::needless_pass_by_value)]
 fn start_relay(_args: cli::RunArgs, global_args: cli::GlobalArgs) -> anyhow::Result<()> {

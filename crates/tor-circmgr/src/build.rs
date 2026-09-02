@@ -646,22 +646,19 @@ pub fn exit_circparams_from_netparams(inp: &NetParameters) -> Result<CircParamet
 pub fn onion_circparams_from_netparams(inp: &NetParameters) -> Result<CircParameters> {
     let alg = match AlgorithmType::from(inp.cc_alg.get()) {
         #[cfg(feature = "flowctl-cc")]
-        AlgorithmType::VEGAS => {
-            // NOTE: At the time of writing, we don't yet support cc negotiation for onion services.
-            // See `HopSettings::onion_circparams_from_netparams()` where we use a fallback
-            // algorithm for HsV3 circuits instead, and see arti#2037.
-            build_cc_vegas(
-                inp,
-                (
-                    inp.cc_vegas_alpha_onion.into(),
-                    inp.cc_vegas_beta_onion.into(),
-                    inp.cc_vegas_delta_onion.into(),
-                    inp.cc_vegas_gamma_onion.into(),
-                    inp.cc_vegas_sscap_onion.into(),
-                )
-                    .into(),
+        // Note: As with other CircParams, we will fall back to fixed-window
+        // if we find that the target does not support the FLOWCTRL_CC capability.
+        AlgorithmType::VEGAS => build_cc_vegas(
+            inp,
+            (
+                inp.cc_vegas_alpha_onion.into(),
+                inp.cc_vegas_beta_onion.into(),
+                inp.cc_vegas_delta_onion.into(),
+                inp.cc_vegas_gamma_onion.into(),
+                inp.cc_vegas_sscap_onion.into(),
             )
-        }
+                .into(),
+        ),
         // Unrecognized, fallback to fixed window as in SENDME v0.
         _ => build_cc_fixedwindow(inp),
     };

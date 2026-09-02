@@ -298,7 +298,7 @@ impl Consensus {
             n_authorities: None,
         };
         let timebound_range = unval.consensus.preamble.validity_time_range();
-        let timebound = TimerangeBound::new(unval, timebound_range);
+        let timebound = TimeRangeBound::new(unval, timebound_range);
         Ok((signed_str, remainder, timebound))
     }
 }
@@ -548,9 +548,8 @@ impl ExternallySigned<Consensus> for UnvalidatedConsensus {
 
 /// A Consensus object that has been parsed, but not checked for
 /// signatures and timeliness.
-pub type UncheckedConsensus = TimerangeBound<UnvalidatedConsensus>;
+pub type UncheckedConsensus = TimeRangeBound<UnvalidatedConsensus>;
 
-#[cfg(feature = "incomplete")] // untested
 impl NetworkStatusUnverified {
     /// Could we verify this consensus or do we need more authcerts?
     ///
@@ -580,13 +579,13 @@ impl NetworkStatusUnverified {
     /// Verify the signatures
     ///
     /// Doesn't check the validity period:
-    /// the document is wrapped in [`TimerangeBound`],
+    /// the document is wrapped in [`TimeRangeBound`],
     /// ensuring that the caller does that check.
     pub fn verify(
         self,
         trusted_authorities: &[RsaIdentity],
         certs: &[AuthCert],
-    ) -> Result<TimerangeBound<NetworkStatus>, ConsensusVerifyFailed> {
+    ) -> Result<TimeRangeBound<NetworkStatus>, ConsensusVerifyFailed> {
         let (body, sigs) = self.unwrap_unverified();
 
         Self::verify_general(
@@ -597,7 +596,7 @@ impl NetworkStatusUnverified {
         )?;
 
         let time_range = body.preamble.validity_time_range();
-        Ok(TimerangeBound::new(
+        Ok(TimeRangeBound::new(
             body,
             time_range,
         ))
@@ -624,4 +623,105 @@ impl NetworkStatusUnverified {
             do_verify,
         )
     }
+}
+
+#[cfg(feature = "retain-unknown")]
+#[test]
+fn verify_error_netstatus() -> Result<(), anyhow::Error> {
+    use assert_matches::assert_matches;
+    use ConsensusVerifiabilityError as CVE;
+
+    let file = ns_expr!(
+        "testdata2/cached-consensus",
+        "testdata2/cached-microdesc-consensus",
+        unreachable(),
+    );
+    let (mut doc, _text, certs, authorities, _now) =
+        super::test::prep_netstatus_verify::<NetworkStatusUnverified>(file)?;
+
+    macro_rules! assert_consensus_verifiability_error { {
+        ( $($verify_args:tt)* ),
+        $($assert_matches_rhs:tt)*
+    } => {
+        assert_matches! {
+            doc.can_verify($($verify_args)*),
+            Err(e)
+                => assert_matches!(e, $($assert_matches_rhs)*)
+        };
+        assert_matches! {
+            doc.clone().verify($($verify_args)*),
+            Err(ConsensusVerifyFailed::CertificationInsufficient(e))
+                => assert_matches!(e, $($assert_matches_rhs)*)
+        };
+    } }
+
+    // missing authcerts
+
+    assert_consensus_verifiability_error! {
+        (&authorities, &certs[..1]),
+        ConsensusVerifiabilityError::MissingAuthCerts { deficit, missing } => {
+            assert_eq!(deficit, authorities.len() / 2); // one short of strict majority
+            itertools::assert_equal(
+                missing.into_iter().sorted(),
+                certs[1..].iter().map(|a| a.key_ids()).sorted(),
+            );
+        }
+    }
+
+    // wrong signers
+
+    let wrong_authorities = authorities
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, a)| {
+            if i < 2 {
+                [i as u8; _].into()
+            } else {
+                a
+            }
+        })
+        .collect_vec();
+
+    assert_consensus_verifiability_error! {
+        (&wrong_authorities, &certs),
+        CVE::InsufficientTrustedSigners
+    }
+
+    // one broken signature, but enough others
+
+    doc.sigs.sigs.directory_signature[0].signature.fill(0xff);
+
+    assert_matches! {
+        doc.can_verify(&authorities, &certs),
+        Ok(())
+    }
+    assert_matches! {
+        doc.clone().verify(&authorities, &certs),
+        Ok(_)
+    }
+
+    // too few signatories, and one broken signature
+
+    doc.sigs.sigs.directory_signature.truncate(authorities.len() / 2 + 1);
+
+    assert_matches! {
+        doc.can_verify(&authorities, &certs),
+        Ok(())
+    }
+    assert_matches! {
+        doc.clone().verify(&authorities, &certs),
+        Err(ConsensusVerifyFailed::InvalidSignature(VerifyFailed::VerifyFailed))
+    }
+
+    // too few signatures, no broken signatures
+
+    doc.sigs.sigs.directory_signature.remove(0);
+
+    assert_consensus_verifiability_error! {
+        (&authorities, &certs),
+        CVE::InsufficientTrustedSigners
+    }
+
+    Ok(())
 }

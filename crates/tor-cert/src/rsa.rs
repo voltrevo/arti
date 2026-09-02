@@ -4,7 +4,7 @@
 //! key speaks for a given (deprecated) RSA identity.
 
 use tor_bytes::Reader;
-use tor_checkable::{ExternallySigned, timed::TimerangeBound};
+use tor_checkable::{ExternallySigned, timed::TimeRangeBound};
 use tor_llcrypto as ll;
 
 use digest::Digest;
@@ -91,7 +91,7 @@ impl RsaCrosscert {
 /// An RsaCrosscert whose signature has not been checked.
 pub struct UncheckedRsaCrosscert(RsaCrosscert);
 
-impl ExternallySigned<TimerangeBound<RsaCrosscert>> for UncheckedRsaCrosscert {
+impl ExternallySigned<TimeRangeBound<RsaCrosscert>> for UncheckedRsaCrosscert {
     type Key = ll::pk::rsa::PublicKey;
     type KeyHint = ();
     type Error = tor_bytes::Error;
@@ -111,8 +111,8 @@ impl ExternallySigned<TimerangeBound<RsaCrosscert>> for UncheckedRsaCrosscert {
         Ok(())
     }
 
-    fn dangerously_assume_wellsigned(self) -> TimerangeBound<RsaCrosscert> {
+    fn dangerously_assume_wellsigned(self) -> TimeRangeBound<RsaCrosscert> {
         let expiration = self.0.expiry();
-        TimerangeBound::new(self.0, ..expiration)
+        TimeRangeBound::new(self.0, ..expiration)
     }
 }

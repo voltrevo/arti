@@ -27,14 +27,12 @@ impl NetworkStatusUnverified {
     /// Verify the signatures
     ///
     /// Doesn't check the validity period:
-    /// the document is wrapped in [`TimerangeBound`],
+    /// the document is wrapped in [`TimeRangeBound`],
     /// ensuring that the caller does that check.
-    //
-    // TODO DIRAUTH test this
     pub fn verify(
         self,
         trusted: &[RsaIdentity],
-    ) -> Result<TimerangeBound<NetworkStatus>, VoteVerifyFailed> {
+    ) -> Result<TimeRangeBound<NetworkStatus>, VoteVerifyFailed> {
         use VoteVerifyFailed as VVF;
 
         let (mut body, sigs) = self.unwrap_unverified();
@@ -50,7 +48,11 @@ impl NetworkStatusUnverified {
 
             // We do the authcert validity time check here, with reference to
             // the vote's declared validity period, not the current time or whatever.
-            let test_validity_at = |t| authcert.is_valid_at(&t).map_err(VVF::AuthCertWrongValidity);
+            let test_validity_at = |t| {
+                authcert
+                    .check_valid_at(&t)
+                    .map_err(VVF::AuthCertWrongValidity)
+            };
 
             // test at all relevant times, in a uniform way so we can break out check
             test_validity_at(*body.preamble.lifetime.valid_after)?;
@@ -76,7 +78,7 @@ impl NetworkStatusUnverified {
         body.authority.cert.set_verified(authcert);
 
         let time_range = body.preamble.validity_time_range();
-        Ok(TimerangeBound::new(body, time_range))
+        Ok(TimeRangeBound::new(body, time_range))
     }
 
     /// Look at the declared directory authority identity KHP_auth_id_rsa

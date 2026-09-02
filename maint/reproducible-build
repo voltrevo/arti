@@ -161,7 +161,7 @@ EOF
 
 		# Step 4: Build the osxcross toolchain using that package.
 		# (Todo: We could save time by building only the arch we want.)
-		UNATTENDED=yes OSX_VERSION_MIN="$MACOSX_DEPLOYMENT_TARGET" ./build.sh
+		UNATTENDED=1 BUILD_FLAVOR=stable OSX_VERSION_MIN="$MACOSX_DEPLOYMENT_TARGET" ./build.sh
 
 		# Step 5: copy it to gitlab build-dir so it may get cached
 		cp -R /arti/"osxcross-${OSX_SDK_VERSION}" "$here"

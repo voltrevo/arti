@@ -361,7 +361,7 @@ mod test {
         };
         let username = username_s.as_bytes().to_vec();
 
-        let other_name = format!("{}2", &username_s);
+        let other_name = format!("{}2", username_s);
 
         // Case 1: Current user in environment exists, though there are some distractions.
         let db = mock_users();

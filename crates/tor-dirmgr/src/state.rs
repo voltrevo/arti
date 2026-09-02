@@ -33,7 +33,7 @@ use crate::{
     event,
 };
 use crate::{DocSource, SharedMutArc};
-use tor_checkable::{ExternallySigned, SelfSigned, Timebound};
+use tor_checkable::{ExternallySigned, SelfSigned, TimeBound};
 #[cfg(feature = "geoip")]
 use tor_geoip::GeoipDb;
 use tor_llcrypto::pk::rsa::RsaIdentity;
@@ -365,7 +365,7 @@ impl<R: Runtime> GetConsensusState<R> {
             let parsed = self.filter.filter_consensus(parsed)?;
             let parsed = self.config.tolerance.extend_tolerance(parsed);
             let now = self.rt.wallclock();
-            let timely = parsed.check_valid_at(&now)?;
+            let timely = parsed.if_valid_at(&now)?;
             if let Some(cutoff) = cutoff {
                 if timely.peek_lifetime().valid_after() < cutoff {
                     return Err(Error::Unwanted("consensus was older than requested"));
@@ -496,7 +496,7 @@ impl<R: Runtime> GetCertsState<R> {
             .config
             .tolerance
             .extend_tolerance(wellsigned)
-            .check_valid_at(&now)?;
+            .if_valid_at(&now)?;
         Ok((timely_cert, cert_text))
     }
 
@@ -1298,7 +1298,6 @@ mod test {
     #![allow(clippy::needless_pass_by_value)]
     #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
-    #![allow(clippy::cognitive_complexity)]
     use super::*;
     use std::convert::TryInto;
     use std::sync::Arc;

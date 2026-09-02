@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -1617,7 +1617,6 @@ impl NetDir {
     // call sites must include a call to `Relay::is_polarity_inverter()` or whatever.
     // IMO the `WeightRole` ought to imply a condition (and it should therefore probably
     // be renamed.)  -Diziet
-    #[allow(clippy::cognitive_complexity)]
     pub fn pick_relay<'a, R, P>(
         &'a self,
         rng: &mut R,
@@ -1698,7 +1697,6 @@ impl NetDir {
     ///
     /// May return fewer than `n` items if there are fewer than `n` with non-zero weight
     /// (or all have zero-weight but there are fewer than `n` total).
-    #[allow(clippy::cognitive_complexity)] // all due to tracing crate.
     fn pick_n_weighted<R, T>(rng: &mut R, n: usize, weighted_items: &[(T, u64)]) -> Vec<T>
     where
         R: rand::Rng,
@@ -1763,7 +1761,6 @@ impl NetDir {
     ///
     /// This function returns an empty vector if (and only if) there are no
     /// relays where `usable` returned true.
-    #[allow(clippy::cognitive_complexity)] // all due to tracing crate.
     pub fn pick_n_relays<'a, R, P>(
         &'a self,
         rng: &mut R,
@@ -2269,7 +2266,6 @@ mod test {
     #![allow(clippy::needless_pass_by_value)]
     #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
-    #![allow(clippy::cognitive_complexity)]
     use super::*;
     use crate::testnet::*;
     use float_eq::assert_float_eq;

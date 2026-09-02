@@ -2,15 +2,13 @@
 
 use crate::FlowCtrlParameters;
 use crate::ccparams::{
-    Algorithm, AlgorithmDiscriminants, CongestionControlParams, CongestionWindowParams,
-    FixedWindowParams, RoundTripEstimatorParams, VegasParams,
+    AlgorithmDiscriminants, CongestionWindowParams, FixedWindowParams, RoundTripEstimatorParams,
+    VegasParams,
 };
 use crate::channel::Channel;
-use crate::circuit::CircuitRxSender;
-use crate::circuit::UniqId;
 use crate::circuit::celltypes::{CreateRequest, CreateResponse};
-use crate::circuit::circhop::{HopNegotiationType, HopSettings};
-use crate::client::circuit::CircParameters;
+use crate::circuit::circhop::{HandshakeParamsError, HopSettings};
+use crate::circuit::{CircuitRxSender, HandshakeSubprotocols, UniqId};
 use crate::client::circuit::padding::PaddingController;
 use crate::crypto::binding::CircuitBinding;
 use crate::crypto::cell::CryptInit as _;
@@ -24,6 +22,9 @@ use crate::memquota::{ChannelAccount, CircuitAccount};
 use crate::relay::channel_provider::ChannelProvider;
 use crate::relay::reactor::Reactor;
 use crate::relay::{IncomingStreamRequestFilter, RelayCirc};
+use crate::stream::IncomingStream;
+use futures::channel::mpsc;
+use futures::{SinkExt, Stream};
 use smallvec::SmallVec;
 use std::sync::{Arc, RwLock, Weak};
 use tor_cell::chancell::ChanMsg as _;
@@ -31,7 +32,8 @@ use tor_cell::chancell::CircId;
 use tor_cell::chancell::msg::{
     CreateFast, Created2, CreatedFast, Destroy, DestroyReason, HandshakeType,
 };
-use tor_error::{Bug, ErrorKind, HasKind, debug_report, internal, into_internal};
+use tor_cell::relaycell::RelayCmd;
+use tor_error::{ErrorKind, HasKind, debug_report, internal, into_internal, warn_report};
 use tor_linkspec::OwnedChanTarget;
 use tor_llcrypto::cipher::aes::Aes128Ctr;
 use tor_llcrypto::d::Sha1;
@@ -42,7 +44,7 @@ use tor_memquota::mq_queue::MpscSpec;
 use tor_relay_crypto::pk::{RelayNtorKeypair, RelayNtorKeys};
 use tor_rtcompat::SpawnExt as _;
 use tor_rtcompat::{DynTimeProvider, Runtime};
-use tracing::warn;
+use tracing::trace;
 
 /// Everything needed to handle CREATE* messages on channels.
 #[derive(derive_more::Debug)]
@@ -65,22 +67,67 @@ pub struct CreateRequestHandler {
     // should function for relays.
     #[debug(skip)]
     incoming_filter_factory: Box<dyn IncomingStreamRequestFilterFactory + Send + Sync>,
+    /// The allowed incoming stream commands.
+    ///
+    /// Used for rejecting BEGIN and RESOLVE if we are not configured to be an exit.
+    ///
+    // TODO(relay): we might use this for rejecting BEGIN_DIR too,
+    // if we decide to allow relays to opt out of being dir mirrors.
+    // See https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4107/diffs#note_3426447
+    allowed_stream_cmds: SmallVec<[RelayCmd; 3]>,
+    /// A sender for the [`Stream`]s of `IncomingStream` of all circuits.
+    ///
+    /// The receiver will receive one [`Stream`] (of tor streams) per circuit.
+    ///
+    /// This being a bounded MPSC might seem a bit risky, because in theory,
+    /// if the receiver is not reading fast enough, sending will block.
+    /// In practice, however, it should never block (or buffer very much at all,
+    /// for that matter), because the user (arti-relay) is expected to read from
+    /// this in a tight loop, and spawn a task for handling each [`Stream`].
+    ///
+    /// Note: because this MPSC is not associated with any particular circuit or channel,
+    /// it does not participate in the memquota system (see [crate::memquota]).
+    #[debug(skip)]
+    circuit_stream_tx: mpsc::Sender<Box<dyn Stream<Item = IncomingStream> + Send + Sync + Unpin>>,
 }
 
 impl CreateRequestHandler {
-    /// Build a new [`CreateRequestHandler`].
+    /// Build a new [`CreateRequestHandler`], and a [`CircuitIncomingStreamReceiver`]
+    /// for receiving new streams that are opened on any incoming circuits.
     pub fn new(
         chan_provider: Weak<dyn ChannelProvider<BuildSpec = OwnedChanTarget> + Send + Sync>,
         circ_net_params: CircNetParameters,
         ntor_keys: RelayNtorKeys,
         incoming_filter_factory: Box<dyn IncomingStreamRequestFilterFactory + Send + Sync>,
-    ) -> Self {
-        Self {
+        allowed_stream_cmds: &[RelayCmd],
+    ) -> (Self, CircuitIncomingStreamReceiver) {
+        // TODO(relay-tuning): this MPSC can be a bottleneck,
+        // as all the channels on this relay will want to send one item on it
+        // each time a new circuit is created.
+        //
+        // The value set here is a guesstimate.
+        const CIRC_STREAM_BUF_SIZE: usize = 1024;
+
+        // This is not associated with any particular circuit
+        // (it is for *all* circuits), so it doesn't participate in memquota
+        // (see circuit_stream_tx docs)
+        #[allow(clippy::disallowed_methods)]
+        let (stream_tx, stream_rx) = mpsc::channel(CIRC_STREAM_BUF_SIZE);
+
+        let handler = Self {
             chan_provider,
             circ_net_params: RwLock::new(circ_net_params),
             ntor_keys: RwLock::new(ntor_keys),
             incoming_filter_factory,
-        }
+            allowed_stream_cmds: allowed_stream_cmds.into(),
+            circuit_stream_tx: stream_tx,
+        };
+
+        let circuit_stream_rx = CircuitIncomingStreamReceiver {
+            circuit_stream_rx: stream_rx,
+        };
+
+        (handler, circuit_stream_rx)
     }
 
     /// Update the circuit parameters from a network consensus.
@@ -196,7 +243,7 @@ impl CreateRequestHandler {
         let incoming_filter = self.incoming_filter_factory.current_filter();
 
         // Build the relay circuit reactor.
-        let (reactor, circ, _incoming_streams) = Reactor::new(
+        let (reactor, circ, incoming_streams) = Reactor::new(
             runtime.clone(),
             channel,
             circ_id,
@@ -209,18 +256,31 @@ impl CreateRequestHandler {
             padding_ctrl.clone(),
             padding_stream,
             incoming_filter,
+            &self.allowed_stream_cmds,
             &memquota,
         )
         .map_err(into_internal!("Failed to start circuit reactor"))?;
 
-        // TODO(relay): send the incoming_streams stream to the handler in arti-relay
-
+        let mut circuit_stream_tx = self.circuit_stream_tx.clone();
         // Start the reactor in a task.
-        let () = runtime.spawn(async {
-            match reactor.run().await {
-                Ok(()) => {}
-                Err(e) => {
-                    debug_report!(e, "Relay circuit reactor exited with an error");
+        let () = runtime.spawn(async move {
+            if let Err(e) = circuit_stream_tx.send(Box::new(incoming_streams)).await {
+                warn_report!(e, "IncomingStream handler disappeared?!");
+                // If we get here, it means the relay stream handler task has gone away,
+                // so there won't be anything handling the incoming streams.
+                //
+                // The reactor is dropped, making the RelayCirc returned below
+                // in the RelayCircComponents unusable
+                // (RelayCirc::is_closing() will return `true`).
+                drop(reactor);
+            } else {
+                // Only spawn the circuit reactor if the incoming stream handler was
+                // able to receive our message
+                match reactor.run().await {
+                    Ok(()) => {}
+                    Err(e) => {
+                        debug_report!(e, "Relay circuit reactor exited with an error");
+                    }
                 }
             }
         })?;
@@ -251,27 +311,31 @@ impl CreateRequestHandler {
             msg.handshake(),
         )?;
 
-        let crypt = tor1::CryptStatePair::<Aes128Ctr, Sha1>::construct(keygen)
-            .map_err(into_internal!("Circuit crypt state construction failed"))?;
-
-        let circ_params = self
+        let circ_net_params = self
             .circ_net_params
             .read()
             .expect("rwlock poisoned")
-            // CREATE_FAST always uses fixed-window flow control.
-            .as_circ_parameters(AlgorithmDiscriminants::FixedWindow)?;
+            .clone();
 
-        // TODO(relay): I don't think that this is the right way to do this. It works for
-        // CREATE_FAST, but we might want to rethink it for CREATE2.
-        let protos = tor_protover::Protocols::default();
-        let hop_settings =
-            HopSettings::from_params_and_caps(HopNegotiationType::None, &circ_params, &protos)
-                .map_err(into_internal!("Unable to build `HopSettings`"))?;
+        // No subprotocols are requested during a CREATE_FAST handshake.
+        let subprotos = HandshakeSubprotocols::default();
+
+        let hop_settings = HopSettings::from_handshake_params(
+            circ_net_params,
+            // CREATE_FAST always uses fixed-window flow control.
+            AlgorithmDiscriminants::FixedWindow,
+            subprotos,
+        )?;
+
+        let crypt = tor1::CryptStatePair::<Aes128Ctr, Sha1>::construct(keygen)
+            .map_err(into_internal!("Circuit crypt state construction failed"))?;
+
+        let (crypto_out, crypto_in, _binding) = split_relay_layer(crypt);
 
         let response = CreatedFast::new(handshake_msg);
         let response = CreateResponse::CreatedFast(response);
 
-        let (crypto_out, crypto_in, _binding) = split_relay_layer(crypt);
+        trace!("Completed CREATE_FAST handshake");
 
         Ok(CompletedHandshakeComponents {
             response,
@@ -301,27 +365,31 @@ impl CreateRequestHandler {
             msg_body,
         )?;
 
+        let circ_net_params = self
+            .circ_net_params
+            .read()
+            .expect("rwlock poisoned")
+            .clone();
+
+        // No subprotocols are requested during an ntor (non-v3) handshake.
+        let subprotos = HandshakeSubprotocols::default();
+
+        let hop_settings = HopSettings::from_handshake_params(
+            circ_net_params,
+            // CREATE2 with ntor (non-v3) always uses fixed-window flow control.
+            AlgorithmDiscriminants::FixedWindow,
+            subprotos,
+        )?;
+
         let crypt = tor1::CryptStatePair::<Aes128Ctr, Sha1>::construct(keygen)
             .map_err(into_internal!("Circuit crypt state construction failed"))?;
 
         let (crypto_out, crypto_in, _binding) = split_relay_layer(crypt);
 
-        let circ_params = self
-            .circ_net_params
-            .read()
-            .expect("rwlock poisoned")
-            // CREATE2 with ntor (non-v3) always uses fixed-window flow control.
-            .as_circ_parameters(AlgorithmDiscriminants::FixedWindow)?;
-
-        // TODO(relay): I don't think that this is the right way to do this. It works for
-        // ntor, but won't work well for ntor-v3.
-        let protos = tor_protover::Protocols::default();
-        let hop_settings =
-            HopSettings::from_params_and_caps(HopNegotiationType::None, &circ_params, &protos)
-                .map_err(into_internal!("Unable to build `HopSettings`"))?;
-
         let response = Created2::new(handshake_msg);
         let response = CreateResponse::Created2(response);
+
+        trace!("Completed ntor handshake");
 
         Ok(CompletedHandshakeComponents {
             response,
@@ -360,6 +428,45 @@ impl CreateRequestHandler {
     }
 }
 
+/// A receiver of [`Stream`]s (one for each incoming circuit),
+/// where each `Stream` produces [`IncomingStream`]s for that circuit.
+///
+// Note: in theory, it would be nice if we could get rid of this type altogether.
+// In an ideal world, I would've instead
+//
+//   * added a `RelayCirc::take_incoming_streams()` method for obtaining
+//     the futures::Stream of IncomingStream of that circuit
+//   * made the CreateRequestHandler send each Arc<RelayCirc> over to arti-relay for handling
+//   * made arti-relay obtain the futures::Stream<Item = IncomingStream> of each RelayCirc
+//     by calling `RelayCirc::take_incoming_streams()`
+//
+// However, that would involve adding some locking/interior mutability within RelayCirc
+// (which is always behind an Arc), or extending mq_queue::Receiver to be Clone,
+// which would be tricky to pull off (see the comment on mq_queue::Receiver about this).
+pub struct CircuitIncomingStreamReceiver {
+    /// The receiver for the [`Stream`]s of `IncomingStream` of all circuits.
+    ///
+    /// Receives one [`Stream`] (of tor streams) per circuit.
+    /// Each of these will be handled in a new task.
+    circuit_stream_rx: mpsc::Receiver<<Self as Stream>::Item>,
+}
+
+impl Stream for CircuitIncomingStreamReceiver {
+    // TODO: it would be nice if we could return a type-erased Stream here
+    // (impl Stream<...>), but impl Trait in associated types is unstable.
+    // See rust issue #63063 <https://github.com/rust-lang/rust/issues/63063>
+    type Item = Box<dyn Stream<Item = IncomingStream> + Send + Sync + Unpin>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use futures::StreamExt as _;
+
+        self.circuit_stream_rx.poll_next_unpin(cx)
+    }
+}
+
 /// Helper function to split a `RelayLayer` into forward and backward type-erased trait objects.
 fn split_relay_layer<F, B>(
     crypt: impl RelayLayer<F, B>,
@@ -384,6 +491,9 @@ enum HandleCreateError {
     /// Circuit relay handshake failed.
     #[error("Circuit relay handshake failed")]
     Handshake(#[from] RelayHandshakeError),
+    /// Circuit relay handshake failed.
+    #[error("Failed to process the circuit relay handshake parameters")]
+    HandshakeParameters(#[from] HandshakeParamsError),
     /// The requested handshake type is unsupported.
     #[error("Unsupported handshake type {0}")]
     Create2HandshakeType(HandshakeType),
@@ -405,6 +515,7 @@ impl HasKind for HandleCreateError {
     fn kind(&self) -> ErrorKind {
         match self {
             Self::Handshake(e) => e.kind(),
+            Self::HandshakeParameters(e) => e.kind(),
             Self::Create2HandshakeType(_) => ErrorKind::NotImplemented,
             Self::Memquota(e) => e.kind(),
             Self::Spawn(e) => e.kind(),
@@ -482,57 +593,8 @@ impl CongestionControlNetParams {
 #[derive(Debug, Clone)]
 #[allow(clippy::exhaustive_structs)]
 pub struct CircNetParameters {
-    /// Whether we should include ed25519 identities when we send EXTEND2 cells.
-    pub extend_by_ed25519_id: bool,
-
     /// Congestion control network parameters.
     pub cc: CongestionControlNetParams,
-}
-
-impl CircNetParameters {
-    /// Convert the [`CircNetParameters`] into a [`CircParameters`].
-    ///
-    /// We expect the circuit creation handshake to know what congestion control algorithm was
-    /// negotiated, and provide that as `algorithm`.
-    //
-    // We disable `unused` warnings at the root of tor-proto,
-    // but it's nice to have here so we re-enable it.
-    #[warn(unused)]
-    fn as_circ_parameters(&self, algorithm: AlgorithmDiscriminants) -> Result<CircParameters, Bug> {
-        // Unpack everything to make sure that we aren't missing anything
-        // (otherwise clippy would warn).
-        let Self {
-            extend_by_ed25519_id,
-            cc:
-                CongestionControlNetParams {
-                    fixed_window,
-                    vegas_exit,
-                    cwnd,
-                    rtt,
-                    flow_ctrl,
-                },
-        } = self;
-
-        let algorithm = match algorithm {
-            AlgorithmDiscriminants::FixedWindow => Algorithm::FixedWindow(*fixed_window),
-            AlgorithmDiscriminants::Vegas => Algorithm::Vegas(*vegas_exit),
-        };
-
-        // TODO(arti#2442): The builder pattern here seems like a footgun.
-        let cc = CongestionControlParams::builder()
-            .alg(algorithm)
-            .fixed_window_params(*fixed_window)
-            .cwnd_params(*cwnd)
-            .rtt_params(rtt.clone())
-            .build()
-            .map_err(into_internal!("Could not build `CongestionControlParams`"))?;
-
-        Ok(CircParameters::new(
-            *extend_by_ed25519_id,
-            cc,
-            flow_ctrl.clone(),
-        ))
-    }
 }
 
 /// An [`IncomingStreamRequestFilter`] factory for building [`IncomingStreamRequestFilter`]s.
@@ -553,4 +615,157 @@ where
     fn current_filter(&self) -> Box<dyn IncomingStreamRequestFilter> {
         (self)()
     }
+}
+
+#[cfg(test)]
+mod test {
+    // @@ begin test lint list maintained by maint/add_warning @@
+    #![allow(clippy::bool_assert_comparison)]
+    #![allow(clippy::clone_on_copy)]
+    #![allow(clippy::dbg_macro)]
+    #![allow(clippy::mixed_attributes_style)]
+    #![allow(clippy::print_stderr)]
+    #![allow(clippy::print_stdout)]
+    #![allow(clippy::single_char_pattern)]
+    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unchecked_time_subtraction)]
+    #![allow(clippy::useless_vec)]
+    #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
+    //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+
+    use tor_cell::chancell::{ChanCmd, ChanMsg as _};
+    use tor_rtcompat::test_with_one_runtime;
+
+    use crate::channel::test_utils;
+    use crate::circuit::CircParameters;
+
+    #[test]
+    fn create_fast() {
+        test_with_one_runtime!(|rt| async move {
+            let mut conn_inspector = test_utils::ConnInspector::new();
+
+            let (client_chan, _relay_chan, _circuit_stream_rx, _target_builder) =
+                test_utils::new_channel_pair_with_keys(&rt, &conn_inspector);
+
+            let pending_tunnel = test_utils::new_pending_tunnel(&rt, &client_chan).await;
+
+            let circ_params = CircParameters::default();
+
+            let tunnel = pending_tunnel
+                .create_firsthop_fast(circ_params)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                conn_inspector.try_client_cell().unwrap().msg().cmd(),
+                ChanCmd::CREATE_FAST,
+            );
+            assert_eq!(
+                conn_inspector.try_relay_cell().unwrap().msg().cmd(),
+                ChanCmd::CREATED_FAST,
+            );
+
+            drop(tunnel);
+
+            assert_eq!(
+                conn_inspector.client_cell().await.unwrap().msg().cmd(),
+                ChanCmd::DESTROY,
+            );
+            // TODO(relay): I think the relay shouldn't be sending a DESTROY back to the client.
+            // https://gitlab.torproject.org/tpo/core/arti/-/work_items/2648
+            assert_eq!(
+                conn_inspector.relay_cell().await.unwrap().msg().cmd(),
+                ChanCmd::DESTROY,
+            );
+        });
+    }
+
+    #[test]
+    fn tap() {
+        test_with_one_runtime!(|rt| async move {
+            let mut conn_inspector = test_utils::ConnInspector::new();
+
+            let (client_chan, _relay_chan, _circuit_stream_rx, mut target_builder) =
+                test_utils::new_channel_pair_with_keys(&rt, &conn_inspector);
+
+            let pending_tunnel = test_utils::new_pending_tunnel(&rt, &client_chan).await;
+
+            let circ_params = CircParameters::default();
+
+            // https://spec.torproject.org/tor-spec/subprotocol-versioning.html
+            // 1 = RELAY_BASE
+            let protocols = "Relay=1".parse().unwrap();
+            let target = target_builder.protocols(protocols).build().unwrap();
+
+            // TODO: This should fail since we don't support TAP handshakes.
+            // But the channel will do an ntor handshake anyway even though it's not supported.
+            // https://gitlab.torproject.org/tpo/core/arti/-/work_items/2489
+            let _tunnel = pending_tunnel
+                .create_firsthop(&target, circ_params)
+                .await
+                .unwrap();
+
+            // TODO: As above, this is wrong.
+            assert_eq!(
+                conn_inspector.try_client_cell().unwrap().msg().cmd(),
+                ChanCmd::CREATE2,
+            );
+            assert_eq!(
+                conn_inspector.try_relay_cell().unwrap().msg().cmd(),
+                ChanCmd::CREATED2,
+            );
+        });
+    }
+
+    #[test]
+    fn ntor() {
+        test_with_one_runtime!(|rt| async move {
+            let mut conn_inspector = test_utils::ConnInspector::new();
+
+            let (client_chan, _relay_chan, _circuit_stream_rx, mut target_builder) =
+                test_utils::new_channel_pair_with_keys(&rt, &conn_inspector);
+
+            // https://spec.torproject.org/tor-spec/subprotocol-versioning.html
+            // 2 = RELAY_NTOR
+            // 3 = RELAY_EXTEND_IPv6
+            for relay_version in [2, 3] {
+                let pending_tunnel = test_utils::new_pending_tunnel(&rt, &client_chan).await;
+
+                let circ_params = CircParameters::default();
+
+                let protocols = format!("Relay=2-{relay_version}").parse().unwrap();
+                let target = target_builder.protocols(protocols).build().unwrap();
+
+                let tunnel = pending_tunnel
+                    .create_firsthop(&target, circ_params)
+                    .await
+                    .unwrap();
+
+                assert_eq!(
+                    conn_inspector.try_client_cell().unwrap().msg().cmd(),
+                    ChanCmd::CREATE2,
+                );
+                assert_eq!(
+                    conn_inspector.try_relay_cell().unwrap().msg().cmd(),
+                    ChanCmd::CREATED2,
+                );
+
+                drop(tunnel);
+
+                assert_eq!(
+                    conn_inspector.client_cell().await.unwrap().msg().cmd(),
+                    ChanCmd::DESTROY,
+                );
+                // TODO(relay): I think the relay shouldn't be sending a DESTROY back to the client.
+                // https://gitlab.torproject.org/tpo/core/arti/-/work_items/2648
+                assert_eq!(
+                    conn_inspector.relay_cell().await.unwrap().msg().cmd(),
+                    ChanCmd::DESTROY,
+                );
+            }
+        });
+    }
+
+    // TODO(relay): Test ntor-v3 handshake once implemented.
 }

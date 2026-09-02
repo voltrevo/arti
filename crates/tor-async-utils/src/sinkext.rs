@@ -18,17 +18,6 @@ pub trait SinkExt<Item>: Sink<Item> {
     where
         Self: Sized,
         F: FnMut(T) -> Result<Item, E>,
-        E: From<Self::Error>;
-}
-
-impl<Item, S> SinkExt<Item> for S
-where
-    S: Sink<Item>,
-{
-    fn with_fn<F, T, E>(self, func: F) -> WithFn<Self, F, T, E>
-    where
-        Self: Sized,
-        F: FnMut(T) -> Result<Item, E>,
         E: From<Self::Error>,
     {
         WithFn {
@@ -38,6 +27,8 @@ where
         }
     }
 }
+
+impl<Item, S> SinkExt<Item> for S where S: Sink<Item> {}
 
 /// Sink returned by [`SinkExt::with_fn`].
 #[pin_project]

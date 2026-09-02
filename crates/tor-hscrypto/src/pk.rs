@@ -859,10 +859,10 @@ mod test {
         chk_err!("aaaaaaaa.onion", PE::InvalidData(..));
         chk_err!(edited(55, b'E'), PE::UnsupportedVersion(4));
         chk_err!(edited(53, b'X'), PE::WrongChecksum);
-        chk_err!(&format!("www.{}", &onion), PE::HsIdContainsSubdomain);
+        chk_err!(&format!("www.{}", onion), PE::HsIdContainsSubdomain);
 
         safelog::with_safe_logging_suppressed(|| {
-            assert_eq!(format!("{:?}", &hsid), format!("HsId({})", onion));
+            assert_eq!(format!("{:?}", hsid), format!("HsId({})", onion));
         });
 
         assert_eq!(format!("{}", hsid.display_redacted()), "[…]sid.onion");

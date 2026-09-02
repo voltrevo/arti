@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -458,7 +458,6 @@ impl<R: Runtime> DirMgr<R> {
     ///
     /// Panics if the `DirMgr` passed to this function was not created in online mode, such as
     /// via `load_once`.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor
     #[instrument(level = "trace", skip_all)]
     pub async fn bootstrap(self: &Arc<Self>) -> Result<()> {
         if self.offline {
@@ -593,7 +592,6 @@ impl<R: Runtime> DirMgr<R> {
     /// message using `on_complete`.
     ///
     /// If we eventually become the owner, return Ok().
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor?
     async fn reload_until_owner(
         weak: &Weak<Self>,
         schedule: &mut TaskSchedule<R>,
@@ -667,7 +665,6 @@ impl<R: Runtime> DirMgr<R> {
     ///
     /// If we have begin to have a bootstrapped directory, send a
     /// message using `on_complete`.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor?
     #[instrument(level = "trace", skip_all)]
     async fn download_forever(
         weak: Weak<Self>,
@@ -1066,7 +1063,6 @@ impl<R: Runtime> DirMgr<R> {
     }
 
     /// If `state` has netdir changes to apply, apply them to our netdir.
-    #[allow(clippy::cognitive_complexity)]
     fn apply_netdir_changes(
         self: &Arc<Self>,
         state: &mut Box<dyn DirState>,

@@ -25,15 +25,18 @@ pub mod aes {
 #[cfg_attr(docsrs, doc(cfg(true)))]
 #[cfg(feature = "with-openssl")]
 pub mod aes {
-    use cipher::generic_array::GenericArray;
+    use cipher::common::array::Array;
+    use cipher::common::{InnerUser, KeyInit, KeySizeUser};
     use cipher::inout::InOutBuf;
     use cipher::{InnerIvInit, IvSizeUser, StreamCipher, StreamCipherError};
-    use digest::crypto_common::{InnerUser, KeyInit, KeySizeUser};
     use openssl::symm::{Cipher, Crypter, Mode};
     use zeroize::{Zeroize, ZeroizeOnDrop};
 
     /// AES 128 in counter mode as used by Tor.
-    pub struct Aes128Ctr(Crypter);
+    pub struct Aes128Ctr(
+        /// Underlying openssl crypto context.
+        Crypter,
+    );
 
     /// AES 128 key
     #[derive(Zeroize, ZeroizeOnDrop)]
@@ -44,7 +47,7 @@ pub mod aes {
     }
 
     impl KeyInit for Aes128Key {
-        fn new(key: &GenericArray<u8, Self::KeySize>) -> Self {
+        fn new(key: &Array<u8, Self::KeySize>) -> Self {
             Aes128Key((*key).into())
         }
     }
@@ -58,21 +61,31 @@ pub mod aes {
     }
 
     impl StreamCipher for Aes128Ctr {
-        fn try_apply_keystream_inout(
-            &mut self,
-            mut buf: InOutBuf<'_, '_, u8>,
-        ) -> Result<(), StreamCipherError> {
+        fn check_remaining(&self, _data_len: usize) -> Result<(), StreamCipherError> {
+            // NOTE: this is not a sefe pattern in general, but since the underlying counter
+            // is 128 bits, we don't need to worry about overflowing it.
+            Ok(())
+        }
+
+        fn unchecked_apply_keystream_inout(&mut self, mut buf: InOutBuf<'_, '_, u8>) {
             // TODO(nickm): It would be lovely if we could get rid of this copy somehow.
-            let in_buf = buf.get_in().to_vec();
+            let in_buf = zeroize::Zeroizing::new(buf.get_in().to_vec());
             self.0
                 .update(&in_buf, buf.get_out())
-                .map_err(|_| StreamCipherError)?;
-            Ok(())
+                .expect("OpenSSL AES encryption failed.");
+        }
+
+        fn unchecked_write_keystream(&mut self, buf: &mut [u8]) {
+            // TODO(nickm): It would be lovely if we could get rid of this vec somehow.
+            let z = vec![0; buf.len()];
+            self.0
+                .update(&z, buf)
+                .expect("OpenSSL AES encryption failed.");
         }
     }
 
     impl InnerIvInit for Aes128Ctr {
-        fn inner_iv_init(inner: Self::Inner, iv: &GenericArray<u8, Self::IvSize>) -> Self {
+        fn inner_iv_init(inner: Self::Inner, iv: &Array<u8, Self::IvSize>) -> Self {
             let crypter = Crypter::new(Cipher::aes_128_ctr(), Mode::Encrypt, &inner.0, Some(iv))
                 .expect("openssl error while initializing Aes128Ctr");
             Aes128Ctr(crypter)
@@ -91,7 +104,7 @@ pub mod aes {
     }
 
     impl KeyInit for Aes256Key {
-        fn new(key: &GenericArray<u8, Self::KeySize>) -> Self {
+        fn new(key: &Array<u8, Self::KeySize>) -> Self {
             Aes256Key((*key).into())
         }
     }
@@ -105,21 +118,31 @@ pub mod aes {
     }
 
     impl StreamCipher for Aes256Ctr {
-        fn try_apply_keystream_inout(
-            &mut self,
-            mut buf: InOutBuf<'_, '_, u8>,
-        ) -> Result<(), StreamCipherError> {
-            // TODO(nickm): It would be lovely if we could get rid of this copy.
-            let in_buf = buf.get_in().to_vec();
+        fn check_remaining(&self, _data_len: usize) -> Result<(), StreamCipherError> {
+            // NOTE: this is not a sefe pattern in general, but since the underlying counter
+            // is 128 bits, we don't need to worry about overflowing it.
+            Ok(())
+        }
+
+        fn unchecked_apply_keystream_inout(&mut self, mut buf: InOutBuf<'_, '_, u8>) {
+            // TODO(nickm): It would be lovely if we could get rid of this copy somehow.
+            let in_buf = zeroize::Zeroizing::new(buf.get_in().to_vec());
             self.0
                 .update(&in_buf, buf.get_out())
-                .map_err(|_| StreamCipherError)?;
-            Ok(())
+                .expect("OpenSSL AES encryption failed.");
+        }
+
+        fn unchecked_write_keystream(&mut self, buf: &mut [u8]) {
+            // TODO(nickm): It would be lovely if we could get rid of this vec somehow.
+            let z = vec![0; buf.len()];
+            self.0
+                .update(&z, buf)
+                .expect("OpenSSL AES encryption failed.");
         }
     }
 
     impl InnerIvInit for Aes256Ctr {
-        fn inner_iv_init(inner: Self::Inner, iv: &GenericArray<u8, Self::IvSize>) -> Self {
+        fn inner_iv_init(inner: Self::Inner, iv: &Array<u8, Self::IvSize>) -> Self {
             let crypter = Crypter::new(Cipher::aes_256_ctr(), Mode::Encrypt, &inner.0, Some(iv))
                 .expect("openssl error while initializing Aes256Ctr");
             Aes256Ctr(crypter)

@@ -94,9 +94,6 @@ pub mod multiplicity;
 mod signatures;
 mod traits;
 
-#[cfg(feature = "incomplete")]
-pub mod poc;
-
 use internal_prelude::*;
 
 pub use error::{ArgumentError, ErrorProblem, ParseError, UnexpectedArgument, VerifyFailed};

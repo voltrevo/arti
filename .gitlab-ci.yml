@@ -40,16 +40,16 @@ variables:
   # For static website deployment job
   SITE_URL: arti.torproject.org
   # Pinned chutney version.
-  # main @ 2026-06-15
-  CHUTNEY_COMMIT: "8e7ad77631b5c5113d513b658b2f822debcd18bd"
+  # main @ 2026-07-01
+  CHUTNEY_COMMIT: "d6659ac34c36122ed2590714e37269d1b983c336"
   # Rust doesn't do backtraces on panic by default, but we do want them in CI
   RUST_BACKTRACE: 1
 
 default:
   image:
     name: containers.torproject.org/tpo/tpa/base-images/debian:trixie
-    docker:
-      platform: linux/amd64
+  tags:
+    - amd64
   before_script:
     # get section_start and section_end bash functions
     - source maint/ci-log-span-fns.sh
@@ -113,7 +113,7 @@ shellcheck:
     - ./maint/common/shellcheck-all
 
 python3-checks:
-  needs: []
+  needs: ["build-shadow"]
   stage: build
   variables:
     # Updated 2026-01-21
@@ -143,6 +143,8 @@ python3-checks:
         black=="$BLACK_VERSION"
         flake8=="$FLAKE8_VERSION"
         mypy=="$MYPY_VERSION"
+    # Install shadowtools, built in build-shadow
+    - pip3 install --no-index --find-links="$CI_PROJECT_DIR"/opt/shadow/wheels shadowtools
     - ./maint/python-lints
 
 maint-checks:
@@ -410,15 +412,20 @@ rust-clippy-nontest:
 rust-nightly:
   needs: []
   stage: test
-  image: docker.io/rustlang/rust:nightly
-  # mitigate https://gitlab.torproject.org/tpo/tpa/team/-/issues/42317
-  timeout: 2h
+  # Temporarily pinned; see arti#2618.
+  #image: docker.io/rustlang/rust:nightly
+  image: rustlang/rust:nightly-2026-06-28
+
   # In case there is a bug in rust:nightly, you can instead pin an older
   # version of the Docker image until that bug is fixed.  To find the
   # SHA256 ID of the last working version of nightly, look at the logs
   # from the last successful CI run.  Here is an example of how to do so:
   #
-  # image: rustlang/rust@sha256:415b7c22ab4a8a3ec3efc9cc8d7b018964f0c6757fff27bbd110e0ed92566321
+  # image: rustlang/rust:nightly-2026-06-28
+
+  # mitigate https://gitlab.torproject.org/tpo/tpa/team/-/issues/42317
+  timeout: 2h
+
   allow_failure: true
   script:
     - rustup show
@@ -440,12 +447,14 @@ rust-nightly:
 check-api-surface:
   needs: []
   stage: test
-  image: docker.io/rustlang/rust:nightly
-  # See #2616.
-  allow_failure: true
+  # Temporarily pinned; see arti#2618.
+  #image: docker.io/rustlang/rust:nightly
+  image: rustlang/rust:nightly-2026-06-28
+
   script:
     - maint/common/apt-install jq
-    - ./maint/check-api-surface-arti
+    # (We use CARGO='cargo' to prevent an explicit +nightly.)
+    - CARGO=cargo ./maint/check-api-surface-arti
 
 deb-source:
   needs: []
@@ -477,8 +486,6 @@ deb-binary-amd64:
       - "*.deb"
       - "*.changes"
       - "*.buildinfo"
-  tags:
-    - amd64
 
 # Note: big-endian targets do not compile due to lack of support from the merlin
 # crate, needed by the 'batch' feature of ed25519-dalek. A fix seems available
@@ -502,8 +509,6 @@ deb-binary-amd64:
       - "*.deb"
       - "*.changes"
       - "*.buildinfo"
-  tags:
-    - amd64
 
 deb-binary-arm64:
   needs: []
@@ -619,8 +624,8 @@ build-shadow:
   variables:
     JOB_SHADOW_REPO: "https://github.com/shadow/shadow.git"
     JOB_SHADOW_BRANCH: "main"
-    # Last updated 2026-06-03
-    JOB_SHADOW_COMMIT: "fda368e7f9ed87c3981c8d8679f716c20c8b634a"
+    # Last updated 2026-07-27
+    JOB_SHADOW_COMMIT: "6599c7c7e1726bf621d10ef83f528575fcf0348d"
   artifacts:
     paths:
       - opt/shadow
@@ -628,11 +633,9 @@ build-shadow:
     # around for longer.
     expire_in: 1 day
   cache:
-    - key: $CI_JOB_NAME-shadow-$JOB_SHADOW_COMMIT
+    - key: $CI_JOB_NAME-shadow-v3-$JOB_SHADOW_COMMIT
       paths:
       - opt/shadow
-  tags:
-    - amd64
   script:
     # Build shadow
     - |
@@ -641,7 +644,7 @@ build-shadow:
         echo "Using shadow binary from cache"
       else
         echo "Building shadow"
-        maint/common/apt-install git
+        maint/common/apt-install git python3-pip
         git clone --shallow-since=2021-08-01 -b $JOB_SHADOW_BRANCH $JOB_SHADOW_REPO ~/src/shadow
         cd ~/src/shadow
         git checkout $JOB_SHADOW_COMMIT
@@ -651,6 +654,9 @@ build-shadow:
         export PATH="$HOME/.cargo/bin:${PATH}"
         ./setup build --jobs $(nproc) --prefix $CI_PROJECT_DIR/opt/shadow
         ./setup install
+
+        mkdir "$CI_PROJECT_DIR"/opt/shadow/wheels
+        python3 -m pip wheel --wheel-dir="$CI_PROJECT_DIR"/opt/shadow/wheels ./shadowtools
       fi
 
 integration-chutney:
@@ -674,9 +680,8 @@ integration-chutney:
     - tests/chutney/integration-e2e
   artifacts:
     paths:
-      - benchmark_results.json
       # chutney network including tor logs etc
-      - nodes.*/
+      - chutney-net
 
 # Runs the chutney integration test under shadow.
 integration-chutney-shadow:
@@ -716,6 +721,9 @@ integration-chutney-shadow:
     - maint/common/apt-install libglib2.0-0
     - stow -d opt -t $HOME/.local shadow
 
+    # Install shadowtools, built in build-shadow
+    - python3 -m pip install --no-index --find-links="$CI_PROJECT_DIR"/opt/shadow/wheels shadowtools
+
     # Select a random simulation seed to avoid "dooming"
     # an unlucky MR that hits a low-probability bug.
     - SEED=$(date +%s)
@@ -723,12 +731,8 @@ integration-chutney-shadow:
     - tests/chutney/integration-e2e-shadow --seed="$SEED"
   artifacts:
     paths:
-      - benchmark_results.json
-      - shadow.chutney.yaml
-      - shadow.chutney.data/
-      - shadow.log
       # chutney network including tor logs etc
-      - nodes.*/
+      - chutney-net
     when: always
     expire_in: 1 week
 

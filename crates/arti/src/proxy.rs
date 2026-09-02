@@ -12,11 +12,14 @@ semipublic_mod! {
     pub(crate) mod port_info;
 }
 
+use derive_more::Display;
+use extend::ext;
 use futures::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, Error as IoError};
 use futures::stream::StreamExt;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tor_basic_utils::error_sources::ErrorSources;
+use tor_log_ratelim::log_ratelim;
 use tor_rtcompat::{NetStreamProvider, SpawnExt, TcpListenOptions};
 use tracing::{debug, error, info, instrument, warn};
 
@@ -517,7 +520,7 @@ pub(crate) async fn run_proxy_with_listeners<R: Runtime>(
         };
         tor_client.runtime().spawn(async move {
             let res = handle_proxy_conn(proxy_context, stream, (sock_id, addr.ip())).await;
-            if let Err(ref e) = res {
+            if let Err(e) = res {
                 report_proxy_error(e);
             }
         })?;
@@ -607,9 +610,35 @@ fn extract_proto_err<'a>(
     None
 }
 
+/// A wrapper that makes anyhow::Error Sized and Cloneable
+/// by wrapping it in an Arc.
+// TODO Add better handling for anyhow errors in tor-log-ratelim
+// create tor-log-ratelim/src/anyhow.rs and put them there
+#[derive(Debug, Clone, Display)]
+#[display("{}", _0)]
+pub(crate) struct RateLimitError(Arc<anyhow::Error>);
+
+impl RateLimitError {
+    /// Creates a new `RateLimitError` from an `anyhow::Error`.
+    pub(crate) fn new(e: anyhow::Error) -> Self {
+        Self(Arc::new(e))
+    }
+}
+
+impl std::error::Error for RateLimitError {}
+
+/// Wraps a `Result` containing an `anyhow::Error` into a `Result`
+/// containing a `Sized` `RateLimitError` to allow usage with `log_ratelim!`.
+#[ext]
+impl<T> Result<T, anyhow::Error> {
+    /// Wraps an `anyhow::Error` into a `Sized` `RateLimitError`
+    fn wrap_for_ratelimit(self) -> Result<T, RateLimitError> {
+        self.map_err(RateLimitError::new)
+    }
+}
+
 /// Report an error that occurred within a single proxy task.
-#[allow(clippy::cognitive_complexity)] // warning depends on cfg
-fn report_proxy_error(e: &anyhow::Error) {
+fn report_proxy_error(e: anyhow::Error) {
     use tor_proto::Error as PE;
     // TODO: In the long run it might be a good idea to use an ErrorKind here if we can get one.
     // This is a bit of a kludge based on the fact that we're using anyhow.
@@ -625,6 +654,19 @@ fn report_proxy_error(e: &anyhow::Error) {
         // which upgrades this to a warning.
         // https://gitlab.torproject.org/tpo/core/arti/-/issues/2439
         Some(e @ PE::NotConnected) => debug!(error = (e as &dyn std::error::Error), "Connection exited"),
-        _ => warn_report!(*e, "Connection exited"),
+        _ => {
+            // TODO: See https://gitlab.torproject.org/tpo/core/arti/-/work_items/2632
+            // We use the root cause of the error as the activity key for rate-limiting
+            // because it provides only the original OS error without any wrappers on the text.
+            // This avoids a manual if-else chain while maintaining separate buckets
+            // for different errors.
+            let bucket = e.root_cause().to_string();
+            let r: Result<(), RateLimitError> = Err(e).wrap_for_ratelimit();
+
+            log_ratelim!(
+                "Connection exited (cause: {})", bucket;
+                r;
+            );
+        }
     }
 }

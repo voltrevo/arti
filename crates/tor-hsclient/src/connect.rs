@@ -23,6 +23,7 @@ use tor_dirclient::SourceInfo;
 use tor_error::{Bug, debug_report, warn_report};
 use tor_hscrypto::Subcredential;
 use tor_hscrypto::time::TimePeriod;
+use tor_netdir::params::NetParameters;
 use tor_proto::TargetHop;
 use tor_proto::client::circuit::handshake::hs_ntor::{self, HsNtorHkdfKeyGenerator};
 use tracing::{debug, instrument, trace, warn};
@@ -34,7 +35,7 @@ use tor_cell::relaycell::RelayMsg;
 use tor_cell::relaycell::hs::{
     AuthKeyType, EstablishRendezvous, IntroduceAck, RendezvousEstablished,
 };
-use tor_checkable::{Timebound, timed::TimerangeBound};
+use tor_checkable::{TimeBound, timed::TimeRangeBound};
 use tor_circmgr::hspool::HsCircPool;
 use tor_circmgr::timeouts::Action as TimeoutsAction;
 use tor_dirclient::request::Requestable as _;
@@ -51,6 +52,7 @@ use tor_proto::{MetaCellDisposition, MsgHandler};
 use tor_rtcompat::{Runtime, SleepProviderExt as _, TimeoutError};
 
 use crate::Config;
+use crate::caps;
 use crate::err::RendPtIdentityForError;
 use crate::pow::HsPowClient;
 use crate::proto_oneshot;
@@ -78,6 +80,7 @@ macro_rules! DataTunnel{ { $R:ty, $M:ty } => {
 pub struct Data {
     /// The latest known onion service descriptor for this service.
     desc: DataHsDesc,
+
     /// Information about the latest status of trying to connect to this service
     /// through each of its introduction points.
     ipts: DataIpts,
@@ -99,7 +102,7 @@ struct HsDescForTp {
     /// is for the same time period as this one.
     time_period: TimePeriod,
     /// The descriptor
-    desc: TimerangeBound<HsDesc>,
+    desc: TimeRangeBound<HsDesc>,
 }
 
 /// Part of `Data` that relates to our information about the HsDir requery periods
@@ -304,6 +307,9 @@ struct Introduced<R: Runtime, M: MocksForConnect<R>> {
     /// Created as part of generating our `INTRODUCE1`,
     /// and then used when processing `RENDEZVOUS2`.
     handshake_state: hs_ntor::HsNtorClientState,
+
+    /// A set of peer extensions that we decided to negotiate and use.
+    peer_caps: caps::PeerCaps,
 
     /// Dummy, to placate compiler
     ///
@@ -521,7 +527,6 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
     ///
     /// Does all necessary retries and timeouts.
     /// Returns an error if no valid descriptor could be found.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor
     #[instrument(level = "trace", skip_all)]
     async fn descriptor_ensure<'d>(
         &self,
@@ -545,7 +550,7 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
                 .expect("Some but now None")
                 .desc
                 .as_ref()
-                .check_valid_at(&now)
+                .if_valid_at(&now)
                 .expect("Ok but now Err")
         };
 
@@ -561,7 +566,7 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
         let now = self.runtime.wallclock();
 
         let stored_revision = data.as_ref().and_then(|previously| {
-            if let Ok(desc) = previously.desc.as_ref().check_valid_at(&now) {
+            if let Ok(desc) = previously.desc.as_ref().if_valid_at(&now) {
                 // Ideally we would just return desc but that confuses borrowck,
                 // so we have to use unwrap_valid_desc() each time
                 // we need the known-to-be-Some descriptor instead.
@@ -637,6 +642,8 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
             }
         }
 
+        let params = self.netdir.params();
+
         // We might consider launching requests to multiple HsDirs in parallel.
         //   https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/1118#note_2894463
         // But C Tor doesn't and our HS experts don't consider that important:
@@ -663,7 +670,7 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
             // fecth from this HsDir again
             recent_hsdirs.insert(hsdir, now + self.config.retry.hs_dir_requery_interval());
 
-            match self.descriptor_fetch_attempt(relay).await {
+            match self.descriptor_fetch_attempt(relay, params).await {
                 Ok(desc) => break desc,
                 Err(error) => {
                     if error.should_report_as_suspicious() {
@@ -740,13 +747,14 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
     ///
     /// On success, returns the descriptor.
     ///
-    /// While the returned descriptor is `TimerangeBound`, its validity at the current time *has*
+    /// While the returned descriptor is `TimeRangeBound`, its validity at the current time *has*
     /// been checked.
     #[instrument(level = "trace", skip_all)]
     async fn descriptor_fetch_attempt(
         &self,
         hsdir: &Relay<'_>,
-    ) -> Result<TimerangeBound<HsDesc>, DescriptorErrorDetail> {
+        params: &NetParameters,
+    ) -> Result<TimeRangeBound<HsDesc>, DescriptorErrorDetail> {
         let max_len: usize = self
             .netdir
             .params()
@@ -814,14 +822,20 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
 
         let now = self.runtime.wallclock();
 
-        HsDesc::parse_decrypt_validate(
+        let desc = HsDesc::parse_decrypt_validate(
             &desc_text,
             &self.hs_blind_id,
-            now,
             &self.subcredential,
             hsc_desc_enc,
-        )
-        .map_err(DescriptorErrorDetail::from)
+        )?;
+
+        // Check the validity time (relied on by descriptor_ensure)
+        desc.check_valid_at(&now)?;
+
+        // Validate cc_sendme_inc, if present, is within ±1 of params.cc_sendme_inc.
+        ensure_descriptor_compatible_with_params(desc.dangerously_peek(), params)?;
+
+        Ok(desc)
     }
 
     /// Given the descriptor, try to connect to service
@@ -1000,7 +1014,7 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
                 );
 
                 let (rendezvous, introduced) =
-                    self.exchange_introduce(ipt, &mut saved_rendezvous, proof_of_work)
+                    self.exchange_introduce(desc, ipt, &mut saved_rendezvous, proof_of_work)
                     .await
                     // TODO: Maybe try, once, to extend-and-reuse the intro circuit.
                     //
@@ -1208,10 +1222,11 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
     /// So if there's a failure, it's purely to do with the introduction point.
     ///
     /// Applies timeouts as appropriate.
-    #[allow(clippy::cognitive_complexity, clippy::type_complexity)] // TODO: Refactor
+    #[allow(clippy::type_complexity)] // TODO: Refactor
     #[instrument(level = "trace", skip_all)]
     async fn exchange_introduce(
         &'c self,
+        hsdesc: &HsDesc,
         ipt: &UsableIntroPt<'_>,
         rendezvous: &mut Option<Rendezvous<'c, R, M>>,
         proof_of_work: Option<ProofOfWork>,
@@ -1265,6 +1280,8 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
             header
         };
 
+        let peer_caps = caps::PeerCaps::new(hsdesc);
+
         // Construct the introduce payload, which tells the onion service how to find
         // our rendezvous point.  (We could do this earlier if we wanted.)
         let intro_payload = {
@@ -1274,12 +1291,16 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
                 .rend_relay
                 .linkspecs()
                 .map_err(into_internal!("Couldn't encode link specifiers"))?;
-            let payload = IntroduceHandshakePayload::new(
+            #[allow(unused_mut)] // TODO: Remove once negotiate-extensions is always-on.
+            let mut payload = IntroduceHandshakePayload::new(
                 rendezvous.rend_cookie,
                 onion_key,
                 linkspecs,
                 proof_of_work,
             );
+
+            peer_caps.add_extensions(&mut payload);
+
             let mut encoded = vec![];
             payload
                 .write_onto(&mut encoded)
@@ -1386,6 +1407,7 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
             Introduced {
                 handshake_state,
                 marker: PhantomData,
+                peer_caps,
             },
         ))
     }
@@ -1513,13 +1535,14 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
             self.mocks
                 .rendezvous_handshake(handshake_state, rend2_msg, intro_index, &rend_pt)?;
 
-        let params = onion_circparams_from_netparams(self.netdir.params())
+        let mut params = onion_circparams_from_netparams(self.netdir.params())
             .map_err(into_internal!("Failed to build CircParameters"))?;
-        // TODO: We may be able to infer more about the supported protocols of the other side from our
-        // handshake, and from its descriptors.
-        //
-        // TODO CC: This is relevant for congestion control!
-        let protocols = self.netdir.client_protocol_status().required_protocols();
+
+        if let Some(inc) = introduced.peer_caps.cc_sendme_inc() {
+            params.ccontrol.override_sendme_inc(inc);
+        }
+
+        let protocols = introduced.peer_caps.shared_protos();
 
         rendezvous
             .rend_tunnel
@@ -1528,7 +1551,7 @@ impl<'c, R: Runtime, M: MocksForConnect<R>> Context<'c, R, M> {
                 handshake::HandshakeRole::Initiator,
                 keygen,
                 params,
-                protocols,
+                &protocols,
             )
             .await
             .map_err(into_internal!(
@@ -1865,6 +1888,23 @@ impl MockableConnectorData for Data {
     }
 }
 
+/// Return an error if `desc` declares a set of parameters
+/// that is too far away from the consensus.
+fn ensure_descriptor_compatible_with_params(
+    desc: &HsDesc,
+    params: &NetParameters,
+) -> Result<(), DescriptorErrorDetail> {
+    if let Some((_, desc_inc)) = desc.flow_control() {
+        let difference = u8::from(desc_inc).abs_diff(params.cc_sendme_inc.into());
+        if difference > 1 {
+            return Err(DescriptorErrorDetail::ParameterMismatch(
+                "cc_sendme_inc too far from consensus".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
@@ -2104,12 +2144,12 @@ mod test {
         HsDesc::parse_decrypt_validate(
             test_data::TEST_DATA_2,
             &hs_blind_id,
-            now,
             &subcredential,
             Some(&ks_hsc_desc_enc()),
         )
         .unwrap()
-        .dangerously_assume_timely()
+        .if_valid_at(&now)
+        .unwrap()
     }
 
     fn build_test_netdir() -> Arc<NetDir> {
@@ -2225,7 +2265,7 @@ mod test {
         }
 
         // Check how long the descriptor is valid for
-        let (start_time, end_time) = data.desc.as_ref().unwrap().desc.bounds();
+        let (start_time, end_time) = data.desc.as_ref().unwrap().desc.bounds_start_end();
         assert_eq!(start_time, None);
 
         let desc_valid_until = humantime::parse_rfc3339("2023-02-11T20:00:00Z").unwrap();
@@ -2268,7 +2308,7 @@ mod test {
                 );
             }
 
-            let (start_time, end_time) = data.desc.as_ref().unwrap().desc.bounds();
+            let (start_time, end_time) = data.desc.as_ref().unwrap().desc.bounds_start_end();
             assert_eq!(start_time, None);
 
             let desc_valid_until = humantime::parse_rfc3339("2023-02-11T20:00:00Z").unwrap();

@@ -323,12 +323,9 @@ impl Crate {
             match dep.version.as_deref() {
                 Some("*") => w(format!(
                     "Dependency for {:?} is given as version='*'",
-                    &dep.name
+                    dep.name
                 )),
-                None => w(format!(
-                    "No version found for dependency on {:?}",
-                    &dep.name
-                )),
+                None => w(format!("No version found for dependency on {:?}", dep.name)),
                 _ => {}
             }
         }
@@ -341,11 +338,11 @@ impl Crate {
                 match other_crates.get(&dep.name) {
                     None => w(format!(
                         "Dependency on crate {:?}, which I could not find.",
-                        &dep.name
+                        dep.name
                     )),
                     Some(info) if !info.published => w(format!(
                         "Dependency on crate {:?}, which has `publish = false`",
-                        &dep.name
+                        dep.name
                     )),
                     _ => {}
                 }

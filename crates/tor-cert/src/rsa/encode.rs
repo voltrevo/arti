@@ -81,7 +81,7 @@ mod test {
     use std::time::Duration;
 
     use tor_basic_utils::test_rng::testing_rng;
-    use tor_checkable::{ExternallySigned, Timebound};
+    use tor_checkable::{ExternallySigned, TimeBound};
     use web_time_compat::SystemTimeExt;
 
     use crate::SEC_PER_HOUR;
@@ -106,7 +106,7 @@ mod test {
         let parsed = parsed
             .check_signature(&keypair.to_public_key())
             .unwrap()
-            .check_valid_at(&now)
+            .if_valid_at(&now)
             .unwrap();
 
         assert!(parsed.subject_key_matches(&ed_id));

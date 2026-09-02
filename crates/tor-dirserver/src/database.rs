@@ -58,9 +58,8 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rand::Rng;
 use rusqlite::{
-    named_params, params,
+    OptionalExtension, ToSql, Transaction, TransactionBehavior, named_params, params,
     types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
-    OptionalExtension, ToSql, Transaction, TransactionBehavior,
 };
 use saturating_time::SaturatingTime;
 use tor_basic_utils::RngExt;
@@ -782,7 +781,7 @@ pub(crate) fn open<P: AsRef<Path>>(
                 unknown => {
                     return Err(DatabaseError::IncompatibleSchema {
                         version: unknown.into(),
-                    })
+                    });
                 }
             }
         } else {
@@ -1520,44 +1519,52 @@ mod test {
 
         read_tx(&pool, move |tx| {
             // Get None by being way before valid-after.
-            assert!(ConsensusMeta::query_recent(
-                tx,
-                ConsensusFlavor::Plain,
-                &no_tolerance,
-                SystemTime::UNIX_EPOCH.into(),
-            )
-            .unwrap()
-            .is_none());
+            assert!(
+                ConsensusMeta::query_recent(
+                    tx,
+                    ConsensusFlavor::Plain,
+                    &no_tolerance,
+                    SystemTime::UNIX_EPOCH.into(),
+                )
+                .unwrap()
+                .is_none()
+            );
 
             // Get None by being way behind valid-until.
-            assert!(ConsensusMeta::query_recent(
-                tx,
-                ConsensusFlavor::Plain,
-                &no_tolerance,
-                *VALID_UNTIL + Duration::from_secs(60 * 60 * 24 * 365),
-            )
-            .unwrap()
-            .is_none());
+            assert!(
+                ConsensusMeta::query_recent(
+                    tx,
+                    ConsensusFlavor::Plain,
+                    &no_tolerance,
+                    *VALID_UNTIL + Duration::from_secs(60 * 60 * 24 * 365),
+                )
+                .unwrap()
+                .is_none()
+            );
 
             // Get None by being minimally before valid-after.
-            assert!(ConsensusMeta::query_recent(
-                tx,
-                ConsensusFlavor::Plain,
-                &no_tolerance,
-                *VALID_AFTER - Duration::from_secs(1),
-            )
-            .unwrap()
-            .is_none());
+            assert!(
+                ConsensusMeta::query_recent(
+                    tx,
+                    ConsensusFlavor::Plain,
+                    &no_tolerance,
+                    *VALID_AFTER - Duration::from_secs(1),
+                )
+                .unwrap()
+                .is_none()
+            );
 
             // Get None by being minimally behind valid-until.
-            assert!(ConsensusMeta::query_recent(
-                tx,
-                ConsensusFlavor::Plain,
-                &no_tolerance,
-                *VALID_UNTIL + Duration::from_secs(1),
-            )
-            .unwrap()
-            .is_none());
+            assert!(
+                ConsensusMeta::query_recent(
+                    tx,
+                    ConsensusFlavor::Plain,
+                    &no_tolerance,
+                    *VALID_UNTIL + Duration::from_secs(1),
+                )
+                .unwrap()
+                .is_none()
+            );
 
             // Get a valid consensus by being in the interval.
             let res1 = ConsensusMeta::query_recent(

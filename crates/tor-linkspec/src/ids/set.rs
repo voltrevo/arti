@@ -157,7 +157,6 @@ mod test {
 
     #[test]
     fn basic_usage() {
-        #![allow(clippy::cognitive_complexity)]
         let rsa1 = RsaIdentity::from(hex!("42656c6f7665642c207768617420617265206e61"));
         let rsa2 = RsaIdentity::from(hex!("6d657320627574206169723f43686f6f73652074"));
         let rsa3 = RsaIdentity::from(hex!("686f752077686174657665722073756974732074"));

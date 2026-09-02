@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -510,7 +510,7 @@ pub fn fmt_error_with_sources(mut e: &dyn Error, f: &mut fmt::Formatter) -> fmt:
     loop {
         let this = e.to_string();
         if !last.contains(&this) {
-            write!(f, "{}{}", sep.next().expect("repeat ended"), &this)?;
+            write!(f, "{}{}", sep.next().expect("repeat ended"), this)?;
         }
         last = this;
 

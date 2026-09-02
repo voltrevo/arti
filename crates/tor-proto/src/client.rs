@@ -38,7 +38,7 @@ use circuit::{ClientCirc, Path};
 use reactor::{CtrlCmd, CtrlMsg, FlowCtrlMsg, MetaCellHandler};
 
 use tor_cell::relaycell::StreamId;
-use tor_cell::relaycell::flow_ctrl::XonKbpsEwma;
+use tor_cell::relaycell::flow_ctrl::XonKBpsEwma;
 use tor_cell::relaycell::msg::{AnyRelayMsg, Begin, Resolve, Resolved, ResolvedVal};
 use tor_error::bad_api_usage;
 use tor_linkspec::OwnedChanTarget;
@@ -126,7 +126,7 @@ impl ClientTunnel {
     /// Returns an error if the tunnel has more than one circuit.
     pub fn as_single_circ(&self) -> Result<&ClientCirc> {
         if self.circ.is_multi_path {
-            return Err(bad_api_usage!("Single circuit getter on multi path tunnel"))?;
+            Err(bad_api_usage!("Single circuit getter on multi path tunnel"))?;
         }
         Ok(&self.circ)
     }
@@ -825,7 +825,7 @@ impl ClientTunnel {
         &self,
         stream_id: StreamId,
         hop: Option<HopLocation>,
-        rate: XonKbpsEwma,
+        rate: XonKBpsEwma,
     ) -> Result<()> {
         self.circ
             .control

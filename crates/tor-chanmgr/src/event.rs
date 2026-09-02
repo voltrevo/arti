@@ -393,7 +393,6 @@ pub(crate) fn channel() -> (ChanMgrEventSender, ConnStatusEvents) {
 }
 
 #[cfg(test)]
-#[allow(clippy::cognitive_complexity)]
 mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
     #![allow(clippy::bool_assert_comparison)]

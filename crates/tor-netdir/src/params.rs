@@ -794,7 +794,6 @@ impl NetParameters {
 
 #[cfg(test)]
 #[allow(clippy::many_single_char_names)]
-#[allow(clippy::cognitive_complexity)]
 mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
     #![allow(clippy::bool_assert_comparison)]

@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -71,6 +71,7 @@ pub use paste::paste;
 #[doc(hidden)]
 pub use derive_deftly;
 
+use extend::ext;
 use rand::Rng;
 
 /// Sealed
@@ -112,6 +113,15 @@ pub fn skip_fmt<T>(_: &T, f: &mut fmt::Formatter) -> fmt::Result {
 
 /// Formats an iterator as an object whose display implementation is a `separator`-separated string
 /// of items from `iter`.
+///
+/// Performs a similar function to `Itertools::format`.  Differences:
+///
+///  * `Itertools::format` panics if the returned formatting helper is formatted twice;
+///    conversely, `iter_join` requires that the iterator be `Clone`.
+///  * `iter_join` only supports `Display`; `.format` supports all formatting traits.
+///  * `iter_join` accepts an `IntoIterator` rather than requiring an `Iterator`.
+//
+// TODO maybe this should be an extension trait method?
 pub fn iter_join(
     separator: &str,
     iter: impl IntoIterator<Item: fmt::Display> + Clone,
@@ -142,11 +152,11 @@ pub fn iter_join(
 // ----------------------------------------------------------------------
 
 /// Extension trait to provide `.strip_suffix_ignore_ascii_case()` etc.
-// Using `.as_ref()` as a supertrait lets us make the method a provided one.
-pub trait StrExt: AsRef<str> {
+#[ext(name = StrExt)]
+pub impl str {
     /// Like `str.strip_suffix()` but ASCII-case-insensitive
     fn strip_suffix_ignore_ascii_case(&self, suffix: &str) -> Option<&str> {
-        let whole = self.as_ref();
+        let whole = self;
         let suffix_start = whole.len().checked_sub(suffix.len())?;
         let (rest, possible_suffix) = whole.split_at_checked(suffix_start)?;
         possible_suffix.eq_ignore_ascii_case(suffix).then_some(rest)
@@ -157,7 +167,6 @@ pub trait StrExt: AsRef<str> {
         self.strip_suffix_ignore_ascii_case(suffix).is_some()
     }
 }
-impl StrExt for str {}
 
 // ----------------------------------------------------------------------
 
@@ -284,7 +293,8 @@ impl GenRangeInfallible for Duration {
 // ----------------------------------------------------------------------
 
 /// Renaming of `Path::display` as `display_lossy`
-pub trait PathExt: Sealed {
+#[ext(supertraits = Sealed)]
+pub impl Path {
     /// Display this `Path` as an approximate string, for human consumption in messages
     ///
     /// Operating system paths cannot always be faithfully represented as Rust strings,
@@ -295,15 +305,12 @@ pub trait PathExt: Sealed {
     ///
     /// This method is exactly the same as [`std::path::Path::display`],
     /// but with a different and more discouraging name.
-    fn display_lossy(&self) -> std::path::Display<'_>;
-}
-impl Sealed for Path {}
-impl PathExt for Path {
     #[allow(clippy::disallowed_methods)]
     fn display_lossy(&self) -> std::path::Display<'_> {
         self.display()
     }
 }
+impl Sealed for Path {}
 
 // ----------------------------------------------------------------------
 

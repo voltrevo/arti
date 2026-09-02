@@ -1,5 +1,6 @@
 //! Helpers for [`fs-mistrust`](fs_mistrust) configuration.
 
+use extend::ext;
 use fs_mistrust::{Mistrust, MistrustBuilder};
 
 use crate::ConfigBuildError;
@@ -9,17 +10,10 @@ pub const FS_PERMISSIONS_CHECKS_DISABLE_VAR: &str = "ARTI_FS_DISABLE_PERMISSION_
 
 /// Extension trait for `MistrustBuilder` to convert the error type on
 /// build.
-pub trait BuilderExt {
-    /// Type that this builder provides.
-    type Built;
+#[ext(name = BuilderExt)]
+pub impl MistrustBuilder {
     /// Run this builder and convert its error type (if any)
-    fn build_for_arti(&self) -> Result<Self::Built, ConfigBuildError>;
-}
-
-impl BuilderExt for MistrustBuilder {
-    type Built = Mistrust;
-
-    fn build_for_arti(&self) -> Result<Self::Built, ConfigBuildError> {
+    fn build_for_arti(&self) -> Result<Mistrust, ConfigBuildError> {
         self.clone()
             .controlled_by_env_var_if_not_set(FS_PERMISSIONS_CHECKS_DISABLE_VAR)
             .build()

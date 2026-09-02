@@ -450,9 +450,9 @@ impl fmt::Display for DirProgress {
             /// We use "YYYY-MM-DD HH:MM:SS UTC" here, since we never have
             /// sub-second times here, and using non-UTC offsets is confusing
             /// in this context.
-            static FORMAT: LazyLock<Vec<time::format_description::FormatItem>> =
+            static FORMAT: LazyLock<time::format_description::FormatDescriptionV3> =
                 LazyLock::new(|| {
-                    time::format_description::parse(
+                    time::format_description::parse_borrowed::<3>(
                         "[year]-[month]-[day] [hour]:[minute]:[second] UTC",
                     )
                     .expect("Invalid time format")

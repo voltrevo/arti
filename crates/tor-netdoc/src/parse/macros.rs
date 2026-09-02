@@ -103,7 +103,6 @@ macro_rules! decl_keyword {
 
 #[cfg(test)]
 pub(crate) mod test {
-    #![allow(clippy::cognitive_complexity)]
 
     use crate::KeywordEncodable;
 

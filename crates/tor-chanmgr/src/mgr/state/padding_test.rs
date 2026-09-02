@@ -77,7 +77,7 @@ fn padding_parameters_calculation() {
     fn one(pconfig: PaddingLevel, netparams: &NetParamsExtract, exp: Option<[u32; 2]>) {
         eprintln!(
             "### {:?} {:?}",
-            &pconfig,
+            pconfig,
             netparams.nf_ito.map(|l| l.map(|v| v.as_millis().get())),
         );
         let got = padding_parameters(pconfig, netparams).unwrap();
@@ -181,7 +181,7 @@ async fn case(
     cconfig.padding(level);
     let cconfig = cconfig.build().unwrap();
 
-    eprintln!("\n---- {:?} {:?} {:?} ----", &cconfig, &dormancy, &usage);
+    eprintln!("\n---- {:?} {:?} {:?} ----", cconfig, dormancy, usage);
 
     let (channel, recv) =
         Channel::new_fake(rt.clone(), tor_proto::channel::ChannelType::ClientInitiator);
@@ -236,7 +236,7 @@ impl CaseContext {
         })
         .collect_vec();
 
-        eprintln!("{:#?}", &messages);
+        eprintln!("{:#?}", messages);
 
         for (i, (got, exp)) in zip_eq(messages, expected).enumerate() {
             eprintln!("{} {:?} {:?}", i, got, exp);

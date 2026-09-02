@@ -1,6 +1,6 @@
 [package]
 name = "arti-relay"
-version = "0.44.0"
+version = "0.45.0"
 authors = ["The Tor Project, Inc."]
 edition = "2024"
 rust-version = "1.91"
@@ -18,6 +18,7 @@ all-features = true
 full = [
     "fs-mistrust/full",
     "safelog/full",
+    "tor-async-utils/full",
     "tor-chanmgr/full",
     "tor-config/full",
     "tor-error/full",
@@ -34,7 +35,9 @@ full = [
     "tor-general-addr/full",
     "tor-circmgr/full",
     "tor-dircommon/full",
+    "tor-dirclient/full",
     "tor-dirmgr/full",
+    "tor-dirpublish/full",
     "tor-guardmgr/full",
     "tor-log-ratelim/full",
     "tor-basic-utils/full",
@@ -42,6 +45,8 @@ full = [
     "tor-key-forge/full",
     "tor-units/full",
     "web-time-compat/full",
+    "tor-cell/full",
+    "tor-dirserver/full",
 ]
 
 # This feature flag enables experimental features that are not supported. Turning it on may
@@ -53,10 +58,11 @@ __is_experimental = []
 
 [dependencies]
 anyhow = "1.0.23"
+async-trait = "0.1.54"
 base64ct = "1.8.0"
 cfg-if = "1.0.0"
 clap = { version = "4.3.24", features = ["string", "wrap_help", "derive"] }
-derive-deftly = { version = "~1.11.3", features = ["full", "beta"] }
+derive-deftly = { version = "~1.11.4", features = ["full", "beta"] }
 derive_more = { version = "2.0.1", features = ["full"] }
 directories = "6"
 fs-mistrust = { path = "../fs-mistrust", version = "0.15.0", features = ["serde"] }
@@ -73,35 +79,40 @@ smallvec = "1.10"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1.47.1", features = ["signal"] }
-tor-basic-utils = { path = "../tor-basic-utils", version = "0.44.0" }
-tor-cert = { path = "../tor-cert", version = "0.44.0" }
-tor-chanmgr = { path = "../tor-chanmgr", version = "0.44.0", features = ["relay"] }
-tor-circmgr = { version = "0.44.0", path = "../tor-circmgr", features = ["flowctl-cc"] }
-tor-config = { path = "../tor-config", version = "0.44.0" }
-tor-config-path = { path = "../tor-config-path", version = "0.44.0" }
-tor-dircommon = { version = "0.44.0", path = "../tor-dircommon" }
-tor-dirmgr = { path = "../tor-dirmgr", version = "0.44.0" }
-tor-error = { path = "../tor-error", version = "0.44.0" }
-tor-general-addr = { path = "../tor-general-addr", version = "0.44.0" }
-tor-guardmgr = { version = "0.44.0", path = "../tor-guardmgr" }
-tor-key-forge = { version = "0.44.0", path = "../tor-key-forge" }
-tor-keymgr = { path = "../tor-keymgr", version = "0.44.0", features = ["keymgr", "experimental-api"] }
-tor-llcrypto = { path = "../tor-llcrypto", version = "0.44.0" }
-tor-log-ratelim = { path = "../tor-log-ratelim", version = "0.44.0" }
-tor-memquota = { version = "0.44.0", path = "../tor-memquota" }
-tor-netdir = { path = "../tor-netdir", version = "0.44.0" }
-tor-netdoc = { path = "../tor-netdoc", version = "0.44.0" }
-tor-persist = { path = "../tor-persist", version = "0.44.0", features = ["state-dir"] }
-tor-proto = { path = "../tor-proto", version = "0.44.0", features = ["counter-galois-onion", "tokio", "flowctl-cc"] }
-tor-relay-crypto = { path = "../tor-relay-crypto", version = "0.44.0" }
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.44.0", features = ["rustls", "tokio", "tls-server"] }
-tor-units = { path = "../tor-units", version = "0.44.0" }
+tor-async-utils = { path = "../tor-async-utils", version = "0.45.0" }
+tor-basic-utils = { path = "../tor-basic-utils", version = "0.45.0" }
+tor-cell = { path = "../tor-cell", version = "0.45.0", features = ["relay"] }
+tor-cert = { path = "../tor-cert", version = "0.45.0" }
+tor-chanmgr = { path = "../tor-chanmgr", version = "0.45.0", features = ["relay"] }
+tor-circmgr = { version = "0.45.0", path = "../tor-circmgr", features = ["flowctl-cc"] }
+tor-config = { path = "../tor-config", version = "0.45.0" }
+tor-config-path = { path = "../tor-config-path", version = "0.45.0" }
+tor-dirclient = { version = "0.45.0", path = "../tor-dirclient", features = ["relay"] }
+tor-dircommon = { version = "0.45.0", path = "../tor-dircommon" }
+tor-dirmgr = { path = "../tor-dirmgr", version = "0.45.0" }
+tor-dirpublish = { path = "../tor-dirpublish", version = "0.45.0" }
+tor-dirserver = { path = "../tor-dirserver", version = "0.45.0" }
+tor-error = { path = "../tor-error", version = "0.45.0" }
+tor-general-addr = { path = "../tor-general-addr", version = "0.45.0" }
+tor-guardmgr = { version = "0.45.0", path = "../tor-guardmgr" }
+tor-key-forge = { version = "0.45.0", path = "../tor-key-forge" }
+tor-keymgr = { path = "../tor-keymgr", version = "0.45.0", features = ["keymgr", "experimental-api"] }
+tor-llcrypto = { path = "../tor-llcrypto", version = "0.45.0" }
+tor-log-ratelim = { path = "../tor-log-ratelim", version = "0.45.0" }
+tor-memquota = { version = "0.45.0", path = "../tor-memquota" }
+tor-netdir = { path = "../tor-netdir", version = "0.45.0" }
+tor-netdoc = { path = "../tor-netdoc", version = "0.45.0" }
+tor-persist = { path = "../tor-persist", version = "0.45.0", features = ["state-dir"] }
+tor-proto = { path = "../tor-proto", version = "0.45.0", features = ["counter-galois-onion", "tokio", "flowctl-cc"] }
+tor-relay-crypto = { path = "../tor-relay-crypto", version = "0.45.0" }
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.45.0", features = ["rustls", "tokio", "tls-server"] }
+tor-units = { path = "../tor-units", version = "0.45.0" }
 tracing = "0.1.36"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 void = "1"
 web-time-compat = { path = "../web-time-compat", version = "0.2.0" }
 
 [dev-dependencies]
-tor-keymgr = { path = "../tor-keymgr", version = "0.44.0", features = ["ephemeral-keystore", "testing"] }
-tor-rtmock = { path = "../tor-rtmock", version = "0.44.0" }
+tor-keymgr = { path = "../tor-keymgr", version = "0.45.0", features = ["ephemeral-keystore", "testing"] }
+tor-rtmock = { path = "../tor-rtmock", version = "0.45.0" }
 

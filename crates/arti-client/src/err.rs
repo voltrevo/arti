@@ -386,7 +386,7 @@ impl ErrorDetail {
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "tor: {}: {}", self.detail.kind(), &self.detail)
+        write!(f, "tor: {}: {}", self.detail.kind(), self.detail)
     }
 }
 

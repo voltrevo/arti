@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tor_basic_utils::RngExt as _;
 use tor_cell::relaycell::hs::pow::{ProofOfWork, v1::ProofOfWorkV1};
-use tor_checkable::timed::TimerangeBound;
+use tor_checkable::timed::TimeRangeBound;
 use tor_error::warn_report;
 use tor_hscrypto::{
     pk::HsBlindIdKey,
@@ -499,7 +499,6 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> PowManagerGeneric<R, Q
     /// This also pokes the publisher when needed to cause rotated seeds to be published.
     ///
     /// Returns the next time this function should be called again.
-    #[allow(clippy::cognitive_complexity)]
     async fn rotate_seeds_if_expiring(&self) -> Option<SystemTime> {
         let mut expired_verifiers = vec![];
         let mut new_verifiers = vec![];
@@ -664,7 +663,7 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> PowManagerGeneric<R, Q
         };
 
         Ok(PowParams::V1(PowParamsV1::new(
-            TimerangeBound::new(seed, ..expiration),
+            TimeRangeBound::new(seed, ..expiration),
             suggested_effort,
         )))
     }
@@ -1038,7 +1037,6 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> RendRequestReceiver<R,
 
     /// Loop to accept message from the wrapped [`mpsc::Receiver`], validate PoW solves, and
     /// enqueue onto the priority queue.
-    #[allow(clippy::cognitive_complexity)]
     fn accept_loop<P: MockablePowManager>(
         self,
         runtime: &R,

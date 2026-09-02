@@ -1,6 +1,6 @@
 [package]
 name = "tor-llcrypto"
-version = "0.44.0"
+version = "0.45.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 rust-version = "1.91"
@@ -47,13 +47,13 @@ __is_nonadditive = []
 __is_experimental = []
 
 [dependencies]
-aes = { version = "0.8", features = ["zeroize"] }
+aes = { version = "0.9", features = ["zeroize"] }
 base64ct = "1.5.1"
-cipher = { version = "0.4.3", optional = true, features = ["zeroize"] }
-ctr = { version = "0.9", features = ["zeroize"] }
+cipher = { version = "0.5.2", optional = true, features = ["zeroize"] }
+ctr = { version = "0.10", features = ["zeroize"] }
 curve25519-dalek = "4.1"
 der-parser = { version = "10", features = ["serialize"] }
-derive-deftly = { version = "~1.11.3" }
+derive-deftly = { version = "~1.11.4" }
 derive_more = { version = "2.0.1", features = ["full"] }
 digest = "0.10.0"
 ed25519-dalek = { version = "2.2", features = ["batch", "hazmat"] }
@@ -74,24 +74,24 @@ sha3 = "0.10.6"
 signature = "2"
 subtle = "2"
 thiserror = "2"
-tor-error = { version = "0.44.0", path = "../tor-error" }
-tor-memquota-cost = { version = "0.44.0", path = "../tor-memquota-cost", default-features = false, optional = true }
+tor-error = { version = "0.45.0", path = "../tor-error" }
+tor-memquota-cost = { version = "0.45.0", path = "../tor-memquota-cost", default-features = false, optional = true }
 typenum = { version = "1.15.0", optional = true }
 visibility = "0.1.0"
 x25519-dalek = { version = "2.0.0", features = ["static_secrets"] }
 zeroize = "1"
 
 [dev-dependencies]
-cipher = "0.4.1"
+cipher = "0.5.2"
 hex-literal = "1.0"
 rand = "0.10.1"
 serde_test = "1.0.124"
-tor-basic-utils = { path = "../tor-basic-utils", version = "0.44.0" }
+tor-basic-utils = { path = "../tor-basic-utils", version = "0.45.0" }
 [package.metadata.docs.rs]
 all-features = true
 
-[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
-rdrand = "0.8"
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
+rdrand = "0.9"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rand_chacha = "0.10.0"

@@ -144,7 +144,7 @@ impl<'a> HsDescEncryption<'a> {
         key_stream.read(&mut iv[..]);
         key_stream.read(&mut mac_key[..]);
 
-        let cipher = Cipher::new(key.as_ref().into(), iv.as_ref().into());
+        let cipher = Cipher::new((&*key).into(), (&*iv).into());
 
         let mut mac = Hash::default();
         mac.update(&(Self::MAC_KEY_LEN as u64).to_be_bytes());

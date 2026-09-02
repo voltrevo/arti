@@ -23,8 +23,8 @@ use crate::{NetdocErrorKind as EK, NormalItemArgument, Result};
 
 use tor_basic_utils::impl_debug_hex;
 use tor_checkable::{
-    Timebound, signed,
-    timed::{self, TimerangeBound},
+    TimeBound, signed,
+    timed::{self, TimeRangeBound},
 };
 use tor_error::{internal, into_internal};
 use tor_llcrypto::pk::rsa;
@@ -45,9 +45,7 @@ mod build;
 #[allow(deprecated)]
 pub use build::AuthCertBuilder;
 
-#[cfg(feature = "incomplete")]
 mod encoded;
-#[cfg(feature = "incomplete")]
 pub use encoded::EncodedAuthCert;
 
 decl_keyword! {
@@ -195,7 +193,7 @@ pub struct UncheckedAuthCert {
     location: Option<Extent>,
 
     /// The actual unchecked certificate.
-    c: signed::SignatureGated<timed::TimerangeBound<AuthCert>>,
+    c: signed::SignatureGated<timed::TimeRangeBound<AuthCert>>,
 }
 
 impl UncheckedAuthCert {
@@ -439,7 +437,7 @@ impl AuthCert {
         let signatures: Vec<Box<dyn pk::ValidatableSignature>> =
             vec![Box::new(v_crosscert), Box::new(v_sig)];
 
-        let timed = timed::TimerangeBound::new(authcert, *dir_key_published..*dir_key_expires);
+        let timed = timed::TimeRangeBound::new(authcert, *dir_key_published..*dir_key_expires);
         let signed = signed::SignatureGated::new(timed, signatures);
         let unchecked = UncheckedAuthCert {
             location,
@@ -598,10 +596,10 @@ impl ItemObjectEncodable for CrossCertObject {
     }
 }
 
-impl tor_checkable::SelfSigned<timed::TimerangeBound<AuthCert>> for UncheckedAuthCert {
+impl tor_checkable::SelfSigned<timed::TimeRangeBound<AuthCert>> for UncheckedAuthCert {
     type Error = signature::Error;
 
-    fn dangerously_assume_wellsigned(self) -> timed::TimerangeBound<AuthCert> {
+    fn dangerously_assume_wellsigned(self) -> timed::TimeRangeBound<AuthCert> {
         self.c.dangerously_assume_wellsigned()
     }
     fn is_well_signed(&self) -> std::result::Result<(), Self::Error> {
@@ -630,7 +628,7 @@ impl AuthCertUnverified {
     pub fn verify(
         self,
         v3idents: &[RsaIdentity],
-    ) -> StdResult<TimerangeBound<AuthCert>, parse2::VerifyFailed> {
+    ) -> StdResult<TimeRangeBound<AuthCert>, parse2::VerifyFailed> {
         let (body, sigs) = (self.body, self.sigs);
 
         // (1) Check whether this comes from a valid authority in `v3idents`.
@@ -658,7 +656,7 @@ impl AuthCertUnverified {
             &sigs.sigs.dir_key_certification.signature,
         )?;
 
-        Ok(TimerangeBound::new(body, validity))
+        Ok(TimeRangeBound::new(body, validity))
     }
 
     /// Verify the signatures (and check validity times)
@@ -670,7 +668,7 @@ impl AuthCertUnverified {
     /// The caller must check that the KP_auth_id is correct/relevant.
     pub fn verify_selfcert(self, now: SystemTime) -> StdResult<AuthCert, parse2::VerifyFailed> {
         let h_kp_auth_id_rsa = self.inspect_unverified().0.fingerprint.0;
-        Ok(self.verify(&[h_kp_auth_id_rsa])?.check_valid_at(&now)?)
+        Ok(self.verify(&[h_kp_auth_id_rsa])?.if_valid_at(&now)?)
     }
 }
 
@@ -720,9 +718,6 @@ impl AuthCert {
     ///
     /// Yields the string representation of the signed, encoded, document,
     /// as an [`EncodedAuthCert`].
-    // TODO these features are quite tangled
-    // `EncodedAuthCert` is only available with `parse2` and `plain-consensus`
-    #[cfg(feature = "incomplete")] // Needs EncodedAuthCert
     pub fn encode_sign(&self, k_auth_id_rsa: &rsa::KeyPair) -> StdResult<EncodedAuthCert, Bug> {
         let mut encoder = NetdocEncoder::new();
         self.encode_unsigned(&mut encoder)?;
@@ -763,6 +758,7 @@ mod test {
     use super::*;
     use crate::{
         Pos,
+        encode::encode_netdoc_unsigned,
         parse2::{ErrorProblem, ParseError, ParseInput, VerifyFailed, parse_netdoc},
         types,
     };
@@ -791,7 +787,7 @@ mod test {
 
     #[test]
     fn parse_one() -> crate::Result<()> {
-        use tor_checkable::{SelfSigned, Timebound};
+        use tor_checkable::{SelfSigned, TimeBound};
         let cert = AuthCert::parse(TESTDATA)?
             .check_signature()
             .unwrap()
@@ -1064,7 +1060,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             .clone()
             .verify(&[to_rsa_id(FINGERPRINT)])
             .unwrap()
-            .check_valid_at(&to_system_time(VALID_SYSTEM_TIME))
+            .if_valid_at(&to_system_time(VALID_SYSTEM_TIME))
             .unwrap();
 
         // Test with an invalid authority.
@@ -1078,7 +1074,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             res.clone()
                 .verify(&[to_rsa_id(FINGERPRINT)],)
                 .unwrap()
-                .check_valid_at(&SystemTime::UNIX_EPOCH,)
+                .if_valid_at(&SystemTime::UNIX_EPOCH,)
                 .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooNew
@@ -1089,7 +1085,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             .clone()
             .verify(&[to_rsa_id(FINGERPRINT)])
             .unwrap()
-            .check_valid_at(&to_system_time(DIR_KEY_PUBLISHED))
+            .if_valid_at(&to_system_time(DIR_KEY_PUBLISHED))
             .unwrap();
 
         // Now fail when we are 1s below ...
@@ -1097,7 +1093,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             res.clone()
                 .verify(&[to_rsa_id(FINGERPRINT)],)
                 .unwrap()
-                .check_valid_at(&(to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1)),)
+                .if_valid_at(&(to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1)),)
                 .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooNew
@@ -1108,8 +1104,8 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             .clone()
             .verify(&[to_rsa_id(FINGERPRINT)])
             .unwrap()
-            .extend_pre_tolerance(Duration::from_secs(1))
-            .check_valid_at(&(to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1)))
+            .extend_start_bound(Duration::from_secs(1))
+            .if_valid_at(&(to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1)))
             .unwrap();
 
         // Test a key too old.
@@ -1117,7 +1113,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             res.clone()
                 .verify(&[to_rsa_id(FINGERPRINT)],)
                 .unwrap()
-                .check_valid_at(
+                .if_valid_at(
                     &SystemTime::UNIX_EPOCH
                         .checked_add(Duration::from_secs(2000000000))
                         .unwrap(),
@@ -1132,7 +1128,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             .clone()
             .verify(&[to_rsa_id(FINGERPRINT)])
             .unwrap()
-            .check_valid_at(&to_system_time(DIR_KEY_EXPIRES))
+            .if_valid_at(&to_system_time(DIR_KEY_EXPIRES))
             .unwrap();
 
         // Now fail when we are 1s above ...
@@ -1140,7 +1136,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             res.clone()
                 .verify(&[to_rsa_id(FINGERPRINT)],)
                 .unwrap()
-                .check_valid_at(&(to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1)),)
+                .if_valid_at(&(to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1)),)
                 .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooOld
@@ -1151,8 +1147,8 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             .clone()
             .verify(&[to_rsa_id(FINGERPRINT)])
             .unwrap()
-            .extend_tolerance(Duration::from_secs(1))
-            .check_valid_at(&(to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1)))
+            .extend_end_bound(Duration::from_secs(1))
+            .if_valid_at(&(to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1)))
             .unwrap();
 
         // Check with non-matching fingerprint and long-term identity key.
@@ -1207,16 +1203,13 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
 ids 1234567812345678123456781234567812345678 ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD
 "#;
         let doc = parse2::parse_netdoc::<Doc>(&ParseInput::new(text, "<text>"))?;
-        let mut re_encode = NetdocEncoder::new();
-        doc.encode_unsigned(&mut re_encode)?;
-        let re_encode = re_encode.finish()?;
+        let re_encode = encode_netdoc_unsigned([&doc])?;
 
         assert_eq_or_diff!(text, re_encode);
         Ok(())
     }
 
     #[test]
-    #[cfg(feature = "incomplete")]
     fn roundtrip() -> Result<(), anyhow::Error> {
         let mut rng = test_rng::testing_rng();
         let k_auth_id_rsa = rsa::KeyPair::generate(&mut rng)?;
@@ -1240,16 +1233,15 @@ ids 1234567812345678123456781234567812345678 ABCDABCDABCDABCDABCDABCDABCDABCDABC
             parse_netdoc(&ParseInput::new(encoded.as_ref(), "<encoded>"))?;
         let reparsed_value = reparsed_uv
             .verify(&[k_auth_id_rsa.to_public_key().to_rsa_identity()])?
-            .extend_pre_tolerance(tolerance)
-            .extend_tolerance(tolerance)
-            .check_valid_at(&now)?;
+            .extend_start_bound(tolerance)
+            .extend_end_bound(tolerance)
+            .if_valid_at(&now)?;
         dbg!(&reparsed_value);
 
         assert_eq!(input_value, reparsed_value);
         Ok(())
     }
 
-    #[cfg(feature = "incomplete")]
     #[test]
     fn parse_authcert() -> anyhow::Result<()> {
         let file = "testdata2/cached-certs--1";

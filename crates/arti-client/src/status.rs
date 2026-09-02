@@ -221,11 +221,7 @@ impl fmt::Display for BootstrapStatus {
         if let Some(problem) = self.blocked() {
             write!(f, "Stuck at {}%: {}", percent, problem)?;
         } else {
-            write!(
-                f,
-                "{}%: {}; {}",
-                percent, &self.conn_status, &self.dir_status
-            )?;
+            write!(f, "{}%: {}; {}", percent, self.conn_status, self.dir_status)?;
         }
         if let Some(skew) = &self.skew {
             if skew.noteworthy() {

@@ -5,24 +5,13 @@ use std::cmp::{self, Ord};
 use std::ops::{Bound, RangeBounds};
 
 /// An extension trait for [`RangeBounds`].
-pub trait RangeBoundsExt<T>: RangeBounds<T> {
+pub trait RangeBoundsExt<T: Ord>: RangeBounds<T> {
     /// Compute the intersection of two `RangeBound`s.
     ///
     /// In essence, this computes the intersection of the intervals described by bounds of the
     /// two objects.
     ///
     /// Returns `None` if the intersection of the two ranges is the empty set.
-    fn intersect<'a, U: RangeBounds<T>>(
-        &'a self,
-        other: &'a U,
-    ) -> Option<(Bound<&'a T>, Bound<&'a T>)>;
-}
-
-impl<T, R> RangeBoundsExt<T> for R
-where
-    R: RangeBounds<T>,
-    T: Ord,
-{
     fn intersect<'a, U: RangeBounds<T>>(
         &'a self,
         other: &'a U,
@@ -55,6 +44,8 @@ where
         }
     }
 }
+
+impl<T: Ord, R: RangeBounds<T>> RangeBoundsExt<T> for R {}
 
 /// Return the largest of `b1` and `b2`.
 ///

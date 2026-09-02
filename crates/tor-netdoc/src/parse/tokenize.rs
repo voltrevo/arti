@@ -754,7 +754,6 @@ mod test {
     #![allow(clippy::needless_pass_by_value)]
     #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
-    #![allow(clippy::cognitive_complexity)]
     use super::*;
     use crate::parse::macros::test::Fruit;
     use crate::{NetdocErrorKind as EK, Pos, Result};

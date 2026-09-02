@@ -155,7 +155,7 @@ mod test {
     fn chk<E: StdError + 'static>(e: E, expected: &str) {
         let e: Box<dyn StdError> = Box::new(e);
         let got = Report(&e).to_string();
-        assert_eq!(got, expected, "\nmismatch: {:?}", &e);
+        assert_eq!(got, expected, "\nmismatch: {:?}", e);
     }
 
     #[test]

@@ -1250,7 +1250,7 @@ pub(crate) mod test {
             r#"^Invocable\(.*GetName \(x-test:getname\) for .*GenericObj.*String.*String"#,
         )
         .unwrap();
-        let debug_fmt = format!("{:?}", &ent2);
+        let debug_fmt = format!("{:?}", ent2);
         dbg!(&debug_fmt);
         assert!(re.is_match(&debug_fmt));
     }

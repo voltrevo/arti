@@ -3,9 +3,9 @@
 use itertools::Itertools as _;
 use std::sync::LazyLock;
 use tor_cert::Ed25519Cert;
-use tor_checkable::Timebound;
+use tor_checkable::TimeBound;
 use tor_checkable::signed::SignatureGated;
-use tor_checkable::timed::TimerangeBound;
+use tor_checkable::timed::TimeRangeBound;
 use tor_error::internal;
 use tor_hscrypto::pk::HsBlindId;
 use tor_hscrypto::{RevisionCounter, Subcredential};
@@ -104,7 +104,7 @@ impl HsDescOuter {
 
 /// An `HsDescOuter` whose signatures have not yet been verified, and whose
 /// timeliness has not been checked.
-pub(super) type UncheckedHsDescOuter = SignatureGated<TimerangeBound<HsDescOuter>>;
+pub(super) type UncheckedHsDescOuter = SignatureGated<TimeRangeBound<HsDescOuter>>;
 
 decl_keyword! {
     pub(crate) HsOuterKwd {
@@ -292,7 +292,7 @@ impl HsDescOuter {
             superencrypted: encrypted_body,
         };
         // You can't have that until you check that it's timely.
-        let desc = TimerangeBound::new(desc, ..expiration);
+        let desc = TimeRangeBound::new(desc, ..expiration);
         // And you can't have _that_ until you check the signatures.
         let signatures: Vec<Box<dyn tor_llcrypto::pk::ValidatableSignature>> = vec![
             Box::new(cert_signature),
@@ -332,7 +332,7 @@ mod test {
 
         let desc = desc
             .check_signature()?
-            .check_valid_at(&humantime::parse_rfc3339("2023-01-23T15:00:00Z").unwrap())
+            .if_valid_at(&humantime::parse_rfc3339("2023-01-23T15:00:00Z").unwrap())
             .unwrap();
 
         assert_eq!(desc.lifetime.as_minutes(), 180);

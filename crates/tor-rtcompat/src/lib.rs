@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -716,10 +716,10 @@ mod test {
         let settings = TlsAcceptorSettings::new(tls_cert).unwrap();
 
         let Ok(tls_acceptor) = runtime.tls_acceptor(settings) else {
-            println!("Skipping tls-server test for runtime {:?}", &runtime);
+            println!("Skipping tls-server test for runtime {:?}", runtime);
             return IoResult::Ok(());
         };
-        println!("Running tls-server test for runtime {:?}", &runtime);
+        println!("Running tls-server test for runtime {:?}", runtime);
 
         let tls_connector = runtime.tls_connector();
 

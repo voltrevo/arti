@@ -195,7 +195,6 @@ impl FromStr for PtMessage {
 
     // NOTE(eta): This, of course, implies that the PT IPC communications are valid UTF-8.
     //            This assumption might turn out to be false.
-    #[allow(clippy::cognitive_complexity)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO(eta): Maybe tolerate additional whitespace (using `split_whitespace`)?.
         //            This requires modified words.join() logic, though.
@@ -391,7 +390,6 @@ pub(crate) mod sealed {
             // TODO RELAY #1649 We don't use a tor_memquota::mq_queue here yet
             let (mut tx, rx) = tor_async_utils::mpsc_channel_no_memquota(PT_STDIO_BUFFER);
             let ident = identifier.clone();
-            #[allow(clippy::cognitive_complexity)]
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 let _stdin = stdin;
@@ -466,7 +464,6 @@ pub(crate) mod sealed {
         /// Receive a message from the pluggable transport binary asynchronously.
         ///
         /// Note: This will convert `PtMessage::Log` into a tracing log call automatically.
-        #[allow(clippy::cognitive_complexity)] // due to tracing
         pub async fn recv(&mut self) -> err::Result<PtMessage> {
             loop {
                 match self.stdout.next().await {

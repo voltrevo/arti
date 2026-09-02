@@ -504,7 +504,7 @@ mod ed25519impl {
 
     /// An alleged ed25519 public key, encoded in base64 with optional
     /// padding.
-    #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Deftly)]
     #[derive_deftly(Transparent)]
     #[allow(clippy::exhaustive_structs)]
     pub struct Ed25519Public(pub Ed25519Identity);
@@ -1508,8 +1508,8 @@ mod edcert {
     };
     use tor_cert::{CertType, CertifiedKey, Ed25519Cert, KeyUnknownCert};
     use tor_checkable::signed::SignatureGated;
-    use tor_checkable::timed::TimerangeBound;
-    use tor_checkable::{SelfSigned, Timebound};
+    use tor_checkable::timed::TimeRangeBound;
+    use tor_checkable::{SelfSigned, TimeBound};
     use tor_error::{Bug, into_internal};
     use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey, ValidatableEd25519Signature};
 
@@ -1589,15 +1589,15 @@ mod edcert {
         /// 3. MUST be of [`CertType::IDENTITY_V_SIGNING`].
         /// 4. Certified key MUST BE of [`tor_cert::CertifiedKey::Ed25519`].
         /// 5. Both keys MUST be valid mappings to a [`ed25519::PublicKey`].
-        pub fn verify(cert: KeyUnknownCert) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+        pub fn verify(cert: KeyUnknownCert) -> StdResult<TimeRangeBound<Self>, VerifyFailed> {
             let cert = cert
                 // 1. MUST have the identity key in the `signed-with-ed25519-key` extension.
                 .should_have_signing_key()
                 .map_err(|_| VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData))?
                 // 2. MUST have a valid signature by the identity key.
                 .check_signature()?
-                // Okay to call because we create TimerangeBound later.
-                // TODO DIRAUTH: Use TimerangeBound instead.
+                // Okay to call because we create TimeRangeBound later.
+                // TODO DIRAUTH: Use TimeRangeBound instead.
                 .dangerously_assume_timely();
 
             // 3. MUST be of [`CertType::IDENTITY_V_SIGNING`].
@@ -1623,7 +1623,7 @@ mod edcert {
                 return Err(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData));
             }
 
-            Ok(TimerangeBound::new(
+            Ok(TimeRangeBound::new(
                 Self {
                     id_ed25519,
                     sign_ed25519,
@@ -1698,14 +1698,14 @@ mod edcert {
         pub fn verify(
             id_ed25519: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+        ) -> StdResult<TimeRangeBound<Self>, VerifyFailed> {
             let cert = cert
                 // 1. MUST have the `signed-with-ed25519-key` extension containing the family key.
                 .should_have_signing_key()?
                 // 2. MUST have a valid signature by the family key.
                 .check_signature()?
-                // Okay to call because we create TimerangeBound later.
-                // TODO DIRAUTH: Use TimerangeBound instead.
+                // Okay to call because we create TimeRangeBound later.
+                // TODO DIRAUTH: Use TimeRangeBound instead.
                 .dangerously_assume_timely();
 
             // 3. MUST be of of [`CertType::FAMILY_V_IDENTITY`].
@@ -1734,7 +1734,7 @@ mod edcert {
                 return Err(VerifyFailed::ParseEmbedded(ErrorProblem::ObjectInvalidData));
             }
 
-            Ok(TimerangeBound::new(
+            Ok(TimeRangeBound::new(
                 Self { family_ed25519 },
                 ..cert.expiry(),
             ))
@@ -1822,7 +1822,7 @@ mod edcert {
             ntor_ed25519: ed25519::Ed25519Identity,
             id_ed25519: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+        ) -> StdResult<TimeRangeBound<Self>, VerifyFailed> {
             Ok(
                 // .verify_inner() ensures 1-3.
                 Self::verify_inner(ntor_ed25519, id_ed25519, cert)?
@@ -1884,7 +1884,7 @@ mod edcert {
             cert: KeyUnknownCert,
         ) -> StdResult<
             (
-                SignatureGated<TimerangeBound<Self>>,
+                SignatureGated<TimeRangeBound<Self>>,
                 ValidatableEd25519Signature,
                 SystemTime,
             ),
@@ -1915,14 +1915,14 @@ mod edcert {
             // Fish out the expiration date from the certificate.
             //
             // Important: We must not set SystemTime::UNIX_EPOCH as the lower
-            // bound, because with TimerangeBound, a lower-bound of zero is not
+            // bound, because with TimeRangeBound, a lower-bound of zero is not
             // equal to an absent lower bound!
             let cert = cert.dangerously_assume_timely();
             let expiration = ..cert.expiry();
 
             Ok((
                 SignatureGated::new(
-                    TimerangeBound::new(
+                    TimeRangeBound::new(
                         Self {
                             _promise_we_verified: (),
                         },
@@ -2619,6 +2619,9 @@ pub mod routerdesc {
 
     impl RouterSigEd25519 {
         /// The magic prefix for hashing this type of signature.
+        //
+        // TODO DIRMIRROR have the old parser's verification code use this
+        // constant, thereby de-duplicating.
         const HASH_PREFIX_MAGIC: &str = "Tor router descriptor signature v1";
 
         /// Calculate the hash for signature
@@ -2726,9 +2729,13 @@ pub mod routerdesc {
 
     /// SHA-1 router descriptor signature over `router-sig-ed25519`.
     // TODO DIRMIRROR Is this not the same as RsaSha1Signature ?
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Deftly)]
+    #[derive_deftly(ItemValueEncodable)]
     #[allow(clippy::exhaustive_structs)]
-    pub struct RouterSignature(pub Vec<u8>);
+    pub struct RouterSignature(
+        #[deftly(netdoc(object(label = "SIGNATURE"), with = crate::types::raw_data_object))]
+        pub  Vec<u8>,
+    );
 
     impl SignatureItemParseable for RouterSignature {
         type HashAccu = RouterHashAccu;
@@ -2785,7 +2792,7 @@ pub mod routerdesc {
     ///
     /// * [`Ed25519NtorCrossCert`]
     /// * <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:ntor-onion-key-crosscert>
-    #[derive(Debug, Clone, Deftly, PartialEq, Eq)]
+    #[derive(Debug, Clone, Deftly, PartialEq)]
     #[derive_deftly(ItemValueParseable, ItemValueEncodable)]
     #[deftly(netdoc(no_extra_args))]
     #[non_exhaustive]
@@ -2830,13 +2837,13 @@ mod test {
     use base64ct::Encoding;
     use tor_basic_utils::test_rng::testing_rng;
     use tor_cert::{CertType, CertifiedKey, Ed25519Cert, KeyUnknownCert};
-    use tor_checkable::{Timebound, timed::TimerangeBound};
+    use tor_checkable::{TimeBound, timed::TimeRangeBound};
     use tor_llcrypto::pk::ed25519::{self, Ed25519Identity, Ed25519PublicKey, ExpandedKeypair};
 
     use super::*;
     use crate::{
         Pos, Result,
-        encode::NetdocEncodable,
+        encode::{NetdocEncodable, encode_netdoc_unsigned},
         parse2::{ErrorProblem, ParseInput, VerifyFailed},
         types::{
             EmbeddedCert,
@@ -2930,11 +2937,11 @@ mod test {
                 #[allow(clippy::print_stderr)]
                 let b = match s.parse::<B64>() {
                     Ok(b) => {
-                        eprintln!("{:10} {:?}", &s, b.as_bytes());
+                        eprintln!("{:10} {:?}", s, b.as_bytes());
                         b
                     }
                     Err(_) => {
-                        eprintln!("{:10} Err", &s);
+                        eprintln!("{:10} Err", s);
                         continue;
                     }
                 };
@@ -3290,7 +3297,6 @@ mod test {
 
     #[test]
     fn contact_info() -> anyhow::Result<()> {
-        use encode::NetdocEncodable;
         use parse2::{ParseInput, parse_netdoc};
 
         const S: &str = "some relay operator";
@@ -3317,9 +3323,7 @@ mod test {
                 intro: (),
                 contact: s.parse()?,
             };
-            let mut enc = NetdocEncoder::new();
-            doc.encode_unsigned(&mut enc)?;
-            let enc = enc.finish()?;
+            let enc = encode_netdoc_unsigned([&doc])?;
             let reparsed = parse_netdoc::<TestDoc>(&ParseInput::new(&enc, "<test>"))?;
             assert_eq!(doc, reparsed);
             Ok(())
@@ -3527,14 +3531,12 @@ mod test {
         ];
 
         for (present, output) in tests {
-            let mut encoder = NetdocEncoder::new();
-            TestDoc {
+            let re_encoded = encode_netdoc_unsigned([&TestDoc {
                 intro: (),
                 foo: present,
-            }
-            .encode_unsigned(&mut encoder)
+            }])
             .unwrap();
-            assert_eq!(encoder.finish().unwrap(), output);
+            assert_eq!(re_encoded, output);
         }
     }
 
@@ -3579,7 +3581,7 @@ mod test {
                     self.ntor_onion_key_crosscert.cert.raw_unverified().clone(),
                 )
                 .unwrap()
-                .is_valid_at(&now)
+                .check_valid_at(&now)
                 .unwrap();
             }
         }
@@ -3636,7 +3638,7 @@ mod test {
             signing_key: Option<ed25519::Ed25519Identity>,
             certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-        ) -> StdResult<TimerangeBound<Self>, VerifyFailed>;
+        ) -> StdResult<TimeRangeBound<Self>, VerifyFailed>;
     }
 
     impl Ed25519CertTest for Ed25519IdentityCert {
@@ -3666,7 +3668,7 @@ mod test {
             _signing_key: Option<ed25519::Ed25519Identity>,
             _certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+        ) -> StdResult<TimeRangeBound<Self>, VerifyFailed> {
             Self::verify(cert)
         }
     }
@@ -3697,7 +3699,7 @@ mod test {
             _signing_key: Option<ed25519::Ed25519Identity>,
             certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+        ) -> StdResult<TimeRangeBound<Self>, VerifyFailed> {
             Self::verify(certified_key, cert)
         }
     }
@@ -3726,7 +3728,7 @@ mod test {
             signing_key: Option<ed25519::Ed25519Identity>,
             certified_key: ed25519::Ed25519Identity,
             cert: KeyUnknownCert,
-        ) -> StdResult<TimerangeBound<Self>, VerifyFailed> {
+        ) -> StdResult<TimeRangeBound<Self>, VerifyFailed> {
             Self::verify(signing_key.unwrap(), certified_key, cert)
         }
     }
@@ -3773,7 +3775,7 @@ mod test {
             unverified.clone(),
         )
         .unwrap()
-        .is_valid_at(&now)
+        .check_valid_at(&now)
         .unwrap();
 
         // See if .verify() also agrees when expired but with toleration.
@@ -3783,8 +3785,8 @@ mod test {
             unverified,
         )
         .unwrap()
-        .extend_tolerance(Duration::from_secs(60 * 60))
-        .is_valid_at(&now)
+        .extend_end_bound(Duration::from_secs(60 * 60))
+        .check_valid_at(&now)
         .unwrap();
     }
 
@@ -3866,7 +3868,7 @@ mod test {
                 Ed25519Identity::from_bytes(certified_key.as_bytes()).unwrap(),
                 cert,
             )
-            .and_then(|expired| expired.is_valid_at(&now).map_err(|e| e.into()))
+            .and_then(|expired| expired.check_valid_at(&now).map_err(|e| e.into()))
             .unwrap_err();
         }
     }

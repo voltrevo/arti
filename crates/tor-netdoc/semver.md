@@ -1,56 +1,27 @@
-ADDED: Derive `PartialEq` and `Eq` on `RouterDescSignatures`
-ADDED: Derive `PartialEq` and `Eq` on `RouterDesc`
-ADDED: Derive `PartialEq` and `Eq` on (embedded) certificate types
-BREAKING: `Ed25519NtorCrossCert::new_signed()` now accepts an `&ExpandedKeypair`
-ADDED: Various `parse2` and `encode` traits for `Intern<T>` wrapped types
-BREAKING: `SoftwareVersion::Other` now stores a `String`
-BREAKING: `Microdesc::ipv4_policy` now stored in `Intern`
-BREAKING: `Microdesc::ipv6_policy` now stored in `Intern`
-BREAKING: `RouterDesc::ipv6_policy` now stored in `Intern`
-BREAKING: `PortPolicy::intern()` now returns an `Intern`
-BREAKING: `Microdesc::family` now stored in `Intern`
-BREAKING: `RouterDesc::family` now stored in `Intern`
-BREAKING: `RelayFamily::intern()` now returning an `Intern`
-BREAKING: Ed25519 certificate verify methods now wrap around `TimerangeBound`
-ADDED: `NetdocParseableUnverified` for `RouterDesc`
-ADDED: `NetdocEncodableFields` for `AddrPolicy`
-ADDED: `encode::ItemArgument` for `SpFingerprint`
-ADDED: `ItemValueEncodable` for `ExtraInfoDigests`
-ADDED: `ItemValueEncodable` for `RouterDescIntroItem`
-ADDED: `ItemValueEncodable` for `OverloadGeneral`
-ADDED: `ItemValueEncodable` for `RelayPlatform`
-BREAKING: Replaced `ItemArgumentParseable` with `ItemValueParseable` for `RelayPlatform`
-ADDED: `NtorOnionKeyCrossCert` type
-ADDED: `RouterDesc::ntor_onion_key_crosscert`
-ADDED: `HiddenServiceDirToken`
-ADDED: `RouterDesc::hidden_service_dir`
-ADDED: `CachesExtraInfoToken`
-ADDED: `TunnelledDirServerToken`
-BREAKING: `RouterDesc::caches_extra_info` stored as `CachesExtraInfoToken`
-BREAKING: `RouterDesc::tunnelled_dir_server` stored as `TunnelledDirServerToken`
-ADDED: `Ed25519NtorCrossCert` type
-ADDED: `ItemPresent` type
-ADDED: `RouterDesc::extra_info_digest` field
-ADDED: `RouterDesc::contact` field
-ADDED: `RouterDesc::overload_general` field
-ADDED: `RouterDesc::hibernating` field
-ADDED: `Display` for `RelayPlatform`
-BREAKING: `RelayPlatform::Tor` now stores the platform as `Option<String>`
-BREAKING: `NetdocUnverified` trait is now `NetdocParseableUnverified`
-ADDED: `ParseInput` improved: accessors, `retain_unknown_values`, `Clone`, `Debug`
-ADDED: `RouterStatus` and `RouterStatusIntroItem` implement netdoc encoding traits
-ADDED: `RouterStatus` and `netstatus::Signature` implement `EncodeOrd`
-ADDED: `F64Finite` type
-ADDED: `doc::netstatus::{plain, md, vote}::NetworkStatus`
-BREAKING: `AuthCertUnverified::verify` doesn't take times; instead returns `TimerangeBound`
-DEPRECATED: `parse2::check_validity_time` and `check_validity_time_tolerance`
-ADDED: `impl From<std::convert::Infallible> for Error`
-ADDED: `RouterStatus` fields `r.dir_port`, `p`, `id`, `stats`
-ADDED: `plain::NetworkStatus` and `md::NetworkStatus` implement `NetdocEncodable`
-ADDED: `plain::NetworkStatus` and `md::NetworkStatus` have `verify` methods
-ADDED: `EmbeddedCert` implements `NetdocEncodable` and `NetdocParseable`
-ADDED: `Microdesc`, `RelayFamily`, `RelayFamilyIds` are encodable
-ADDED: `MicrodescConstructor`
-ADDED: `NetdocEncodable` derive, `#[deftly(netdoc(default(skip)))]` option
-ADDED: `MicrodescIntroItem`
-BREAKING: `Microdesc` split into `Microdesc` and `MicrodescAndHash`
+ADDED: `RouterDescUnverified::verify()
+ADDED: `Copy` for `Ed25519Public`
+BREAKING: Remove `Eq` on `RouterDesc` and `RouterDescSignatures`
+BREAKING: Remove `Eq` on `EmbeddedCert` and `NtorOnionKeyCrossCert`
+ADDED: `NetdocEncodable` for `RouterDesc`
+ADDED: `NetdocEncodable` for `RouterDescSignatures`
+ADDED: `ItemValueEncodable` for `RouterSignature`
+ADDED: `types::policy::IpPattern`
+ADDED: `types::policy::AddrPortPattern`: `addrs` and `ports` fields exposed
+ADDED: `types::policy::AddrPortPattern`: impl `Hash`, provide `new`
+ADDED: `types::policy::AddrPolicy::rules` accessor
+ADDED: `types::policy::PortRange::from_range`, `to_range`
+ADDED: `types::policy::PortRange` is `Copy`
+ADDED: `types::policy::AddrPolicy::rules` returns a `DoubleEndedIterator`
+ADDED: `rangemap_mutate_range`
+ADDED: votes: `doc::netstatus::vote`, `NetworkStatusVote`
+ADDED: parts of votes: `VoteAuthoritySection`, `RouterStatusMdDigestsVote`
+ADDED: encoding for votes: `doc::nettstatus::consensus_methods_comma_separated::write_arg_onto`
+ADDED: `AuthCert`: `encode_sign`, `EncodedAuthCert`
+ADDED: `types::policy::AddrPolicy::summarise_precise` (and `PortPolicies`, `PortSummaryThresholds`
+ADDED: `ConsensusMethod`'s field is now `pub`
+BREAKING: `NetdocParseableFields::Accumulator` must be `Default`
+ADDED: `types::policy::PortPolicy::from_ordered_allowed_ranges`
+BREAKING: `HsDesc::parse_decrypt_validate` no longer takes a `SystemTime` and **no longer checks validity time**
+ADDED: `encode::encode_netdoc_unsigned` and `encode_netdoc_fields`
+ADDED: impl `Hash` for `netstatus::ConsensusMethods`
+BREAKING: `RouterStatus.port_policy` is `Intern`, not `Arc`

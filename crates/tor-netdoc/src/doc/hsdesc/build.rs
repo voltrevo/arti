@@ -15,6 +15,7 @@ use tor_hscrypto::pk::{HsBlindIdKey, HsBlindIdKeypair, HsSvcDescEncKeypair};
 use tor_hscrypto::{RevisionCounter, Subcredential};
 use tor_llcrypto::pk::curve25519;
 use tor_llcrypto::pk::ed25519;
+use tor_protover::Protocols;
 use tor_units::IntegerMinutes;
 
 use derive_builder::Builder;
@@ -65,6 +66,26 @@ struct HsDesc<'a> {
     #[builder(default)]
     #[cfg(feature = "hs-pow-full")]
     pow_params: Option<&'a PowParams>,
+
+    /// If present, a sendme increment and a set of FlowCtrl capabilities to
+    /// advertise with it.
+    ///
+    /// If this is None, we don't advertise any flowctrl capabilities.
+    ///
+    /// For historical reasons, the protocols capabilities here are separate
+    /// from `supported_protos`.
+    #[builder(default)]
+    flow_control: Option<(Protocols, u8)>,
+
+    /// A (possibly empty) list of supported protocol capabilities.
+    ///
+    /// These will be advertised in the `proto` item.
+    ///
+    /// This should not include every protocol capability
+    /// that the software supports:
+    /// it should only include the subset listed as belonging on the `proto` item.
+    #[builder(default)]
+    supported_protocols: Protocols,
 
     /// The list of clients authorized to discover the hidden service.
     ///
@@ -171,6 +192,8 @@ impl<'a> NetdocBuilder for HsDescBuilder<'a> {
             intro_points: hs_desc.intro_points,
             intro_auth_key_cert_expiry: hs_desc.intro_auth_key_cert_expiry,
             intro_enc_key_cert_expiry: hs_desc.intro_enc_key_cert_expiry,
+            flow_control: hs_desc.flow_control.as_ref(),
+            protos: hs_desc.supported_protocols.clone(),
             #[cfg(feature = "hs-pow-full")]
             pow_params: hs_desc.pow_params,
         }
@@ -316,7 +339,7 @@ mod test {
     use super::*;
     use crate::doc::hsdesc::{EncryptedHsDesc, HsDesc as ParsedHsDesc};
     use tor_basic_utils::test_rng::Config;
-    use tor_checkable::{SelfSigned, Timebound};
+    use tor_checkable::{SelfSigned, TimeBound};
     use tor_hscrypto::pk::{HsClientDescEncKeypair, HsIdKeypair};
     use tor_hscrypto::time::TimePeriod;
     use tor_linkspec::LinkSpec;
@@ -377,13 +400,13 @@ mod test {
             .unwrap()
             .check_signature()
             .unwrap()
-            .check_valid_at(&humantime::parse_rfc3339(TIMESTAMP).unwrap())
+            .if_valid_at(&humantime::parse_rfc3339(TIMESTAMP).unwrap())
             .unwrap();
 
         enc_desc
             .decrypt(subcredential, hsc_desc_enc)
             .unwrap()
-            .check_valid_at(&humantime::parse_rfc3339(TIMESTAMP).unwrap())
+            .if_valid_at(&humantime::parse_rfc3339(TIMESTAMP).unwrap())
             .unwrap()
             .check_signature()
             .unwrap()

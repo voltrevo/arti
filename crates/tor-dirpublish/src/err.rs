@@ -104,7 +104,7 @@ impl Rejection {
 
 impl std::fmt::Display for Rejection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", &self.message)
+        write!(f, "{:?}", self.message)
     }
 }
 

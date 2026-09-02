@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -52,6 +52,11 @@
 // Overrides specific to this crate:
 #![allow(clippy::print_stderr)]
 #![allow(clippy::print_stdout)]
+
+mod authority_plugin;
+
+/// Entrypoint for the Arti-in-C-Tor consensus method plugin
+pub use authority_plugin::plugin_main as authority_plugin_main;
 
 /// Entrypoint
 pub fn main() {
