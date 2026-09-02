@@ -2,7 +2,7 @@
 //! The domain specific views use the generic view helper which wraps the [`KeyMgr`].
 
 use anyhow::{Context, Result};
-use std::sync::Arc;
+use std::borrow::Borrow;
 
 use tor_keymgr::{KeyMgr, KeySpecifierPattern};
 use tor_relay_crypto::{
@@ -52,6 +52,15 @@ pub(super) struct ValidUntilChanged {
     pub(super) ntor_previous: bool,
 }
 
+impl ValidUntilChanged {
+    /// Return true iff at least one key that is used for a relay descriptor has changed.
+    ///
+    /// The relay descriptor requires the relay signing key and the ntor key (onion key).
+    pub(super) fn relay_desc_keys_changed(&self) -> bool {
+        self.relaysign_ed || self.ntor_latest
+    }
+}
+
 /// A full view of all relay keys within the [`KeyMgr`] it holds.
 ///
 /// This keeps the key view that are used accross tasks coherent that is it keeps a cache of
@@ -61,9 +70,9 @@ pub(super) struct ValidUntilChanged {
 /// That valid_until cache is updated by the crypto task when keys are generated/rotated.
 ///
 /// Domain specific view wrap this view in order to restrict key access.
-pub(super) struct FullKeyView {
+pub(super) struct FullKeyView<K: Borrow<KeyMgr>> {
     /// The relay key manager.
-    keymgr: Arc<KeyMgr>,
+    keymgr: K,
     /// The keys' valid_until cache.
     ///
     /// This is so we can lookup directly any live key without walking all existing keys and find
@@ -71,9 +80,9 @@ pub(super) struct FullKeyView {
     keys_valid_until: ValidUntilKeys,
 }
 
-impl FullKeyView {
+impl<K: Borrow<KeyMgr>> FullKeyView<K> {
     /// Constructor.
-    pub(super) fn new(keymgr: Arc<KeyMgr>) -> anyhow::Result<Self> {
+    pub(super) fn new(keymgr: K) -> anyhow::Result<Self> {
         let mut view = Self {
             keymgr,
             keys_valid_until: ValidUntilKeys::default(),
@@ -86,7 +95,7 @@ impl FullKeyView {
 
     /// Return a reference to the key manager.
     pub(super) fn keymgr(&self) -> &KeyMgr {
-        &self.keymgr
+        self.keymgr.borrow()
     }
 
     /// Rebuild the valid_until cache from the current keystore state.
@@ -101,6 +110,7 @@ impl FullKeyView {
 
         if let Some(entry) = self
             .keymgr
+            .borrow()
             .list_matching(&RelayLinkSigningKeypairSpecifierPattern::new_any().arti_pattern()?)?
             .first()
         {
@@ -110,6 +120,7 @@ impl FullKeyView {
 
         if let Some(entry) = self
             .keymgr
+            .borrow()
             .list_matching(&RelaySigningKeypairSpecifierPattern::new_any().arti_pattern()?)?
             .first()
         {
@@ -119,6 +130,7 @@ impl FullKeyView {
 
         let mut ntor: Vec<Timestamp> = self
             .keymgr
+            .borrow()
             .list_matching(&RelayNtorKeypairSpecifierPattern::new_any().arti_pattern()?)?
             .iter()
             .map(|entry| Ok(RelayNtorKeypairSpecifier::try_from(entry.key_path())?.valid_until))
@@ -149,6 +161,7 @@ impl FullKeyView {
     /// Return the relay ed25519 identity keypair (KS_relayid_ed).
     pub(super) fn ks_relayid_ed(&self) -> Result<RelayIdentityKeypair> {
         self.keymgr
+            .borrow()
             .get(&RelayIdentityKeypairSpecifier::new())?
             .context("Missing Ed25519 identity")
     }
@@ -156,6 +169,7 @@ impl FullKeyView {
     /// Return the relay RSA identity keypair (KS_relayid_rsa).
     pub(super) fn ks_relayid_rsa(&self) -> Result<RelayIdentityRsaKeypair> {
         self.keymgr
+            .borrow()
             .get(&RelayIdentityRsaKeypairSpecifier::new())?
             .context("Missing RSA identity")
     }
@@ -167,6 +181,7 @@ impl FullKeyView {
             .link_ed
             .ok_or(anyhow::anyhow!("No link authentication key"))?;
         self.keymgr
+            .borrow()
             .get(&RelayLinkSigningKeypairSpecifier::new(valid_until))?
             .context("Missing link authentication key")
     }
@@ -179,6 +194,7 @@ impl FullKeyView {
             .ok_or(anyhow::anyhow!("No latest ntor key"))?;
         let latest = self
             .keymgr
+            .borrow()
             .get(&RelayNtorKeypairSpecifier::new(valid_until))?
             .context("Missing latest ntor key")?;
         let mut keys = RelayNtorKeys::new(latest);
@@ -187,6 +203,7 @@ impl FullKeyView {
         if let Some(valid_until) = self.keys_valid_until.ntor_previous {
             let previous = self
                 .keymgr
+                .borrow()
                 .get(&RelayNtorKeypairSpecifier::new(valid_until))?
                 .context("Missing previous ntor key")?;
             keys = keys.with_previous(previous);
@@ -201,6 +218,7 @@ impl FullKeyView {
             .relaysign_ed
             .ok_or(anyhow::anyhow!("No relay signing key"))?;
         self.keymgr
+            .borrow()
             .get(&RelaySigningKeypairSpecifier::new(valid_until))?
             .context("Missing relay signing key")
     }
@@ -213,6 +231,7 @@ impl FullKeyView {
             .ok_or(anyhow::anyhow!("No relay signing key"))?;
         let (_key, cert) = self
             .keymgr
+            .borrow()
             .get_key_and_cert::<RelaySigningKeypair, RelaySigningKeyCert>(
                 &RelaySigningKeyCertSpecifier::new(RelaySigningPublicKeySpecifier::new(
                     valid_until,
@@ -238,6 +257,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     //!
     use super::*;
@@ -282,7 +302,7 @@ mod test {
     #[test]
     fn reconcile_new_keys() {
         let keymgr = new_keymgr();
-        let mut view = FullKeyView::new(keymgr.clone()).unwrap();
+        let mut view = FullKeyView::new(&keymgr).unwrap();
 
         insert_link_key(&keymgr, ts(1000));
         insert_signing_key(&keymgr, ts(2000));
@@ -300,7 +320,7 @@ mod test {
     #[test]
     fn reconcile_no_change() {
         let keymgr = new_keymgr();
-        let mut view = FullKeyView::new(keymgr.clone()).unwrap();
+        let mut view = FullKeyView::new(&keymgr).unwrap();
 
         insert_link_key(&keymgr, ts(1000));
         insert_signing_key(&keymgr, ts(2000));
@@ -322,7 +342,7 @@ mod test {
     #[test]
     fn reconcile_ntor_keys() {
         let keymgr = new_keymgr();
-        let mut view = FullKeyView::new(keymgr.clone()).unwrap();
+        let mut view = FullKeyView::new(&keymgr).unwrap();
 
         let older_ts = ts(1000);
         let newer_ts = ts(2000);
@@ -342,7 +362,7 @@ mod test {
     #[test]
     fn reconcile_rotated_key() {
         let keymgr = new_keymgr();
-        let mut view = FullKeyView::new(keymgr.clone()).unwrap();
+        let mut view = FullKeyView::new(&keymgr).unwrap();
 
         insert_link_key(&keymgr, ts(1000));
 

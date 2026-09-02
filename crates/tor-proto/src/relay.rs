@@ -16,36 +16,26 @@ pub(crate) mod reactor;
 
 pub use channel::MaybeVerifiableRelayResponderChannel;
 pub use channel::create_handler::{
-    CircNetParameters, CongestionControlNetParams, CreateRequestHandler,
+    CircNetParameters, CircuitIncomingStreamReceiver, CongestionControlNetParams,
+    CreateRequestHandler, IncomingStreamRequestFilterFactory,
 };
 
 use derive_deftly::Deftly;
-use futures::StreamExt as _;
 use oneshot_fused_workaround as oneshot;
 
 use tor_cell::chancell::msg::{self as chanmsg};
 use tor_cell::relaycell::StreamId;
-use tor_cell::relaycell::flow_ctrl::XonKbpsEwma;
+use tor_cell::relaycell::flow_ctrl::XonKBpsEwma;
 use tor_memquota::derive_deftly_template_HasMemoryCost;
-use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 
 use crate::Error;
 use crate::circuit::celltypes::derive_deftly_template_RestrictedChanMsgSet;
-use crate::circuit::circhop::ReactorStreamComponents;
 use crate::circuit::reactor::CircReactorHandle;
-use crate::circuit::reactor::{CtrlCmd, forward};
-use crate::congestion::sendme::StreamRecvWindow;
-use crate::memquota::SpecificAccount;
+use crate::circuit::reactor::CtrlCmd;
+use crate::circuit::reactor::forward;
 use crate::relay::reactor::backward::Backward;
 use crate::relay::reactor::forward::Forward;
-use crate::stream::flow_ctrl::xon_xoff::reader::XonXoffReaderCtrl;
-use crate::stream::incoming::{
-    IncomingCmdChecker, IncomingStream, IncomingStreamRequestFilter, StreamReqInfo,
-};
-use crate::stream::raw::StreamReceiver;
-use crate::stream::{RECV_WINDOW_INIT, StreamComponents, StreamTarget, Tunnel};
-
-use std::sync::Arc;
+use crate::stream::incoming::IncomingStreamRequestFilter;
 
 /// A subclass of ChanMsg that can correctly arrive on a live relay
 /// circuit (one where a CREATE* has been received).
@@ -107,7 +97,7 @@ impl RelayCirc {
     pub(crate) fn drain_rate_update(
         &self,
         _stream_id: StreamId,
-        _rate: XonKbpsEwma,
+        _rate: XonKBpsEwma,
     ) -> crate::Result<()> {
         todo!()
     }
@@ -157,137 +147,24 @@ impl RelayCirc {
     // TODO(relay): this duplicates the ClientTunnel API and docs. Do we care?
     pub(crate) fn close_pending(
         &self,
-        _stream_id: StreamId,
-        _message: crate::stream::CloseStreamBehavior,
+        stream_id: StreamId,
+        message: crate::stream::CloseStreamBehavior,
     ) -> crate::Result<oneshot::Receiver<crate::Result<()>>> {
-        todo!()
-    }
-
-    /// Tell this reactor to begin allowing incoming stream requests,
-    /// and to return those pending requests in an asynchronous stream.
-    ///
-    /// Ordinarily, these requests are rejected.
-    ///
-    /// Needed for exits. Middle relays should reject every incoming stream,
-    /// either through the `filter` provided in `filter`,
-    /// or by explicitly calling .reject() on each received stream.
-    ///
-    // TODO(relay): I think we will prefer using the .reject() approach
-    // for this, because the filter is only meant for inexpensive quick
-    // checks that are done immediately in the reactor (any blocking
-    // in the filter will block the relay reactor main loop!).
-    ///
-    /// The user of the reactor **must** handle this stream
-    /// (either by .accept()ing and opening and proxying the corresponding
-    /// streams as appropriate, or by .reject()ing).
-    ///
-    // TODO: declare a type-alias for the return type when support for
-    // impl in type aliases gets stabilized.
-    //
-    // See issue #63063 <https://github.com/rust-lang/rust/issues/63063>
-    //
-    /// There can only be one [`Stream`](futures::Stream) of this type created on a given reactor.
-    /// If a such a [`Stream`](futures::Stream) already exists, this method will return
-    /// an error.
-    ///
-    /// After this method has been called on a reactor, the reactor is expected
-    /// to receive requests of this type indefinitely, until it is finally closed.
-    /// If the `Stream` is dropped, the next request on this reactor will cause it to close.
-    ///
-    // TODO: Someday, we might want to allow a stream request handler to be
-    // un-registered.  However, nothing in the Tor protocol requires it.
-    //
-    // TODO(DEDUP): *very* similar to ServiceOnionServiceDataTunnel::allow_stream_requests
-    #[allow(unused)] // TODO(relay): call this from the task that creates the circ
-    pub(crate) async fn allow_stream_requests<'a, FILT>(
-        self: Arc<Self>,
-        allow_commands: &'a [tor_cell::relaycell::RelayCmd],
-        filter: FILT,
-    ) -> crate::Result<impl futures::Stream<Item = IncomingStream> + use<'a, FILT>>
-    where
-        FILT: IncomingStreamRequestFilter,
-    {
-        let tunnel = Arc::clone(&self);
-        /// The size of the channel receiving IncomingStreamRequestContexts.
-        ///
-        // TODO(relay-tuning): buffer size
-        const INCOMING_BUFFER: usize = crate::stream::STREAM_READER_BUFFER;
-
-        let (incoming_sender, incoming_receiver) = MpscSpec::new(INCOMING_BUFFER).new_mq(
-            self.0.time_provider.clone(),
-            tunnel.0.memquota.as_raw_account(),
-        )?;
-
-        let cmd_checker = IncomingCmdChecker::new_any(allow_commands);
         let (tx, rx) = oneshot::channel();
-        let cmd = forward::CtrlCmd::AwaitStreamRequests {
-            incoming_sender,
-            cmd_checker,
+
+        let cmd = forward::CtrlCmd::ClosePendingStream {
+            stream_id,
             hop: None,
-            filter: Box::new(filter),
+            message,
             done: tx,
         };
 
-        tunnel
-            .0
+        self.0
             .command
             .unbounded_send(CtrlCmd::Forward(cmd))
             .map_err(|_| Error::CircuitClosed)?;
 
-        // Check whether the AwaitStreamRequest was processed successfully.
-        rx.await.map_err(|_| Error::CircuitClosed)??;
-
-        // TODO(relay): this is more or less copy-pasta from client code
-        let stream = incoming_receiver.map(move |req_ctx| {
-            let StreamReqInfo {
-                req,
-                stream_id,
-                hop,
-                stream_components:
-                    ReactorStreamComponents {
-                        stream_inbound_rx,
-                        stream_outbound_tx,
-                        rate_limit_rx,
-                        drain_rate_request_rx,
-                    },
-                memquota,
-                relay_cell_format,
-            } = req_ctx;
-
-            // There is no originating hop if we're a relay
-            debug_assert!(hop.is_none());
-
-            let target = StreamTarget {
-                tunnel: Tunnel::Relay(Arc::clone(&tunnel)),
-                tx: stream_outbound_tx,
-                hop: None,
-                stream_id,
-                relay_cell_format,
-                rate_limit_stream: rate_limit_rx,
-            };
-
-            // can be used to build a reader that supports XON/XOFF flow control
-            let xon_xoff_reader_ctrl =
-                XonXoffReaderCtrl::new(drain_rate_request_rx, target.clone());
-
-            let reader = StreamReceiver {
-                target: target.clone(),
-                receiver: stream_inbound_rx,
-                recv_window: StreamRecvWindow::new(RECV_WINDOW_INIT),
-                ended: false,
-            };
-
-            let components = StreamComponents {
-                stream_receiver: reader,
-                target,
-                memquota,
-                xon_xoff_reader_ctrl,
-            };
-
-            IncomingStream::new(self.0.time_provider.clone(), req, components)
-        });
-
-        Ok(stream)
+        Ok(rx)
     }
 }
 
@@ -305,6 +182,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     #[test]

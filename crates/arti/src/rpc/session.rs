@@ -12,6 +12,7 @@ use tor_rtcompat::Runtime;
 
 use crate::{
     proxy::port_info,
+    reload_cfg::LaunchableTorClient,
     rpc::{listener::RpcConnInfo, superuser::RpcSuperuser},
 };
 
@@ -79,6 +80,7 @@ impl ArtiRpcSession {
     pub(super) fn new<R: Runtime>(
         auth: &RpcAuthentication,
         client_root: &Arc<TorClient<R>>,
+        launchable_client: &Arc<LaunchableTorClient<R>>,
         arti_state: &Arc<RpcVisibleArtiState>,
         listener_info: &RpcConnInfo,
     ) -> Arc<Self> {
@@ -86,7 +88,10 @@ impl ArtiRpcSession {
         let client = client_root.isolated_client();
         let session = arti_rpcserver::RpcSession::new_with_client(client);
         if listener_info.allow_superuser == SuperuserPermission::Allowed {
-            session.provide_superuser_permission(Arc::new(RpcSuperuser::new(client_root.clone())) as _);
+            session.provide_superuser_permission(Arc::new(RpcSuperuser::new(
+                client_root.clone(),
+                launchable_client.clone(),
+            )) as _);
         }
         Arc::new(ArtiRpcSession {
             session,
@@ -174,6 +179,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use tor_rtcompat::SpawnExt as _;

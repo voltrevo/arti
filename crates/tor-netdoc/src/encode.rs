@@ -137,6 +137,32 @@ pub trait ItemArgument {
     fn write_arg_onto(&self, out: &mut ItemEncoder<'_>) -> Result<(), Bug>;
 }
 
+/// Encode one or more whole (unsigned) network documents into a `String`
+///
+/// To encode just one document, write `encode_netdoc_unsigned([&doc])`.
+pub fn encode_netdoc_unsigned<'d, 'i, D, I>(docs: I) -> Result<String, Bug>
+where
+    D: NetdocEncodable + 'd,
+    I: IntoIterator<Item = &'d D> + 'i,
+{
+    let mut encoder = NetdocEncoder::new();
+    for doc in docs {
+        doc.encode_unsigned(&mut encoder)?;
+    }
+    encoder.finish()
+}
+
+/// Encode a collection of fields (a document without an intro item) into a `String`
+///
+/// Does not support multiple document inputs, because unlike [`NetdocEncodable`],
+/// document texts for [`NetdocEncodableFields`] can't be concatenated
+/// to make multiple documents, because there aren't any intro items to use as boundaries.
+pub fn encode_netdoc_fields<D: NetdocEncodableFields>(doc: &D) -> Result<String, Bug> {
+    let mut encoder = NetdocEncoder::new();
+    doc.encode_fields(&mut encoder)?;
+    encoder.finish()
+}
+
 impl NetdocEncoder {
     /// Start encoding a document
     pub fn new() -> Self {
@@ -318,7 +344,7 @@ impl<'n> ItemEncoder<'n> {
                 data.write_into(&mut bytes)?;
                 Base64::encode_string(&bytes)
             };
-            let mut data = &data[..];
+            let mut data = data.as_str();
             writeln!(out, "\n{BEGIN_STR}{keywords}{TAG_END}").expect("write!");
             while !data.is_empty() {
                 let (l, r) = if data.len() > BASE64_PEM_MAX_LINE {
@@ -463,6 +489,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use std::str::FromStr;
@@ -487,8 +514,7 @@ mod test {
             .arg(&t_no_sp);
 
         let doc = encode.finish().unwrap();
-        println!("{}", doc);
-        assert_eq!(
+        assert_eq_or_diff!(
             doc,
             r"dir-key-expires 2020-04-18 08:36:57
 shared-rand-previous-value 3 bMZR5Q6kBadzApPjd5dZ1tyLt1ckv1LfNCP/oyGhCXs= 2021-04-18T08:36:57
@@ -535,8 +561,7 @@ qiBHRBGbtkF/Re5pb438HC/CGyuujp43oZ3CUYosJOfY/X+sD0aVAgMBAAE";
             .object_bytes("SIGNATURE", []);
 
         let doc = encode.finish().unwrap();
-        eprintln!("{}", doc);
-        assert_eq!(
+        assert_eq_or_diff!(
             doc,
             r"dir-key-certificate-version 3
 fingerprint 9367f9781da8eabbf96b691175f0e701b43c602e

@@ -1,7 +1,5 @@
 //! A simple reverse-proxy implementation for onion services.
 
-use std::sync::{Arc, Mutex};
-
 use futures::io::BufReader;
 use futures::{
     AsyncRead, AsyncWrite, Future, FutureExt as _, Stream, StreamExt as _, select_biased,
@@ -11,12 +9,14 @@ use oneshot_fused_workaround as oneshot;
 use safelog::sensitive as sv;
 use std::collections::HashMap;
 use std::io::Error as IoError;
+use std::sync::{Arc, Mutex};
 use strum::IntoEnumIterator;
 use tor_cell::relaycell::msg as relaymsg;
 use tor_error::{ErrorKind, HasKind, debug_report};
 use tor_hsservice::{HsNickname, RendRequest, StreamRequest};
 use tor_log_ratelim::log_ratelim;
-use tor_proto::client::stream::{DataStream, IncomingStreamRequest};
+use tor_proto::client::stream::DataStream;
+use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::{Runtime, SpawnExt as _};
 
 use crate::config::{
@@ -253,12 +253,32 @@ async fn run_action<R: Runtime>(
         ProxyAction::Forward(encap, target) => match (encap, target) {
             (Encapsulation::Simple, ref addr @ TargetAddr::Inet(a)) => {
                 let rt_clone = runtime.clone();
-                forward_connection(rt_clone, request, runtime.connect(&a), nickname, addr).await?;
-            } /* TODO (#1246)
-                (Encapsulation::Simple, TargetAddr::Unix(_)) => {
-                    // TODO: We need to implement unix connections.
-                }
-              */
+
+                // We don't use any custom options on the socket.
+                let connect_options = Default::default();
+                let stream = runtime.connect(&a, &connect_options);
+
+                forward_connection(rt_clone, request, stream, nickname, addr).await?;
+            }
+            // TODO: we need more tests for Unix Socket support
+            // I will open a issue or just finish it in this MR
+            // (UnixTests)
+            #[cfg(unix)]
+            (Encapsulation::Simple, TargetAddr::Unix(unix_addr)) => {
+                let rt_clone = runtime.clone();
+                // We don't use any custom options on the unix socket.
+                let connect_options = Default::default();
+                let unix_addr_clone = unix_addr.clone();
+                let stream = runtime.connect(&unix_addr_clone, &connect_options);
+                forward_connection(
+                    rt_clone,
+                    request,
+                    stream,
+                    nickname,
+                    &TargetAddr::Unix(unix_addr),
+                )
+                .await?;
+            }
         },
         ProxyAction::RejectStream => {
             // C tor sends DONE in this case, so we do too.

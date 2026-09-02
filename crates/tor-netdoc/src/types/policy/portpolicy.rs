@@ -4,12 +4,14 @@
 
 use std::fmt::Display;
 use std::str::FromStr;
-use std::sync::Arc;
 
+use crate::encode::{ItemEncoder, ItemValueEncodable};
 use crate::parse2::{ErrorProblem as EP, ItemValueParseable, UnparsedItem};
 
-use super::{PolicyError, PortRanges, RuleKind};
-use tor_basic_utils::intern::InternCache;
+use super::{PolicyError, PortRange, PortRanges, RuleKind};
+use tor_basic_utils::derive_deftly_template_GloballyInternable;
+use tor_basic_utils::intern::{GloballyInternable, Intern};
+use tor_error::Bug;
 
 use derive_deftly::Deftly;
 
@@ -35,7 +37,8 @@ use derive_deftly::Deftly;
 /// assert!(! policy.allows_port(1024));
 /// assert!(! policy.allows_port(9000));
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Deftly)]
+#[derive_deftly(GloballyInternable)]
 pub struct PortPolicy {
     /// A list of port ranges that this policy allows.
     ///
@@ -46,17 +49,19 @@ pub struct PortPolicy {
 
 impl Display for PortPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.allowed.is_empty() {
-            write!(f, "reject 1-65535")?;
-        } else {
-            write!(f, "accept ")?;
-            let mut comma = "";
-            for range in self.allowed.iter() {
-                write!(f, "{}{}", comma, range)?;
-                comma = ",";
-            }
-        }
-        Ok(())
+        // Format the list as an `accept`, and as a `reject`, and take the shortest.
+        let shortest = [
+            ("accept", &self.allowed),
+            ("reject", &self.allowed.inverted()),
+        ]
+        .into_iter()
+        .filter_map(|(keyword, allowed)| Some(format!("{keyword} {}", allowed.display()?)))
+        // min_by_key takes the *last* if they're equal but we would prefer to take `accept`
+        .rev()
+        .min_by_key(|s| s.len())
+        .expect("can't both be empty");
+
+        write!(f, "{shortest}")
     }
 }
 
@@ -74,14 +79,42 @@ impl PortPolicy {
         }
     }
 
+    /// Create a PortPolicy from an iterator of allowed port ranges.
+    ///
+    /// All other ports will be rejected.
+    ///
+    /// The input iterator must yield increasing nonoverlapping ranges,
+    /// or it's a [`PolicyError`].
+    pub fn from_ordered_allowed_ranges(
+        allowed: impl IntoIterator<Item = PortRange>,
+    ) -> Result<Self, PolicyError> {
+        let allowed = allowed
+            .into_iter()
+            .try_fold(PortRanges::new(), |mut b, i| {
+                b.push_ordered(i)?;
+                Ok(b)
+            })?;
+        Ok(Self::from_allowed_port_ranges(allowed))
+    }
+
+    /// Create a PortPolicy from a set of allowed port ranges.
+    ///
+    /// All other ports will be rejected.
+    ///
+    /// Unlike `from_allowed_ranges`, `from_allowed_port_ranges` does not iterate
+    /// over the input (which is a `Vec` underneath) and collect into a new `Vec`.
+    pub(super) fn from_allowed_port_ranges(allowed: PortRanges) -> Self {
+        Self { allowed }
+    }
+
     /// Return true iff `port` is allowed by this policy.
     pub fn allows_port(&self, port: u16) -> bool {
         self.allowed.contains(port)
     }
 
     /// Replace this PortPolicy with an interned copy, to save memory.
-    pub fn intern(self) -> Arc<Self> {
-        POLICY_CACHE.intern(self)
+    pub fn intern(self) -> Intern<Self> {
+        Self::into_intern(self)
     }
 
     /// Return true if this policy allows any ports at all.
@@ -106,17 +139,11 @@ impl FromStr for PortPolicy {
     /// Very bad parser for [`PortPolicy`], please use `parse2`!
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO: The error is bad but kept for backwards compatibility.
-        // Also, we should do split_whitespace but I feel doing this is not
-        // worth it anymore; introduces an unnecessary risk of adding
-        // bugs.
-        if s.len() < 7 {
-            // We need to do this because RuleKind::from_str does not check for
-            // the space between "accept/reject" and the arguments.
-            return Err(PolicyError::InvalidPort);
-        }
-        let kind = RuleKind::from_str(&s[..6]).map_err(|_| PolicyError::InvalidPort)?;
-        let s = &s[7..];
-        let mut allowed = PortRanges::from_str(s)?;
+        // Splitting with a UTF-8 honoring method here is important, as
+        // RuleKind and PortRanges need their arguments separately.
+        let (kind, ranges) = s.split_once(' ').ok_or(PolicyError::InvalidPort)?;
+        let kind = RuleKind::from_str(kind).map_err(|_| PolicyError::InvalidPort)?;
+        let mut allowed = PortRanges::from_str(ranges)?;
         if kind == RuleKind::Reject {
             allowed.invert();
         }
@@ -158,11 +185,12 @@ impl ItemValueParseable for PortPolicy {
     }
 }
 
-/// Cache of PortPolicy objects, for saving memory.
-//
-/// This only holds weak references to the policy objects, so we don't
-/// need to worry about running out of space because of stale entries.
-static POLICY_CACHE: InternCache<PortPolicy> = InternCache::new();
+impl ItemValueEncodable for PortPolicy {
+    fn write_item_value_onto(&self, mut out: ItemEncoder) -> Result<(), Bug> {
+        out.args_raw_string(self);
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -178,6 +206,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::parse2::{self, ParseInput};
@@ -218,20 +247,32 @@ mod test {
             &[1, 10, 35, 600],
             &[0, 11, 55, 599, 601],
         );
-        check("accept 1-10,11-20", "accept 1-20", &[], &[]);
         check(
-            "reject 1-30",
+            //
+            "accept 1-10,11-20",
+            "accept 1-20",
+            &[],
+            &[],
+        );
+        check(
             "accept 31-65535",
+            "reject 1-30",
             &[31, 10001, 65535],
             &[0, 1, 30],
         );
         check(
-            "reject 300-500",
             "accept 1-299,501-65535",
+            "reject 300-500",
             &[31, 10001, 65535],
             &[300, 301, 500],
         );
-        check("reject 10,11,12,13,15", "accept 1-9,14,16-65535", &[], &[]);
+        check(
+            //
+            "reject 10,11,12,13,15",
+            "reject 10-13,15",
+            &[],
+            &[],
+        );
         check(
             "reject 1-65535",
             "reject 1-65535",
@@ -256,6 +297,7 @@ mod test {
             "reject 1,1,1,1",
             "reject 1,2,foo,4",
             "reject 5,4,3,2",
+            "acce ¬",
         ] {
             assert!(s.parse::<PortPolicy>().is_err());
             assert!(

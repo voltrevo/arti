@@ -261,7 +261,9 @@ impl TorAddr {
                     .nth(1)
                     .map(|(i, _)| i + 1)
                     .unwrap_or(0);
-                let rhs = &onion[rhs..];
+                let rhs = onion
+                    .get(rhs..)
+                    .expect("character index was not a valid index!?");
                 let hsid = rhs.parse()?;
                 StreamInstructions::Hs {
                     hsid,
@@ -491,7 +493,7 @@ impl IntoTorAddr for &str {
 
 impl IntoTorAddr for String {
     fn into_tor_addr(self) -> Result<TorAddr, TorAddrError> {
-        self[..].into_tor_addr()
+        self.as_str().into_tor_addr()
     }
 }
 
@@ -513,7 +515,7 @@ impl IntoTorAddr for (&str, u16) {
 impl IntoTorAddr for (String, u16) {
     fn into_tor_addr(self) -> Result<TorAddr, TorAddrError> {
         let (host, port) = self;
-        (&host[..], port).into_tor_addr()
+        (host.as_str(), port).into_tor_addr()
     }
 }
 
@@ -586,6 +588,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

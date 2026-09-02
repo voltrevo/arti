@@ -410,6 +410,7 @@ mod tests {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::KeyPath;
@@ -423,7 +424,7 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::{TempDir, tempdir};
     use tor_cert::{CertifiedKey, Ed25519Cert};
-    use tor_checkable::{SelfSigned, Timebound};
+    use tor_checkable::{SelfSigned, TimeBound};
     use tor_key_forge::{CertType, KeyType, ParsedEd25519Cert};
     use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey as _};
     use web_time_compat::{Duration, SystemTime};

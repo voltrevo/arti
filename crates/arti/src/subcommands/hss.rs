@@ -332,7 +332,7 @@ fn find_ctor_keystore(client_config: &TorClientConfig, args: &CommonArgs) -> Res
     else {
         return Err(anyhow!(
             "The service identified using `--nickname {}` is not configured with any recognized CTor keystore.",
-            &args.nickname,
+            args.nickname,
         ));
     };
 

@@ -273,8 +273,10 @@ pub(crate) struct CircReactorHandle<F: ForwardHandler, B: BackwardHandler> {
     #[debug(skip)]
     pub(crate) command: mpsc::UnboundedSender<CtrlCmd<F::CtrlCmd, B::CtrlCmd>>,
     /// The time provider.
+    #[expect(unused)] // TODO(relay)
     pub(crate) time_provider: DynTimeProvider,
     /// Memory quota account
+    #[expect(unused)] // TODO(relay)
     pub(crate) memquota: CircuitAccount,
 }
 
@@ -314,6 +316,8 @@ pub(crate) struct Reactor<R: Runtime, F: ForwardHandler, B: BackwardHandler> {
     ///
     /// Used for logging.
     unique_id: UniqId,
+    /// The circuit identifier on the inbound Tor channel.
+    circ_id: CircId,
     /// The reactor for handling
     ///
     ///   * cells moving in the forward direction (from the client towards exit), if we are a relay
@@ -459,6 +463,7 @@ impl<R: Runtime, F: ForwardHandler + ControlHandler, B: BackwardHandler + Contro
         let forward = ForwardReactor::new(
             runtime.clone(),
             unique_id,
+            circ_id,
             forward_impl,
             hop_mgr,
             inbound_chan_rx,
@@ -486,6 +491,7 @@ impl<R: Runtime, F: ForwardHandler + ControlHandler, B: BackwardHandler + Contro
 
         let reactor = Reactor {
             unique_id,
+            circ_id,
             forward: Some(forward),
             backward: Some(backward),
             control: control_rx,
@@ -512,7 +518,8 @@ impl<R: Runtime, F: ForwardHandler + ControlHandler, B: BackwardHandler + Contro
                 res = self.command.next() => {
                     let Some(cmd) = res else {
                         trace!(
-                            circ_id = %self.unique_id,
+                            circ_uniq_id = %self.unique_id,
+                            backward_circ_id = %self.circ_id,
                             reason = "command channel drop",
                             "reactor shutdown",
                         );
@@ -525,7 +532,8 @@ impl<R: Runtime, F: ForwardHandler + ControlHandler, B: BackwardHandler + Contro
                 res = self.control.next() => {
                     let Some(msg) = res else {
                         trace!(
-                            circ_id = %self.unique_id,
+                            circ_uniq_id = %self.unique_id,
+                            backward_circ_id = %self.circ_id,
                             reason = "control channel drop",
                             "reactor shutdown",
                         );
@@ -591,6 +599,7 @@ pub(crate) mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use tor_basic_utils::test_rng::testing_rng;
@@ -599,8 +608,8 @@ pub(crate) mod test {
 
     use chanmsg::AnyChanMsg;
 
-    #[cfg(feature = "hs-service")]
-    use crate::client::stream::IncomingStreamRequestFilter;
+    #[cfg(any(feature = "hs-service", feature = "relay"))]
+    use crate::stream::IncomingStreamRequestFilter;
 
     pub(crate) fn rmsg_to_ccmsg(
         id: Option<StreamId>,
@@ -628,10 +637,10 @@ pub(crate) mod test {
     impl IncomingStreamRequestFilter for AllowAllStreamsFilter {
         fn disposition(
             &mut self,
-            _ctx: &crate::client::stream::IncomingStreamRequestContext<'_>,
+            _ctx: &crate::stream::IncomingStreamRequestContext<'_>,
             _circ: &crate::circuit::CircHopSyncView<'_>,
-        ) -> crate::Result<crate::client::stream::IncomingStreamRequestDisposition> {
-            Ok(crate::client::stream::IncomingStreamRequestDisposition::Accept)
+        ) -> crate::Result<crate::stream::IncomingStreamRequestDisposition> {
+            Ok(crate::stream::IncomingStreamRequestDisposition::Accept)
         }
     }
 }

@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO: Try making it not Deref and having expose+expose_mut instead; how bad is it?
@@ -55,6 +56,7 @@ use serde::{Deserialize, Serialize};
 mod err;
 mod flags;
 mod impls;
+pub mod util;
 
 pub use err::Error;
 pub use flags::{Guard, disable_safe_logging, enforce_safe_logging, with_safe_logging_suppressed};
@@ -538,6 +540,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
@@ -570,14 +573,14 @@ mod test {
         assert_eq!(sv.len(), 2);
 
         assert!(!flags::unsafe_logging_enabled());
-        assert_eq!(format!("{:?}", &sv), "[scrubbed]");
+        assert_eq!(format!("{:?}", sv), "[scrubbed]");
         assert_eq!(format!("{:?}", sv.as_ref()), "[scrubbed]");
         assert_eq!(format!("{:?}", sv.as_inner()), "[104, 49]");
-        let normal = with_safe_logging_suppressed(|| format!("{:?}", &sv));
+        let normal = with_safe_logging_suppressed(|| format!("{:?}", sv));
         assert_eq!(normal, "[104, 49]");
 
         let _g = disable_safe_logging().unwrap();
-        assert_eq!(format!("{:?}", &sv), "[104, 49]");
+        assert_eq!(format!("{:?}", sv), "[104, 49]");
 
         assert_eq!(sv, SVec::from(vec![104, 49]));
         assert_eq!(sv.clone().into_inner(), vec![104, 49]);
@@ -602,7 +605,7 @@ mod test {
         let closure1 = || {
             format!(
                 "{:?}, {}, {:o}, {:x}, {:X}, {:b}",
-                &val, &val, &val, &val, &val, &val,
+                val, val, val, val, val, val,
             )
         };
         let s1 = closure1();
@@ -619,7 +622,7 @@ mod test {
         let n = 1.0E32;
         let val = Sensitive::<f64>::new(n);
         let expect = format!("{:?}, {}, {:e}, {:E}", n, n, n, n);
-        let closure2 = || format!("{:?}, {}, {:e}, {:E}", &val, &val, &val, &val);
+        let closure2 = || format!("{:?}, {}, {:e}, {:E}", val, val, val, val);
         let s1 = closure2();
         let s2 = with_safe_logging_suppressed(closure2);
         assert_eq!(s1, "[scrubbed], [scrubbed], [scrubbed], [scrubbed]");

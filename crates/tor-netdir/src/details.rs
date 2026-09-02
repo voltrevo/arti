@@ -151,7 +151,7 @@ impl<'a> RelayDetails<'a> {
     /// empty policy
     pub fn ipv4_policy(&self) -> Arc<PortPolicy> {
         if !self.0.rs.is_flagged_bad_exit() {
-            Arc::clone(self.0.md.ipv4_policy())
+            Arc::clone(self.0.md.ipv4_policy().into())
         } else {
             Arc::new(PortPolicy::new_reject_all())
         }
@@ -160,7 +160,7 @@ impl<'a> RelayDetails<'a> {
     /// empty policy
     pub fn ipv6_policy(&self) -> Arc<PortPolicy> {
         if !self.0.rs.is_flagged_bad_exit() {
-            Arc::clone(self.0.md.ipv6_policy())
+            Arc::clone(self.0.md.ipv6_policy().into())
         } else {
             Arc::new(PortPolicy::new_reject_all())
         }
@@ -170,14 +170,14 @@ impl<'a> RelayDetails<'a> {
     /// In contrast to [`RelayDetails::ipv4_policy`],
     /// this does not verify if the relay is marked BadExit.
     pub fn ipv4_declared_policy(&self) -> &Arc<PortPolicy> {
-        self.0.md.ipv4_policy()
+        self.0.md.ipv4_policy().into()
     }
     /// Return the IPv6 exit policy declared by this relay.
     ///
     /// In contrast to [`RelayDetails::ipv6_policy`],
     /// this does not verify if the relay is marked BadExit.
     pub fn ipv6_declared_policy(&self) -> &Arc<PortPolicy> {
-        self.0.md.ipv6_policy()
+        self.0.md.ipv6_policy().into()
     }
 }
 

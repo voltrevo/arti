@@ -13,6 +13,7 @@ use std::str::FromStr;
 
 use itertools::Either;
 use safelog::Redactable;
+use safelog::util::write_start_redacted;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -426,7 +427,10 @@ impl<SA: Debug + Redactable, HN: Debug + Display + AsRef<str>> Redactable
     fn display_redacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BridgeAddrInner::IpPort(a) => a.display_redacted(f),
-            BridgeAddrInner::HostPort(host, port) => write!(f, "{}…:{}", &host.as_ref()[..2], port),
+            BridgeAddrInner::HostPort(host, port) => {
+                write_start_redacted(f, host.as_ref(), 2, "…")?;
+                write!(f, ":{port}")
+            }
         }
     }
 }
@@ -804,6 +808,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use itertools::Itertools;

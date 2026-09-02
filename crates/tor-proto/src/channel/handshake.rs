@@ -8,19 +8,19 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{debug, instrument, trace};
 
-use safelog::{MaybeSensitive, Redacted};
+use safelog::MaybeSensitive;
 use tor_cell::chancell::msg::AnyChanMsg;
 use tor_cell::chancell::{AnyChanCell, ChanMsg, msg};
 use tor_cell::restrict::{RestrictedMsg, restricted_msg};
 use tor_cert::CertType;
-use tor_checkable::{TimeValidityError, Timebound};
+use tor_checkable::{TimeBound, TimeValidityError};
 use tor_error::internal;
 use tor_linkspec::{
     ChanTarget, ChannelMethod, OwnedChanTarget, OwnedChanTargetBuilder, RelayIds, RelayIdsBuilder,
 };
 use tor_llcrypto as ll;
 use tor_llcrypto::pk::{ValidatableSignature, ed25519::Ed25519Identity};
-use tor_rtcompat::{CoarseTimeProvider, Runtime, SleepProvider, StreamOps};
+use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, Runtime, SleepProvider, StreamOps};
 use web_time_compat::{SystemTime, SystemTimeExt};
 
 use crate::channel::handler::SlogDigest;
@@ -55,7 +55,7 @@ where
     async fn send_versions_cell<F>(
         &mut self,
         now_fn: F,
-    ) -> Result<(coarsetime::Instant, SystemTime)>
+    ) -> Result<(CoarseInstant, SystemTime)>
     where
         F: FnOnce() -> SystemTime,
     {
@@ -69,7 +69,7 @@ where
         );
         self.framed_tls().send(version_cell).await?;
         Ok((
-            coarsetime::Instant::now(), // Flushed at instant
+            CoarseInstant::now(), // Flushed at instant
             now_fn(),                   // Flushed at wallclock
         ))
     }
@@ -164,7 +164,7 @@ where
     ) -> Result<(
         msg::AuthChallenge,
         msg::Certs,
-        (msg::Netinfo, coarsetime::Instant),
+        (msg::Netinfo, CoarseInstant),
         Option<SlogDigest>,
     )> {
         // IMPORTANT: Protocol wise, we MUST only allow one single cell of each type for a valid
@@ -226,7 +226,7 @@ where
 
             break match read_msg(*self.unique_id(), self.framed_tls()).await? {
                 NetinfoMsg::Vpadding(_) => continue,
-                NetinfoMsg::Netinfo(msg) => (msg, coarsetime::Instant::now()),
+                NetinfoMsg::Netinfo(msg) => (msg, CoarseInstant::now()),
             };
         };
 
@@ -529,7 +529,7 @@ impl<
 
         debug!(
             stream_id = %self.unique_id,
-            "Completed handshake without authentication to {}", Redacted::new(&peer_target)
+            "Completed handshake without authentication to {}", peer_info
         );
 
         super::Channel::new(
@@ -770,7 +770,7 @@ pub(crate) fn verify_link_auth_cert(
     let (cert_timeliness, cert) = check_cert_timeliness(cert, now, clock_skew);
 
     // Make sure the cert is well signed.
-    if cert_sig.is_valid() {
+    if !cert_sig.is_valid() {
         return Err(Error::HandshakeProto(
             "Invalid ed25519 LINK_AUTH signature in handshake".into(),
         ));
@@ -797,16 +797,16 @@ pub(crate) fn verify_link_auth_cert(
 /// regardless of whether the certs are expired, so we can determine
 /// whether we got a plausible handshake with a skewed partner, or
 /// whether the handshake is definitely bad.
-pub(crate) fn check_cert_timeliness<C, CERT>(
+pub(crate) fn check_cert_timeliness<C>(
     checkable: C,
     now: SystemTime,
     clock_skew: ClockSkew,
-) -> (Result<()>, CERT)
+) -> (Result<()>, C::Inner)
 where
-    C: Timebound<CERT, Error = TimeValidityError>,
+    C: TimeBound,
 {
     let status = checkable
-        .is_valid_at(&now)
+        .check_valid_at(&now)
         .map_err(|e| match (e, clock_skew) {
             (TimeValidityError::Expired(expired_by), ClockSkew::Fast(skew))
                 if expired_by < skew =>
@@ -838,8 +838,8 @@ pub(crate) fn get_cert(certs: &msg::Certs, tp: CertType) -> Result<tor_cert::Key
 /// that you have authenticated the other party.
 pub(crate) fn unauthenticated_clock_skew(
     netinfo_cell: &msg::Netinfo,
-    netinfo_rcvd_at: coarsetime::Instant,
-    versions_flushed_at: coarsetime::Instant,
+    netinfo_rcvd_at: CoarseInstant,
+    versions_flushed_at: CoarseInstant,
     versions_flushed_wallclock: SystemTime,
 ) -> ClockSkew {
     // Try to compute our clock skew.  It won't be authenticated yet, since we haven't checked
@@ -906,7 +906,7 @@ where
     let m = m.try_into().map_err(|m: AnyChanMsg| {
         Error::HandshakeProto(format!(
             "Expected [{}] cell, but received {} cell instead",
-            tor_basic_utils::iter_join(", ", T::cmds_for_logging().iter()),
+            tor_basic_utils::iter_join(", ", T::cmds_for_logging()),
             m.cmd(),
         ))
     })?;
@@ -937,6 +937,7 @@ pub(crate) mod test {
 
     #[cfg(feature = "relay")]
     use {
+        crate::circuit::reactor::test::AllowAllStreamsFilter,
         crate::relay::channel::handshake::RelayInitiatorHandshake,
         crate::relay::channel::test::{RelayMsgBuf, fake_auth_material},
         tor_basic_utils::test_rng::{TestingRng, testing_rng},
@@ -1308,11 +1309,16 @@ pub(crate) mod test {
                     );
                     RelayNtorKeys::new(ntor)
                 };
-                let create_handler = Arc::new(CreateRequestHandler::new(
+
+                let (create_handler, _stream_rx) = CreateRequestHandler::new(
                     Arc::downgrade(&chan_provider) as Weak<_>,
                     new_circ_net_params(),
                     ntor_keys,
-                ));
+                    Box::new(|| Box::new(AllowAllStreamsFilter) as Box<_>),
+                    // The incoming stream command allow list can be empty
+                    // because this test doesn't actually open any streams
+                    &[],
+                );
                 let peer_target = OwnedChanTargetBuilder::default().build().unwrap();
                 let unverified = RelayInitiatorHandshake::new(
                     RelayMsgBuf(MsgBuf::new(input)),
@@ -1321,7 +1327,7 @@ pub(crate) mod test {
                     vec![SocketAddr::new(IpAddr::from([127, 0, 0, 1]), 6666)],
                     &peer_target,
                     fake_mq(),
-                    create_handler,
+                    Arc::new(create_handler),
                 )
                 .connect(move || now)
                 .await?;
@@ -1518,5 +1524,84 @@ pub(crate) mod test {
                 );
             }
         });
+    }
+
+    /// Regression tests for [`verify_link_auth_cert`].
+    #[cfg(feature = "relay")]
+    mod link_auth_cert {
+        use super::*;
+        use crate::relay::channel::build_certs_cell;
+        use tor_cert::CertType;
+
+        fn good_certs_and_signing_key() -> (msg::Certs, Ed25519Identity) {
+            let auth_material = fake_auth_material();
+            let certs = build_certs_cell(&auth_material, /* is_responder = */ false);
+            let cert_signing = get_cert(&certs, CertType::IDENTITY_V_SIGNING).unwrap();
+            let (cert_signing, _sig) = cert_signing
+                .should_have_signing_key()
+                .unwrap()
+                .dangerously_split()
+                .unwrap();
+            let (timeliness, cert_signing) =
+                check_cert_timeliness(cert_signing, SystemTime::get(), ClockSkew::None);
+            timeliness.unwrap();
+            let kp_relaysign_ed = *cert_signing.subject_key().as_ed25519().unwrap();
+            (certs, kp_relaysign_ed)
+        }
+
+        /// A valid CertType 6 LINK_AUTH cert must be accepted.
+        #[test]
+        fn link_auth_cert_good() {
+            let (certs, kp_relaysign_ed) = good_certs_and_signing_key();
+            let _ = verify_link_auth_cert(
+                &certs,
+                &kp_relaysign_ed,
+                Some(SystemTime::get()),
+                ClockSkew::None,
+            )
+            .expect("valid LINK_AUTH cert was rejected by verify_link_auth_cert");
+        }
+
+        /// A CertType 6 whose signature has been corrupted must be rejected
+        /// with the specific `Invalid ed25519 LINK_AUTH signature in handshake` error.
+        #[test]
+        fn link_auth_cert_badsig() {
+            let (good_certs, kp_relaysign_ed) = good_certs_and_signing_key();
+            // Flip the last byte of the CertType 6 body to break its signature,
+            // mirroring the existing `certs_badsig` pattern above.
+            let bad_link_auth_body = {
+                let mut v = good_certs
+                    .cert_body(CertType::SIGNING_V_LINK_AUTH)
+                    .unwrap()
+                    .to_vec();
+                let last = v.len() - 1;
+                v[last] ^= 0x10;
+                v
+            };
+
+            // Carry over the supporting certs unchanged and replace only
+            // CertType 6 with the corrupted body.
+            let mut bad_certs = msg::Certs::new_empty();
+            for ct in [
+                CertType::RSA_ID_X509,
+                CertType::IDENTITY_V_SIGNING,
+                CertType::RSA_ID_V_IDENTITY,
+            ] {
+                bad_certs.push_cert_body(ct, good_certs.cert_body(ct).unwrap().to_vec());
+            }
+            bad_certs.push_cert_body(CertType::SIGNING_V_LINK_AUTH, bad_link_auth_body);
+
+            let err = verify_link_auth_cert(
+                &bad_certs,
+                &kp_relaysign_ed,
+                Some(SystemTime::get()),
+                ClockSkew::None,
+            )
+            .expect_err("munged LINK_AUTH cert was accepted by verify_link_auth_cert");
+            assert_eq!(
+                err.to_string(),
+                "Handshake protocol violation: Invalid ed25519 LINK_AUTH signature in handshake"
+            );
+        }
     }
 }

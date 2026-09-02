@@ -37,6 +37,12 @@ pub(crate) enum Resource {
         /// The key for the scratch item
         key: String,
     },
+    /// An item in an in-memory state manager.
+    #[display("{} in memory state manager", key)]
+    Memory {
+        /// The key for the item
+        key: String,
+    },
     /// An instance state directory
     #[display(
         "instance {:?}/{:?} in {}",
@@ -69,6 +75,9 @@ pub(crate) enum Action {
     /// We were trying to acquire the lock for the store.
     #[display("acquiring lock")]
     Locking,
+    /// We were trying to release the lock for the store.
+    #[display("releasing lock")]
+    Unlocking,
     /// We were trying to validate the storage and initialize the manager.
     #[display("constructing storage manager")]
     Initializing,
@@ -170,6 +179,34 @@ impl Error {
             resource,
         }
     }
+
+    /// Create an error for a failed load operation on an in-memory key.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn load_error(key: &str, source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Loading, Resource::Memory { key: key.to_string() })
+    }
+
+    /// Create an error for a failed store operation on an in-memory key.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn store_error(key: &str, source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Storing, Resource::Memory { key: key.to_string() })
+    }
+
+    /// Create an error for a failed lock operation.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn lock_error(source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Locking, Resource::Manager)
+    }
+
+    /// Create an error for a failed unlock operation.
+    ///
+    /// This is useful for external `StateMgr` implementations.
+    pub fn unlock_error(source: impl Into<ErrorSource>) -> Self {
+        Self::new(source, Action::Unlocking, Resource::Manager)
+    }
 }
 
 impl tor_error::HasKind for Error {
@@ -226,6 +263,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

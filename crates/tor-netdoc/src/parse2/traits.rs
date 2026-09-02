@@ -73,7 +73,7 @@ pub trait NetdocParseable: Sized {
 /// Normally [derived](derive_deftly_template_NetdocParseableFields).
 pub trait NetdocParseableFields: Sized {
     /// The partially-parsed set of items.
-    type Accumulator: Sized + Debug + Send + Sync + 'static;
+    type Accumulator: Default + Debug + Send + Sync + 'static;
 
     /// Is this one of the keywords in this struct
     fn is_item_keyword(kw: KeywordRef<'_>) -> bool;
@@ -152,6 +152,14 @@ impl<T: ItemArgumentParseable> ItemArgumentParseable for Arc<T> {
     }
 }
 
+impl<T: ItemArgumentParseable + GloballyInternable + Eq + Hash + 'static> ItemArgumentParseable
+    for Intern<T>
+{
+    fn from_args<'s>(args: &mut ArgumentStream<'s>) -> Result<Self, ArgumentError> {
+        T::from_args(args).map(|x| T::into_intern(x))
+    }
+}
+
 impl<T: NormalItemArgument + FromStr> ItemArgumentParseable for T {
     fn from_args<'s>(args: &mut ArgumentStream<'s>) -> Result<Self, AE> {
         let v = args
@@ -166,6 +174,14 @@ impl<T: NormalItemArgument + FromStr> ItemArgumentParseable for T {
 impl<T: ItemValueParseable> ItemValueParseable for Arc<T> {
     fn from_unparsed(item: UnparsedItem<'_>) -> Result<Self, ErrorProblem> {
         T::from_unparsed(item).map(Arc::new)
+    }
+}
+
+impl<T: ItemValueParseable + GloballyInternable + Eq + Hash + 'static> ItemValueParseable
+    for Intern<T>
+{
+    fn from_unparsed(item: UnparsedItem<'_>) -> Result<Self, ErrorProblem> {
+        T::from_unparsed(item).map(|x| T::into_intern(x))
     }
 }
 

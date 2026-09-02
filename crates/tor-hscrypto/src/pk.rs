@@ -11,6 +11,7 @@ use derive_deftly::Deftly;
 use digest::Digest;
 use itertools::{Itertools, chain};
 use safelog::DisplayRedacted;
+use safelog::util::write_end_redacted;
 use subtle::ConstantTimeEq;
 use thiserror::Error;
 use tor_basic_utils::{StrExt as _, impl_debug_hex};
@@ -136,9 +137,7 @@ impl safelog::DisplayRedacted for HsId {
     // reduced deniability.
     fn fmt_redacted(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let unredacted = self.display_unredacted().to_string();
-        /// Length of the base32 data part of the address
-        const DATA: usize = 56;
-        assert_eq!(unredacted.len(), DATA + HSID_ONION_SUFFIX.len());
+        assert!(unredacted.ends_with(HSID_ONION_SUFFIX));
 
         // We show this part of the domain:
         //     e     n     l     5     s     i     d     .onion
@@ -148,7 +147,7 @@ impl safelog::DisplayRedacted for HsId {
         // 8 of those bits are the version, which is currently always 0x03.
         // So we are showing 7 bits derived from the site key.
 
-        write!(f, "[…]{}", &unredacted[DATA - 3..])
+        write_end_redacted(f, &unredacted, 3 + HSID_ONION_SUFFIX.len(), "[…]")
     }
 }
 
@@ -814,6 +813,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use hex_literal::hex;
@@ -859,10 +859,10 @@ mod test {
         chk_err!("aaaaaaaa.onion", PE::InvalidData(..));
         chk_err!(edited(55, b'E'), PE::UnsupportedVersion(4));
         chk_err!(edited(53, b'X'), PE::WrongChecksum);
-        chk_err!(&format!("www.{}", &onion), PE::HsIdContainsSubdomain);
+        chk_err!(&format!("www.{}", onion), PE::HsIdContainsSubdomain);
 
         safelog::with_safe_logging_suppressed(|| {
-            assert_eq!(format!("{:?}", &hsid), format!("HsId({})", onion));
+            assert_eq!(format!("{:?}", hsid), format!("HsId({})", onion));
         });
 
         assert_eq!(format!("{}", hsid.display_redacted()), "[…]sid.onion");

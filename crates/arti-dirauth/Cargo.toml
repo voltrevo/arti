@@ -1,0 +1,40 @@
+[package]
+name = "arti-dirauth"
+version = "0.45.0"
+authors = [
+    "The Tor Project, Inc.",
+    "Ian Jackson <iwj@torproject.org>",
+    "Clara Engler <cve@torproject.org>",
+]
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
+description = "Tor Directory Authority"
+keywords = ["tor", "arti", "privacy", "anonymity", "networking"]
+categories = ["network-programming", "cryptography"]
+repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[bin]]
+name = "arti-authority-plugin"
+path = "src/bin/arti_authority_plugin.rs"
+test = false
+bench = false
+
+[features]
+experimental = []
+full = ["tor-dirauth/full", "tor-netdoc/full", "tor-error/full"]
+__is_experimental = []
+
+[dependencies]
+anyhow = "1.0.72"
+clap = { version = "4.3.24", features = ["string", "wrap_help", "derive"] }
+thiserror = "2"
+tor-dirauth = { path = "../tor-dirauth", version = "0.45.0" }
+tor-error = { path = "../tor-error", version = "0.45.0" }
+tor-netdoc = { path = "../tor-netdoc", version = "0.45.0", features = ["full", "incomplete"] }
+
+[dev-dependencies]

@@ -361,6 +361,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
@@ -385,7 +386,7 @@ mod test {
         let all = chain!(
             b'a'..=b'z', //
             b'0'..=b'9',
-            [b'_'],
+            *b"_",
         )
         .map(char::from);
 

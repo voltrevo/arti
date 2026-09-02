@@ -4,7 +4,7 @@
 
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use rand::{seq::SliceRandom, Rng};
+use rand::{Rng, seq::SliceRandom};
 use tor_basic_utils::retry::RetryDelay;
 use tor_dircommon::{authority::AuthorityContacts, config::DirTolerance};
 use tor_netdoc::doc::netstatus::ConsensusFlavor;

@@ -831,6 +831,7 @@ mod tests {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::keystore::arti::err::{ArtiNativeKeystoreError, MalformedPathError};
@@ -1368,7 +1369,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn insert_and_get() {
         let mut builder = KeyMgrBuilder::default().primary_store(Keystore::new_boxed("keystore1"));
 
@@ -2174,7 +2174,6 @@ mod tests {
     #[test]
     #[cfg(feature = "experimental-api")]
     #[rustfmt::skip] // preserve the layout for readability
-    #[allow(clippy::cognitive_complexity)] // clippy seems confused here...
     fn get_certificate() {
         run_certificate_test!(
             generate_subject_key = No,

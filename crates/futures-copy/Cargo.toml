@@ -1,9 +1,9 @@
 [package]
 name = "futures-copy"
-version = "0.3.1"
+version = "0.4.1"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Copy data between AsyncRead and AsyncWrite, with bidirectional and flushing support"
@@ -16,14 +16,15 @@ repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 full = []
 
 [dependencies]
+extend = "1.2.0"
 futures = "0.3.14"
 pin-project = "1"
 
 [dev-dependencies]
-tokio = { version = "1.7", features = ["macros", "net", "rt", "rt-multi-thread", "time"] }
-tor-error = { path = "../tor-error", version = "0.43.0" }
-tor-rtcompat = { version = "0.43.0", path = "../tor-rtcompat" }
-tor-rtmock = { path = "../tor-rtmock", version = "0.43.0" }
+tokio = { version = "1.47.1", features = ["macros", "net", "rt", "rt-multi-thread", "time"] }
+tor-error = { path = "../tor-error", version = "0.45.0" }
+tor-rtcompat = { version = "0.45.0", path = "../tor-rtcompat" }
+tor-rtmock = { path = "../tor-rtmock", version = "0.45.0" }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -141,7 +141,7 @@ impl IncomingStream {
     pub async fn reject(mut self, message: msg::End) -> Result<()> {
         let rx = self.reject_inner(CloseStreamBehavior::SendEnd(message))?;
 
-        rx.await.map_err(|_| Error::CircuitClosed)?.map(|_| ())
+        rx.await.map_err(|_| Error::CircuitClosed)?
     }
 
     /// Reject this request and possibly send an error message to the client.
@@ -281,6 +281,22 @@ impl<'a> IncomingStreamRequestContext<'a> {
     }
 }
 
+/// A no-op request filter to be used in testing.
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Default)]
+pub(crate) struct NoOpRequestFilter;
+
+#[cfg(test)]
+impl IncomingStreamRequestFilter for NoOpRequestFilter {
+    fn disposition(
+        &mut self,
+        _ctx: &IncomingStreamRequestContext<'_>,
+        _circ: &CircHopSyncView<'_>,
+    ) -> crate::Result<IncomingStreamRequestDisposition> {
+        Ok(IncomingStreamRequestDisposition::Accept)
+    }
+}
+
 /// Information about an incoming stream request.
 #[derive(Debug, Deftly)]
 #[derive_deftly(HasMemoryCost)]
@@ -343,6 +359,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use tor_cell::relaycell::{

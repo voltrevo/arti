@@ -1,12 +1,92 @@
 //! Declare types for interning various objects.
 
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
+
+use derive_deftly::define_derive_deftly;
+use derive_more::{Deref, Display, Into};
+use educe::Educe;
 
 /// Alias to force use of RandomState, regardless of features enabled in `weak_tables`.
 ///
 /// See <https://github.com/tov/weak-table-rs/issues/23> for discussion.
 type WeakHashSet<T> = weak_table::WeakHashSet<T, std::hash::RandomState>;
+
+/// A wrapper around [`Arc`] representing owned [`InternCache`] entries.
+///
+/// The wrapper type serves the purpose of semantic meaning only, implying that
+/// this value is cached in some way or another by this module.
+///
+/// We only conveniently allow obtaining the underlying [`Arc`] with a [`From`] but not the
+/// other way around.  This means that interfacing code can make the type to
+/// "forget" it originated from an [`InternCache`] but not the other way around,
+/// i.e. cannot accidentally create fake entries that look like they came from an
+/// [`InternCache`].  If one really has to circumvent this, then the
+/// [`Intern::new_uncached_uninterned()`] method exists.
+///
+/// This ensures that interning is done everywhere that it's expected,
+/// avoiding excess memory usage.
+//
+// Right now, this is the bare minimum of derives; it may need more in the
+// future.  If so, just add them.
+#[derive(Debug, Default, PartialEq, Eq, Hash, Display, Into, Deref, Educe)]
+#[educe(Clone)]
+pub struct Intern<T: ?Sized>(Arc<T>);
+
+impl<T: ?Sized> Intern<T> {
+    /// Creates an [`Intern`] from an arbitrary [`Arc`].
+    ///
+    /// The use of this is generally discouraged, as it effectively destroys
+    /// the boundary of implying that certain cache entries come from the
+    /// [`InternCache`].
+    pub fn new_uncached_uninterned(value: Arc<T>) -> Intern<T> {
+        Intern(value)
+    }
+}
+
+// Some Arti code is pretty keen on using &Arc<T>.
+impl<'a, T: ?Sized> From<&'a Intern<T>> for &'a Arc<T> {
+    fn from(value: &'a Intern<T>) -> Self {
+        &value.0
+    }
+}
+
+/// Offers access to globally available cache for [`InternCache`].
+///
+/// Typically derived using [`crate::derive_deftly_template_GloballyInternable`].
+pub trait GloballyInternable: Sized {
+    /// Returns a reference to the global cache instance of this type.
+    ///
+    /// Implemented by implementors of this trait.
+    /// Users of the trait should usually use [`GloballyInternable::into_intern()`].
+    fn intern_cache() -> &'static InternCache<Self>;
+
+    /// Places `self` into the global cache.
+    ///
+    /// Please use this instead of `T::intern_cache().intern(value)`.
+    fn into_intern(self) -> Intern<Self>
+    where
+        Self: Eq + Hash + 'static,
+    {
+        Self::intern_cache().intern(self)
+    }
+}
+
+define_derive_deftly! {
+    /// Implement the [`GloballyInternable`] trait for a specific type.
+    ///
+    /// The implementation in itself is trivial and straightforward with this
+    /// macro primarily serving as a convenience method.
+    export GloballyInternable for struct:
+
+    impl $crate::intern::GloballyInternable for $ttype {
+        fn intern_cache() -> &'static $crate::intern::InternCache<Self> {
+            static S: $crate::intern::InternCache::<$ttype> = $crate::intern::InternCache::new();
+            &S
+        }
+    }
+}
 
 /// An InternCache is a lazily-constructed weak set of objects.
 ///
@@ -54,14 +134,14 @@ impl<T: Eq + Hash> InternCache<T> {
     /// If `value` is already stored in this cache, we return a
     /// reference to the stored value.  Otherwise, we insert `value`
     /// into the cache, and return that.
-    pub fn intern(&self, value: T) -> Arc<T> {
+    pub fn intern(&self, value: T) -> Intern<T> {
         let mut cache = self.cache();
         if let Some(pp) = cache.get(&value) {
-            pp
+            Intern(pp)
         } else {
             let arc = Arc::new(value);
             cache.insert(Arc::clone(&arc));
-            arc
+            Intern(arc)
         }
     }
 }
@@ -71,7 +151,7 @@ impl<T: Hash + Eq + ?Sized> InternCache<T> {
     ///
     /// Works with unsized types, but requires that the reference implements
     /// `Into<Arc<T>>`.
-    pub fn intern_ref<'a, V>(&self, value: &'a V) -> Arc<T>
+    pub fn intern_ref<'a, V>(&self, value: &'a V) -> Intern<T>
     where
         V: Hash + Eq + ?Sized,
         &'a V: Into<Arc<T>>,
@@ -79,11 +159,11 @@ impl<T: Hash + Eq + ?Sized> InternCache<T> {
     {
         let mut cache = self.cache();
         if let Some(arc) = cache.get(value) {
-            arc
+            Intern(arc)
         } else {
             let arc = value.into();
             cache.insert(Arc::clone(&arc));
-            arc
+            Intern(arc)
         }
     }
 }
@@ -102,6 +182,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 
@@ -110,9 +191,9 @@ mod test {
         // "intern" case.
         let c: InternCache<String> = InternCache::new();
 
-        let s1 = c.intern("abc".to_string());
-        let s2 = c.intern("def".to_string());
-        let s3 = c.intern("abc".to_string());
+        let s1: Arc<String> = c.intern("abc".to_string()).into();
+        let s2 = c.intern("def".to_string()).into();
+        let s3 = c.intern("abc".to_string()).into();
         assert!(Arc::ptr_eq(&s1, &s3));
         assert!(!Arc::ptr_eq(&s1, &s2));
         assert_eq!(s2.as_ref(), "def");
@@ -124,9 +205,9 @@ mod test {
         // "intern" case.
         let c: InternCache<str> = InternCache::new();
 
-        let s1 = c.intern_ref("abc");
-        let s2 = c.intern_ref("def");
-        let s3 = c.intern_ref("abc");
+        let s1: Arc<str> = c.intern_ref("abc").into();
+        let s2 = c.intern_ref("def").into();
+        let s3 = c.intern_ref("abc").into();
         assert!(Arc::ptr_eq(&s1, &s3));
         assert!(!Arc::ptr_eq(&s1, &s2));
         assert_eq!(&*s2, "def");

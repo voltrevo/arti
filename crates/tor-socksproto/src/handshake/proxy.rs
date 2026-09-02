@@ -10,7 +10,7 @@ use tor_error::internal;
 
 use derive_deftly::Deftly;
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// The Proxy (responder) side of an ongoing SOCKS handshake.
 ///
@@ -255,8 +255,19 @@ impl SocksRequest {
             w.write(a)?;
             w.write_u16(self.port());
         } else {
-            // TODO: sometimes I think we want to answer with ::, not 0.0.0.0
-            w.write(&SocksAddr::Ip(std::net::Ipv4Addr::UNSPECIFIED.into()))?;
+            // When no address is given in the reply, we send back an UNSPECIFIED address.
+            // We try to match the _requested_ address family, if it's an IP family.
+            //
+            // (Tor doesn't need to support SOCKS BIND; if we wanted to support that,
+            // we'd provide the address in the `addr` argument.)
+            match self.addr() {
+                SocksAddr::Ip(IpAddr::V6(_)) => {
+                    w.write(&SocksAddr::Ip(Ipv6Addr::UNSPECIFIED.into()))?;
+                }
+                SocksAddr::Ip(IpAddr::V4(_)) | SocksAddr::Hostname(_) => {
+                    w.write(&SocksAddr::Ip(Ipv4Addr::UNSPECIFIED.into()))?;
+                }
+            }
             w.write_u16(0);
         }
         Ok(w)
@@ -277,6 +288,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::{Handshake as _, Truncated};
@@ -469,6 +481,37 @@ mod test {
         assert_eq!(
             req.reply(SocksStatus::SUCCEEDED, None).unwrap(),
             hex!("05 00 00 01 00000000 0000")
+        );
+    }
+
+    #[test]
+    fn socks5_request_ok_ipv6_addr_none() {
+        // socks5 request using IPv6 address type and addr is none
+        let mut h = SocksProxyHandshake::new();
+        let _a = h.handshake_for_tests(&hex!("05 01 00")).unwrap().unwrap();
+        // handshake for tests-> Result<Option<HandshakeResult>>
+        let a = h
+            .handshake_for_tests(&hex!(
+                "05 01 00 04 f000 0000 0000 0000 0000 0000 0000 ff11 1f90"
+            ))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(a.drain, 22);
+        assert!(a.finished);
+        assert!(a.reply.is_empty());
+        assert_eq!(h.state, State::Done);
+
+        let req = h.into_request().unwrap();
+        assert_eq!(req.version(), SocksVersion::V5);
+        assert_eq!(req.command(), SocksCmd::CONNECT);
+        assert_eq!(req.addr().to_string(), "f000::ff11");
+        assert_eq!(req.port(), 8080);
+        assert_eq!(req.auth(), &SocksAuth::NoAuth);
+
+        assert_eq!(
+            req.reply(SocksStatus::GENERAL_FAILURE, None).unwrap(),
+            hex!("05 01 00 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00")
         );
     }
 

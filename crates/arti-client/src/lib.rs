@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -60,12 +61,14 @@ mod util;
 
 pub mod config;
 pub mod status;
+pub mod storage;
 
 pub use address::{DangerouslyIntoTorAddr, IntoTorAddr, TorAddr, TorAddrError};
 pub use builder::{MAX_LOCAL_RESOURCE_TIMEOUT, TorClientBuilder};
 pub use client::{BootstrapBehavior, DormantMode, InertTorClient, StreamPrefs, TorClient};
 pub use config::TorClientConfig;
 
+pub use storage::{KeyValueStore, StorageError};
 pub use tor_circmgr::IsolationToken;
 pub use tor_circmgr::isolation;
 pub use tor_error::{ErrorKind, HasKind};
@@ -159,6 +162,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use cfg_if::cfg_if;

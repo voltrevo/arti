@@ -149,6 +149,7 @@ define_derive_deftly! {
         $/// optional fields all get the default values.
         $tvis fn construct(self) -> $ttype {
             $tname { $(
+                #[allow(deprecated)]
                 $fname: ${select1
                     F_REQUIRED {
                         self.$fname

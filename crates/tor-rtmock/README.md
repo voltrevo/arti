@@ -55,7 +55,7 @@ use tor_rtcompat::{NetStreamProvider as _, NetStreamListener as _};
 async fn converse(runtime: impl Runtime, addr: &SocketAddr) -> io::Result<Vec<u8>> {
    let delay = Duration::new(5,0);
    runtime.timeout(delay, async {
-       let mut conn = runtime.connect(addr).await?;
+       let mut conn = runtime.connect(addr, &Default::default()).await?;
        conn.write_all(b"Hello world!\r\n").await?;
        conn.flush().await?;
        let mut response = vec![];

@@ -17,7 +17,7 @@ use std::iter;
 use std::net::SocketAddr;
 #[cfg(feature = "geoip")]
 use tor_geoip::GeoipDb;
-use tor_netdoc::doc::microdesc::{Microdesc, MicrodescBuilder};
+use tor_netdoc::doc::microdesc::{MicrodescAndHash, MicrodescBuilder};
 use tor_netdoc::doc::netstatus::{Lifetime, MdRouterStatusBuilder, RelayWeight};
 use tor_netdoc::doc::netstatus::{MdConsensus, MdConsensusBuilder};
 use tor_netdoc::types::relay_flags::RelayFlag;
@@ -123,7 +123,7 @@ where
 
 /// As [`construct_custom_network`], but do not require a
 /// customization function.
-pub fn construct_network() -> BuildResult<(MdConsensus, Vec<Microdesc>)> {
+pub fn construct_network() -> BuildResult<(MdConsensus, Vec<MicrodescAndHash>)> {
     construct_custom_network(simple_net_func, None)
 }
 
@@ -183,7 +183,7 @@ pub fn construct_network() -> BuildResult<(MdConsensus, Vec<Microdesc>)> {
 pub fn construct_custom_network<F>(
     mut func: F,
     lifetime: Option<Lifetime>,
-) -> BuildResult<(MdConsensus, Vec<Microdesc>)>
+) -> BuildResult<(MdConsensus, Vec<MicrodescAndHash>)>
 where
     F: FnMut(usize, &mut NodeBuilders, &mut MdConsensusBuilder),
 {
@@ -232,7 +232,7 @@ where
         let fam_id = [idx ^ 1; 20];
         let family = hex::encode(fam_id);
 
-        let mut md_builder = Microdesc::builder();
+        let mut md_builder = MicrodescAndHash::builder();
         md_builder
             .ntor_key((*b"----nothing in dirmgr uses this-").into())
             .ed25519_id([idx; 32].into())
@@ -296,6 +296,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     #[test]

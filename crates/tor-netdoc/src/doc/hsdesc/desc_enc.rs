@@ -144,7 +144,7 @@ impl<'a> HsDescEncryption<'a> {
         key_stream.read(&mut iv[..]);
         key_stream.read(&mut mac_key[..]);
 
-        let cipher = Cipher::new(key.as_ref().into(), iv.as_ref().into());
+        let cipher = Cipher::new((&*key).into(), (&*iv).into());
 
         let mut mac = Hash::default();
         mac.update(&(Self::MAC_KEY_LEN as u64).to_be_bytes());
@@ -240,6 +240,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

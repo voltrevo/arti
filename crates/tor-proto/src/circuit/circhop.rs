@@ -26,15 +26,15 @@ use postage::watch;
 use safelog::sensitive as sv;
 use tracing::{debug, trace};
 
-use tor_cell::chancell::BoxedCellBody;
+use tor_cell::chancell::{BoxedCellBody, CircId};
 use tor_cell::relaycell::extend::{CcRequest, CircRequestExt};
-use tor_cell::relaycell::flow_ctrl::{Xoff, Xon, XonKbpsEwma};
+use tor_cell::relaycell::flow_ctrl::{Xoff, Xon, XonKBpsEwma};
 use tor_cell::relaycell::msg::AnyRelayMsg;
 use tor_cell::relaycell::{
     AnyRelayMsgOuter, RelayCellDecoder, RelayCellDecoderResult, RelayCellFormat, RelayCmd,
     StreamId, UnparsedRelayMsg,
 };
-use tor_error::{Bug, internal};
+use tor_error::{Bug, ErrorKind, HasKind, internal, into_internal};
 use tor_memquota::derive_deftly_template_HasMemoryCost;
 use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 use tor_protover::named;
@@ -48,6 +48,13 @@ use web_time_compat::Instant;
 
 #[cfg(test)]
 use tor_cell::relaycell::msg::SendmeTag;
+
+#[cfg(feature = "relay")]
+use {
+    crate::ccparams::{Algorithm, AlgorithmDiscriminants},
+    crate::circuit::HandshakeSubprotocols,
+    crate::relay::{CircNetParameters, CongestionControlNetParams},
+};
 
 use cfg_if::cfg_if;
 
@@ -136,11 +143,6 @@ impl HopSettings {
         };
         if hoptype == HopNegotiationType::None {
             ccontrol.use_fallback_alg();
-        } else if hoptype == HopNegotiationType::HsV3 {
-            // TODO #2037, TODO-CGO: We need a way to send congestion control extensions
-            // in this case too.  But since we aren't sending them, we
-            // should use the fallback algorithm.
-            ccontrol.use_fallback_alg();
         }
         let ccontrol = ccontrol; // drop mut
 
@@ -151,8 +153,14 @@ impl HopSettings {
             HopNegotiationType::HsV3 => {
                 // TODO-CGO: Support CGO when available.
                 cfg_if! {
-                    if #[cfg(feature = "hs-common")] {
-                        RelayCryptLayerProtocol::HsV3(RelayCellFormat::V0)
+                    if #[cfg(all(feature = "hs-common", feature = "flowctl-cc", feature = "counter-galois-onion"))] {
+                        if ccontrol.alg().compatible_with_cgo() && caps.supports_named_subver(named::RELAY_CRYPT_CGO) {
+                            RelayCryptLayerProtocol::Cgo
+                        } else {
+                            RelayCryptLayerProtocol::HsV3(RelayCellFormat::V0)
+                        }
+                    } else if #[cfg(feature = "hs-common")] {
+                            RelayCryptLayerProtocol::HsV3(RelayCellFormat::V0)
                     } else {
                         return Err(
                             tor_error::internal!("Unexpectedly tried to negotiate HsV3 without support!").into(),
@@ -185,6 +193,73 @@ impl HopSettings {
             relay_crypt_protocol,
             n_incoming_cells_permitted: params.n_incoming_cells_permitted,
             n_outgoing_cells_permitted: params.n_outgoing_cells_permitted,
+        })
+    }
+
+    /// Build a [`HopSettings`] from the parameters requested during a circuit handshake.
+    //
+    // We disable `unused` warnings at the root of tor-proto,
+    // but it's nice to have here so we re-enable it.
+    #[warn(unused)]
+    #[cfg(feature = "relay")]
+    pub(crate) fn from_handshake_params(
+        circ_net_params: CircNetParameters,
+        cc_algorithm: AlgorithmDiscriminants,
+        subprotos_requested: HandshakeSubprotocols,
+    ) -> StdResult<Self, HandshakeParamsError> {
+        // Unpack everything to make sure that we aren't missing anything
+        // (otherwise clippy would warn).
+        let CircNetParameters {
+            cc:
+                CongestionControlNetParams {
+                    fixed_window,
+                    vegas_exit,
+                    cwnd,
+                    rtt,
+                    flow_ctrl,
+                },
+        } = circ_net_params;
+
+        let HandshakeSubprotocols { relay_crypt_cgo } = subprotos_requested;
+
+        // TODO: We have similar logic in and around `HopSettings` that deals with determining the
+        // crypt protocol and cc algorithm to use. We might want to try to dedup some of this, or
+        // make it more self-contained. This is a bit tricky though since the code is used in
+        // different situations and the inputs are not the same.
+        let (cc_algorithm, relay_crypt_protocol) = match (cc_algorithm, relay_crypt_cgo) {
+            (AlgorithmDiscriminants::FixedWindow, false) => (
+                Algorithm::FixedWindow(fixed_window),
+                RelayCryptLayerProtocol::Tor1(RelayCellFormat::V0),
+            ),
+            (AlgorithmDiscriminants::FixedWindow, true) => {
+                return Err(HandshakeParamsError::IncompatibleParams(
+                    "requested CGO but not congestion control",
+                ));
+            }
+            (AlgorithmDiscriminants::Vegas, false) => (
+                Algorithm::Vegas(vegas_exit),
+                RelayCryptLayerProtocol::Tor1(RelayCellFormat::V0),
+            ),
+            (AlgorithmDiscriminants::Vegas, true) => {
+                (Algorithm::Vegas(vegas_exit), RelayCryptLayerProtocol::Cgo)
+            }
+        };
+
+        // TODO(arti#2442): The builder pattern here seems like a footgun.
+        let ccontrol = CongestionControlParams::builder()
+            .alg(cc_algorithm)
+            .fixed_window_params(fixed_window)
+            .cwnd_params(cwnd)
+            .rtt_params(rtt)
+            .build()
+            .map_err(into_internal!("Could not build `CongestionControlParams`"))?;
+
+        Ok(Self {
+            ccontrol,
+            flow_ctrl_params: flow_ctrl,
+            relay_crypt_protocol,
+            n_incoming_cells_permitted: None,
+            n_outgoing_cells_permitted: None,
         })
     }
 
@@ -230,6 +305,8 @@ impl HopSettings {
         // with this extension. For the current list, see
         // https://spec.torproject.org/tor-spec/create-created-cells.html#subproto-request)
         //
+        // TODO: Should this use `HandshakeSubprotocols` so that the above comment has some
+        // compile-time checks?
         #[allow(unused_mut)]
         let mut required_protocol_capabilities: Vec<tor_protover::NamedSubver> = Vec::new();
 
@@ -260,6 +337,27 @@ impl std::default::Default for CircParameters {
             flow_ctrl: FlowCtrlParameters::defaults_for_tests(),
             n_incoming_cells_permitted: None,
             n_outgoing_cells_permitted: None,
+        }
+    }
+}
+
+/// An error that can occur when building a [`HopSettings`] using parameters requested during a
+/// circuit handshake.
+#[derive(Clone, Debug, thiserror::Error)]
+pub(crate) enum HandshakeParamsError {
+    /// The provided parameters are incompatible with each other.
+    #[error("The provided handshake parameters are incompatible with each other: {0}")]
+    IncompatibleParams(&'static str),
+    /// An internal error.
+    #[error("Internal error")]
+    Internal(#[from] tor_error::Bug),
+}
+
+impl HasKind for HandshakeParamsError {
+    fn kind(&self) -> ErrorKind {
+        match self {
+            Self::IncompatibleParams(_) => ErrorKind::TorProtocolViolation,
+            Self::Internal(_) => ErrorKind::Internal,
         }
     }
 }
@@ -454,13 +552,15 @@ impl CircHopOutbound {
     /// If no END cell is specified, an END cell with the reason byte set to
     /// REASON_MISC will be sent.
     ///
-    // Note(relay): `circ_id` is an opaque displayable type
+    // Note(relay): `circ_uniq_id` is an opaque displayable type
     // because relays use a different circuit ID type
     // than clients. Eventually, we should probably make
     // them both use the same ID type, or have a nicer approach here
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn close_stream(
         &mut self,
-        circ_id: impl std::fmt::Display,
+        circ_uniq_id: impl std::fmt::Display,
+        circ_id: CircId,
         id: StreamId,
         hop: Option<HopNum>,
         message: CloseStreamBehavior,
@@ -473,6 +573,7 @@ impl CircHopOutbound {
             .expect("lock poisoned")
             .terminate(id, why, expiry)?;
         trace!(
+            circ_uniq_id = %circ_uniq_id,
             circ_id = %circ_id,
             stream_id = %id,
             should_send_end = ?should_send_end,
@@ -500,7 +601,7 @@ impl CircHopOutbound {
     /// If we should, then returns the XON message that should be sent.
     pub(crate) fn maybe_send_xon(
         &mut self,
-        rate: XonKbpsEwma,
+        rate: XonKBpsEwma,
         id: StreamId,
     ) -> Result<Option<Xon>> {
         // the call below will return an error if XON/XOFF aren't supported,
@@ -583,13 +684,14 @@ impl CircHopOutbound {
     //
     // TODO prop340: This should take a cell or similar, not a message.
     //
-    // Note(relay): `circ_id` is an opaque displayable type
+    // Note(relay): `circ_uniq_id` is an opaque displayable type
     // because relays use a different circuit ID type
     // than clients. Eventually, we should probably make
     // them both use the same ID type, or have a nicer approach here
     pub(crate) fn about_to_send(
         &mut self,
-        circ_id: impl std::fmt::Display,
+        circ_uniq_id: impl std::fmt::Display,
+        circ_id: CircId,
         stream_id: StreamId,
         msg: &AnyRelayMsg,
     ) -> Result<()> {
@@ -605,6 +707,7 @@ impl CircHopOutbound {
             // but the caller of `about_to_send()` isn't designed to handle fallible sends
             // so it would need some refactoring to handle this.
             debug!(
+                circ_uniq_id = %circ_uniq_id,
                 circ_id = %circ_id,
                 stream_id = %stream_id,
                 "sending a relay cell for non-existent or non-open stream!",
@@ -811,7 +914,6 @@ impl CircHopOutbound {
             Some(StreamEntMut::EndSent(EndSentStreamEnt { expiry, .. })) if now >= *expiry => {
                 return Err(possible_proto_violation_err(streamid));
             }
-            #[cfg(feature = "hs-service")]
             Some(StreamEntMut::EndSent(_))
                 if matches!(
                     msg.cmd(),
@@ -834,7 +936,6 @@ impl CircHopOutbound {
                     }
                 }
             }
-            #[cfg(feature = "hs-service")]
             None if matches!(
                 msg.cmd(),
                 RelayCmd::BEGIN | RelayCmd::BEGIN_DIR | RelayCmd::RESOLVE

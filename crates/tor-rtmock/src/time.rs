@@ -84,7 +84,7 @@ use crate::time_core::MockTimeCore;
 /// async fn say_hi(runtime: impl Runtime, addr: &SocketAddr) -> Result<()> {
 ///    let delay = Duration::new(5,0);
 ///    runtime.timeout(delay, async {
-///       let mut conn = runtime.connect(addr).await?;
+///       let mut conn = runtime.connect(addr, &Default::default()).await?;
 ///       conn.write_all(b"Hello world!\r\n").await?;
 ///       conn.close().await?;
 ///       Ok::<_,Error>(())
@@ -289,7 +289,6 @@ impl MockSleepProvider {
     ///
     /// NOTE: This function has side-effects; if it returns true, the caller is expected to do an
     /// advance before calling it again.
-    #[allow(clippy::cognitive_complexity)]
     pub(crate) fn should_advance(&mut self) -> bool {
         let mut state = self.state.lock().expect("Poisoned lock for state");
         if !state.blocked_advance.is_empty() && state.allowed_advance == Duration::from_nanos(0) {
@@ -587,6 +586,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use tor_rtcompat::test_with_all_runtimes;

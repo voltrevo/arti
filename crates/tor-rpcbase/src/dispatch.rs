@@ -781,6 +781,7 @@ pub(crate) mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use crate::{DispatchTable, InvokeError, Method, NoUpdates, method::RpcMethod, templates::*};
@@ -1249,7 +1250,7 @@ pub(crate) mod test {
             r#"^Invocable\(.*GetName \(x-test:getname\) for .*GenericObj.*String.*String"#,
         )
         .unwrap();
-        let debug_fmt = format!("{:?}", &ent2);
+        let debug_fmt = format!("{:?}", ent2);
         dbg!(&debug_fmt);
         assert!(re.is_match(&debug_fmt));
     }

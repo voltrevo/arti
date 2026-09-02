@@ -8,8 +8,11 @@
 //! The types in this module are re-exported from `arti-client`: any changes
 //! here must be reflected in the version of `arti-client`.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::storage::DynStore;
+
 use tor_dircommon::{
     authority::AuthorityContacts,
     config::{DirTolerance, DownloadScheduleConfig, NetworkConfig},
@@ -92,6 +95,10 @@ impl DirMgrConfig {
     ///
     /// Note that each time this is called, a new store object will be
     /// created: you probably only want to call this once.
+    ///
+    /// This creates a persistent SQLite-backed store.
+    /// On WASM, callers must provide a custom store via `DirMgrStore::from_custom_store()`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn open_store(&self, readonly: bool) -> Result<DynStore> {
         Ok(Box::new(
             crate::storage::SqliteStore::from_path_and_mistrust(
@@ -162,6 +169,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::unnecessary_wraps)]
     use super::*;

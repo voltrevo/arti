@@ -497,6 +497,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 
@@ -523,7 +524,7 @@ mod test {
         ) {
             let tc: TestConfigFile = toml::from_str(s).expect(s);
             let ll = tc.listen.unwrap();
-            eprintln!("s={:?} ll={:?}", &s, &ll);
+            eprintln!("s={:?} ll={:?}", s, ll);
             assert_eq!(ll.0.items().cloned().collect::<Vec<_>>(), exp_i);
             assert_eq!(
                 ll.ip_addrs()

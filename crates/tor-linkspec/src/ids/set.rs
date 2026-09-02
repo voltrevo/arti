@@ -148,6 +148,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
@@ -156,7 +157,6 @@ mod test {
 
     #[test]
     fn basic_usage() {
-        #![allow(clippy::cognitive_complexity)]
         let rsa1 = RsaIdentity::from(hex!("42656c6f7665642c207768617420617265206e61"));
         let rsa2 = RsaIdentity::from(hex!("6d657320627574206169723f43686f6f73652074"));
         let rsa3 = RsaIdentity::from(hex!("686f752077686174657665722073756974732074"));

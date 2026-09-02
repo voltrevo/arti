@@ -286,6 +286,12 @@ impl CongestionControlParams {
     pub(crate) fn use_fallback_alg(&mut self) {
         self.alg = Algorithm::FixedWindow(self.fixed_window_params);
     }
+
+    /// Override the `cc_sendme_inc` value in these parameters with the value provided
+    /// in `sendme_inc`.
+    pub fn override_sendme_inc(&mut self, sendme_inc: u8) {
+        self.cwnd_params.set_sendme_inc(sendme_inc);
+    }
 }
 
 /// Return true iff the given sendme increment is valid with regards to the value in the circuit

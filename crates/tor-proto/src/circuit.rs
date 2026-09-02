@@ -4,6 +4,7 @@
 
 pub(crate) mod cell_sender;
 pub(crate) mod celltypes;
+pub(crate) mod circ_sender;
 pub(crate) mod circhop;
 pub(crate) mod create;
 pub(crate) mod padding;
@@ -18,17 +19,7 @@ pub use unique_id::UniqId;
 use crate::ccparams::CongestionControlParams;
 use crate::stream::flow_ctrl::params::FlowCtrlParameters;
 
-use tor_cell::chancell::msg::AnyChanMsg;
-use tor_memquota::mq_queue::{self, MpscSpec};
-
-/// The following two MPSCs take any channel message as the receiving end can be either a client or
-/// a relay circuit reactor. The reactor itself will convert into its restricted message set. On
-/// error, the circuit will shutdown as it will be considered a protocol violation.
-///
-/// MPSC queue for inbound data on its way from channel to circuit, sender
-pub(crate) type CircuitRxSender = mq_queue::Sender<AnyChanMsg, MpscSpec>;
-/// MPSC queue for inbound data on its way from channel to circuit, receiver
-pub(crate) type CircuitRxReceiver = mq_queue::Receiver<AnyChanMsg, MpscSpec>;
+pub(crate) use circ_sender::{CircuitRxReceiver, CircuitRxSender};
 
 /// Estimated upper bound for the likely number of hops.
 pub(crate) const HOPS: usize = 6;
@@ -101,10 +92,24 @@ pub struct CircParameters {
     pub n_outgoing_cells_permitted: Option<u32>,
 }
 
+tor_protover::subprotocol_restricted_set! {
+    /// The enabled/disabled status of subprotocols that are allowed to be requested through a
+    /// subprotocol request during a circuit handshake.
+    ///
+    /// The allowed subprotocols are defined in:
+    /// <https://spec.torproject.org/tor-spec/create-created-cells.html#subproto-request>
+    #[derive(Copy, Clone, Debug, Default)]
+    pub(crate) struct HandshakeSubprotocols {
+        RELAY_CRYPT_CGO,
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     #[cfg(feature = "relay")]
     use crate::relay::{CircNetParameters, CongestionControlNetParams};
+
+    pub(crate) use super::circ_sender::test::fake_mpsc;
 
     /// Return a new [`CircNetParameters`] using default values for unit tests. They are based on
     /// consensus defaults but should not be considered to be accurate from the one used on the
@@ -112,7 +117,6 @@ pub(crate) mod test {
     #[cfg(feature = "relay")]
     pub(crate) fn new_circ_net_params() -> CircNetParameters {
         CircNetParameters {
-            extend_by_ed25519_id: true,
             cc: CongestionControlNetParams::defaults_for_tests(),
         }
     }

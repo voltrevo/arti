@@ -740,6 +740,7 @@ impl<B: AbstractTunnelBuilder<R> + 'static, R: Runtime> HsCircPoolInner<B, R> {
     }
 
     /// Return a circuit of the specified `kind`, built from `circuit`.
+    #[allow(clippy::unused_async)] // async is used when vanguards + hs-common features are enabled
     async fn maybe_extend_stem_circuit<T>(
         &self,
         netdir: &NetDir,
@@ -1130,7 +1131,6 @@ fn relay_for_path_ent<'a>(
 }
 
 /// Background task to launch onion circuits as needed.
-#[allow(clippy::cognitive_complexity)] // TODO #2010: Refactor, after !3007 is in.
 #[instrument(level = "trace", skip_all)]
 async fn launch_hs_circuits_as_needed<B: AbstractTunnelBuilder<R> + 'static, R: Runtime>(
     pool: Weak<HsCircPoolInner<B, R>>,
@@ -1259,8 +1259,8 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
-    #![allow(clippy::cognitive_complexity)]
 
     use tor_config::ExplicitOrAuto;
     #[cfg(all(feature = "vanguards", feature = "hs-common"))]

@@ -2,25 +2,28 @@
 //!
 //! Currently only async_std, tokio and smol are provided.
 
-#[cfg(feature = "async-std")]
+#[cfg(all(feature = "async-std", not(target_arch = "wasm32")))]
 pub(crate) mod async_std;
 
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_arch = "wasm32")))]
 pub(crate) mod tokio;
 
-#[cfg(feature = "smol")]
+#[cfg(all(feature = "smol", not(target_arch = "wasm32")))]
 pub(crate) mod smol;
 
-#[cfg(feature = "rustls")]
+#[cfg(all(feature = "rustls", not(target_arch = "wasm32")))]
 pub(crate) mod rustls;
 
-#[cfg(feature = "native-tls")]
+#[cfg(all(feature = "native-tls", not(target_arch = "wasm32")))]
 pub(crate) mod native_tls;
 
 pub(crate) mod streamops;
 pub(crate) mod unimpl_tls;
 
-use crate::network::{CommonListenOptions, TcpListenOptions};
+use crate::network::{
+    CommonConnectOptions, CommonListenOptions, TcpConnectOptions, TcpListenOptions,
+};
+use socket2::Socket;
 
 #[cfg(unix)]
 use tor_error::warn_report;
@@ -86,6 +89,7 @@ use tor_error::warn_report;
 // for legitimate traffic, and illegitimate traffic would be better handled by the kernel with
 // something like SYN cookies. But it's easier for users to reduce the max using
 // `/proc/sys/net/core/somaxconn` than to increase this max by recompiling arti.
+#[cfg(not(target_arch = "wasm32"))]
 const LISTEN_BACKLOG: i32 = u16::MAX as i32;
 
 /// Open a listening TCP socket.
@@ -98,12 +102,12 @@ const LISTEN_BACKLOG: i32 = u16::MAX as i32;
 /// socket with the options we need and with consistent behaviour across all runtimes. For example
 /// if each runtime were using a different `listen()` backlog size, it might be difficult to debug
 /// related issues.
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn tcp_listen(
     addr: &std::net::SocketAddr,
     options: &TcpListenOptions,
 ) -> std::io::Result<std::net::TcpListener> {
-    use socket2::{Domain, Socket, Type};
+    use socket2::{Domain, Type};
 
     // Destructure the options so that we don't forget to use any.
     let TcpListenOptions {
@@ -193,8 +197,144 @@ pub(crate) fn tcp_listen(
     Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
 }
 
+/// Initialize a TCP socket in preparation for a connect().
+///
+/// The socket will be non-blocking, and the socket handle will be close-on-exec/non-inheritable.
+/// Other socket options may also be set depending on the socket type and platform.
+///
+/// This returns a socket without any `connect()` call. The caller MUST:
+///
+/// 1. connect() the socket.
+/// 2. Wait for the socket to become writable using whatever mechanism
+///    is available with the current runtime.
+/// 3. Check `SO_ERROR` for errors.
+///
+/// Historically we relied on the runtime to create and connect the socket, but we need some
+/// specific socket options set, and not all runtimes will behave the same. It's better for us to
+/// create the socket with the options we need and with consistent behaviour across all runtimes.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn tcp_pre_connect(
+    addr: &std::net::SocketAddr,
+    options: &TcpConnectOptions,
+) -> std::io::Result<socket2::Socket> {
+    use socket2::{Domain, Type};
+
+    // Destructure the options so that we don't forget to use any.
+    let TcpConnectOptions {
+        common:
+            CommonConnectOptions {
+                send_buffer_size,
+                recv_buffer_size,
+            },
+    } = options;
+
+    let domain = match addr {
+        std::net::SocketAddr::V4(_) => Domain::IPV4,
+        std::net::SocketAddr::V6(_) => Domain::IPV6,
+    };
+
+    // `socket2::Socket::new()`:
+    // > This function corresponds to `socket(2)` on Unix and `WSASocketW` on Windows.
+    // >
+    // > On Unix-like systems, the close-on-exec flag is set on the new socket. Additionally, on
+    // > Apple platforms `SOCK_NOSIGPIPE` is set. On Windows, the socket is made non-inheritable.
+    let socket = Socket::new(domain, Type::STREAM, None)?;
+
+    socket.set_nonblocking(true)?;
+
+    // tcp(7):
+    //
+    // > On individual connections, the socket buffer size must be set prior to the listen(2) or
+    // > connect(2) calls in order to have it take effect.
+    if let Some(send_buffer_size) = send_buffer_size {
+        socket.set_send_buffer_size(*send_buffer_size)?;
+    }
+    if let Some(recv_buffer_size) = recv_buffer_size {
+        socket.set_recv_buffer_size(*recv_buffer_size)?;
+    }
+
+    // TODO: In the future, we'll likely want to support optionally binding to an address or to a
+    // network interface (`SO_BINDTODEVICE`). See c-tor's `OutboundBindAddresses`.
+    // If we do, we will also want to set `IP_BIND_ADDRESS_NO_PORT`.
+    // We may also want to consider setting `IPV6_V6ONLY` (do we want to support connecting to
+    // IPv4-mapped IPv6 addresses while we already do happy eyeballs?).
+
+    // We do not connect() here so that we can use whatever connection mechanism is best for the
+    // runtime being used.
+
+    Ok(socket)
+}
+
+/// Stub replacement for tcp_pre_connect on wasm32-unknown
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub(crate) fn tcp_pre_connect(
+    _addr: &std::net::SocketAddr,
+    _options: &TcpConnectOptions,
+) -> std::io::Result<socket2::Socket> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+}
+
+/// Connect a TCP socket using the async-io crate.
+///
+/// This in theory should be runtime-independent as async-io spawns its own thread to poll the
+/// socket. But this is inefficient on some runtimes like tokio.
+///
+/// Runtimes that want to connect manually should use [`tcp_pre_connect()`] to set up the socket,
+/// and then connect it manually.
+#[cfg(any(feature = "async-std", feature = "smol"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) async fn tcp_async_io_connect(
+    addr: &std::net::SocketAddr,
+    options: &TcpConnectOptions,
+) -> std::io::Result<std::net::TcpStream> {
+    use async_io::Async;
+
+    // The socket before connect() has been called.
+    let socket = tcp_pre_connect(addr, options)?;
+
+    // Different platforms return different results from non-blocking `connect()`s.
+    // Here we've checked that we match mio (tokio's low-level I/O code) for unix and windows
+    // to ensure that we're handling the right error kind/errno.
+    match socket.connect(&(*addr).into()) {
+        Ok(()) => {}
+        // On unix, mio checks for `EINPROGRESS`:
+        // https://github.com/tokio-rs/mio/blob/0db25a7eae653f02e964a28d9aaf65b74c941208/src/sys/unix/tcp.rs#L35
+        #[cfg(unix)]
+        Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {}
+        // On windows, mio checks for `WouldBlock`:
+        // https://github.com/tokio-rs/mio/blob/0db25a7eae653f02e964a28d9aaf65b74c941208/src/sys/windows/tcp.rs#L44
+        #[cfg(windows)]
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        Err(e) => return Err(e),
+    }
+
+    // The socket is already non-blocking,
+    // so `Async` doesn't need to set as non-blocking again.
+    let socket = Async::new_nonblocking(socket)?;
+
+    // Wait for the socket to become writable, indicating that it's connected.
+    socket.writable().await?;
+
+    // Check `SO_ERROR`.
+    if let Some(e) = socket.get_ref().take_error()? {
+        return Err(e);
+    }
+
+    Ok(socket.into_inner()?.into())
+}
+
+/// Stub replacement for tcp_async_io_connect on wasm32-unknown
+#[cfg(any(feature = "async-std", feature = "smol"))]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub(crate) async fn tcp_async_io_connect(
+    _addr: &std::net::SocketAddr,
+    _options: &TcpConnectOptions,
+) -> std::io::Result<std::net::TcpStream> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+}
+
 /// Helper: Implement an unreachable NetProvider<unix::SocketAddr> for a given runtime.
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(target_arch = "wasm32")))]
 macro_rules! impl_unix_non_provider {
     { $for_type:ty } => {
 
@@ -202,12 +342,18 @@ macro_rules! impl_unix_non_provider {
         impl crate::traits::NetStreamProvider<tor_general_addr::unix::SocketAddr> for $for_type {
             type Stream = crate::unimpl::FakeStream;
             type Listener = crate::unimpl::FakeListener<tor_general_addr::unix::SocketAddr>;
+            type ConnectOptions = crate::network::UnixConnectOptions;
             type ListenOptions = crate::network::UnixListenOptions;
-            async fn connect(&self, _a: &tor_general_addr::unix::SocketAddr) -> IoResult<Self::Stream> {
+            async fn connect(
+                &self,
+                _a: &tor_general_addr::unix::SocketAddr,
+                _options: &Self::ConnectOptions,
+            ) -> IoResult<Self::Stream> {
                 Err(tor_general_addr::unix::NoAfUnixSocketSupport::default().into())
 
             }
-            async fn listen(&self,
+            async fn listen(
+                &self,
                 _a: &tor_general_addr::unix::SocketAddr,
                 _options: &Self::ListenOptions,
             ) -> IoResult<Self::Listener> {
@@ -216,5 +362,5 @@ macro_rules! impl_unix_non_provider {
         }
     }
 }
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(target_arch = "wasm32")))]
 pub(crate) use impl_unix_non_provider;

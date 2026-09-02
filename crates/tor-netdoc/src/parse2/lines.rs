@@ -1,5 +1,7 @@
 //! Version of `std::str::Lines` that tracks line numbers and has `remainder()`
 
+use extend::ext;
+
 /// Version of `std::str::Lines` that tracks line numbers and has `remainder()`
 ///
 /// Implements `Iterator`, returning one `str` for each line, with the `'\n'` removed.
@@ -14,18 +16,18 @@ pub struct Lines<'s> {
 }
 
 /// Extension trait adding a method to `str`
-pub trait StrExt: AsRef<str> {
+#[ext(name = StrExt)]
+pub impl str {
     /// Remove `count` bytes from the end of `self`
     ///
     /// # Panics
     ///
     /// Panics if `count > self.len()`.
+    #[allow(clippy::string_slice)] // TODO
     fn strip_end_counted(&self, count: usize) -> &str {
-        let s = self.as_ref();
-        &s[0..s.len().checked_sub(count).expect("stripping too much")]
+        &self[0..self.len().checked_sub(count).expect("stripping too much")]
     }
 }
-impl StrExt for str {}
 
 /// Information about the next line we have peeked
 ///
@@ -88,6 +90,7 @@ impl<'s> Lines<'s> {
     ///
     /// See [`Peeked`].
     #[allow(clippy::needless_pass_by_value)] // Yes, we want to consume Peeked
+    #[allow(clippy::string_slice)] // TODO
     pub fn consume_peeked(&mut self, peeked: Peeked) -> &'s str {
         let line = self.peeked_line(&peeked);
         self.rest = &self.rest[peeked.line_len..];
@@ -108,6 +111,7 @@ impl<'s> Lines<'s> {
     /// # Correctness
     ///
     /// See [`Peeked`].
+    #[allow(clippy::string_slice)] // TODO
     pub fn peeked_line(&self, peeked: &Peeked) -> &'s str {
         &self.rest[0..peeked.line_len()]
     }

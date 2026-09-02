@@ -13,6 +13,11 @@ Options:
           
           If omitted, keys and certificates from all the keystores will be returned.
 
+      --compact
+          Compact format.
+          
+          Displays every entry on a single line when enabled.
+
   -o <KEY=VALUE>
           Override config file parameters, using TOML-like syntax.
 

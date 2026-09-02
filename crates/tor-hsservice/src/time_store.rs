@@ -487,6 +487,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use humantime::parse_rfc3339;
@@ -590,10 +591,10 @@ mod test {
         println!("{json}");
         assert_eq!(
             json,
-            format!(concat!(
-                r#"{{"stored":"2008-08-02T00:00:00Z","#,
-                r#""s0":"T+0s","s1":"T+10s","s2":"T+50m"}}"#
-            ))
+            concat!(
+                r#"{"stored":"2008-08-02T00:00:00Z","#,
+                r#""s0":"T+0s","s1":"T+10s","s2":"T+50m"}"#
+            ),
         );
 
         let mpack = rmp_serde::to_vec_named(&stored).unwrap();

@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use async_trait::async_trait;
@@ -108,7 +109,7 @@ pub trait Uploader: Send + Sync + 'static {
     ///
     /// [Happy-eyeballs]: https://en.wikipedia.org/wiki/Happy_Eyeballs
     async fn upload(
-        self: Arc<Self>,
+        &self,
         target: Arc<Self::Target>,
         document: Arc<Self::Doc>,
     ) -> Result<(), UploadError>;
@@ -533,6 +534,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use std::collections::HashMap;
@@ -555,11 +557,7 @@ mod test {
     impl Uploader for TestUploader {
         type Doc = String;
         type Target = u32;
-        async fn upload(
-            self: Arc<Self>,
-            target: Arc<u32>,
-            document: Arc<String>,
-        ) -> Result<(), UploadError> {
+        async fn upload(&self, target: Arc<u32>, document: Arc<String>) -> Result<(), UploadError> {
             let mut map = self.state.lock().unwrap();
             let entry: &mut TState = map.entry(*target).or_default();
             if entry.should_reject {

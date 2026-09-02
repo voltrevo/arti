@@ -58,7 +58,7 @@ impl rpc::RpcMethod for WatchClientStatus {
 /// Note that all `TorClient`s on a session share the same underlying bootstrap status:
 /// if you check the status for one, you don't need to check the others.
 #[derive(Serialize, Deserialize)]
-struct ClientStatusInfo {
+pub struct ClientStatusInfo {
     /// True if the client is ready for traffic.
     ready: bool,
     /// Approximate estimate of how close the client is to being ready for traffic.

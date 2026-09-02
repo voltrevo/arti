@@ -365,7 +365,7 @@ impl sealed::RequestableInner for AuthCertRequest {
             })
             .collect();
 
-        let uri = format!("/tor/keys/fp-sk/{}", &ids.join("+"));
+        let uri = format!("/tor/keys/fp-sk/{}", ids.join("+"));
 
         let req = http::Request::builder().method("GET").uri(uri);
         let req = add_common_headers(req, self.anonymized());
@@ -425,7 +425,7 @@ impl sealed::RequestableInner for MicrodescRequest {
         let d_encode_b64 = |d: &[u8; 32]| Base64Unpadded::encode_string(&d[..]);
         let ids = digest_list_stringify(&self.digests, d_encode_b64, "-")
             .ok_or(RequestError::EmptyRequest)?;
-        let uri = format!("/tor/micro/d/{}", &ids);
+        let uri = format!("/tor/micro/d/{}", ids);
         let req = http::Request::builder().method("GET").uri(uri);
 
         let req = add_common_headers(req, self.anonymized());
@@ -845,7 +845,7 @@ fn all_encodings() -> String {
     {
         encodings += ", x-tor-lzma";
     }
-    #[cfg(feature = "zstd")]
+    #[cfg(any(feature = "zstd", feature = "zstd-wasm"))]
     {
         encodings += ", x-zstd";
     }
@@ -885,6 +885,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::sealed::RequestableInner;
     use super::*;

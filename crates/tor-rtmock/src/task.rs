@@ -640,7 +640,6 @@ impl MockExecutor {
     ///
     /// This is only called from [`MockExecutor::execute_until_first_stall`],
     /// so it could also be called `execute_until_first_stall_inner`.
-    #[allow(clippy::cognitive_complexity)]
     fn executor_main_loop(&self, mut main_fut: MainFuture) {
         'outer: loop {
             // Take a `Awake` task off `awake` and make it `Asleep`
@@ -937,7 +936,6 @@ impl MockExecutor {
     ///
     /// If the executor isn't running, `subthread_block_on_future` will hang indefinitely.
     /// See `spawn_subthread`.
-    #[allow(clippy::cognitive_complexity)] // Splitting this up would be worse
     pub fn subthread_block_on_future<T: Send + 'static>(&self, fut: impl Future<Output = T>) -> T {
         let id = match THREAD_DESCRIPTOR.get() {
             ThreadDescriptor::Subthread(id) => id,
@@ -1532,6 +1530,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use futures::channel::mpsc;
@@ -1726,7 +1725,6 @@ mod test {
 
     #[cfg_attr(not(miri), traced_test)]
     #[test]
-    #[allow(clippy::cognitive_complexity)] // It's is not that complicated, really.
     fn subthread_pingpong() {
         for runtime in various_mock_executors() {
             runtime.block_on(async {

@@ -7,6 +7,7 @@ use extend_handler::ExtendRequestHandler;
 use crate::channel::{Channel, ChannelSender};
 use crate::circuit::CircuitRxReceiver;
 use crate::circuit::UniqId;
+use crate::circuit::celltypes::RelayMaybeEarlyChanMsg;
 use crate::circuit::reactor::ControlHandler;
 use crate::circuit::reactor::backward::BackwardReactorCmd;
 use crate::circuit::reactor::forward::{ForwardCellDisposition, ForwardHandler};
@@ -53,6 +54,8 @@ const MAX_RELAY_EARLY_CELLS_PER_CIRCUIT: usize = 8;
 pub(crate) struct Forward {
     /// An identifier for logging about this reactor's circuit.
     unique_id: UniqId,
+    /// The circuit identifier on the inbound Tor channel.
+    circ_id: CircId,
     /// The outbound view of this circuit, if we are not the last hop.
     ///
     /// Delivers cells towards the exit.
@@ -111,6 +114,7 @@ impl Forward {
     /// Create a new [`Forward`].
     pub(crate) fn new(
         inbound_chan: &Arc<Channel>,
+        circ_id: CircId,
         unique_id: UniqId,
         crypto_out: Box<dyn OutboundRelayLayer + Send>,
         chan_provider: Arc<dyn ChannelProvider<BuildSpec = OwnedChanTarget> + Send + Sync>,
@@ -118,11 +122,18 @@ impl Forward {
         memquota: CircuitAccount,
     ) -> Self {
         let inbound_peer = Arc::clone(inbound_chan.peer_info());
-        let extend_handler =
-            ExtendRequestHandler::new(unique_id, chan_provider, inbound_peer, event_tx, memquota);
+        let extend_handler = ExtendRequestHandler::new(
+            unique_id,
+            circ_id,
+            chan_provider,
+            inbound_peer,
+            event_tx,
+            memquota,
+        );
 
         Self {
             unique_id,
+            circ_id,
             // Initially, we are the last hop in the circuit.
             outbound: None,
             crypto_out,
@@ -135,7 +146,7 @@ impl Forward {
     fn decode_relay_cell<R: Runtime>(
         &mut self,
         hop_mgr: &mut HopMgr<R>,
-        cell: Relay,
+        cell: RelayMaybeEarlyChanMsg,
     ) -> Result<(Option<HopNum>, CellDecodeResult)> {
         // Note: the client reactor will return the actual source hopnum
         let hopnum = None;
@@ -192,9 +203,10 @@ impl Forward {
     fn handle_relay_cell<R: Runtime>(
         &mut self,
         hop_mgr: &mut HopMgr<R>,
-        cell: Relay,
-        early: bool,
+        cell: RelayMaybeEarlyChanMsg,
     ) -> StdResult<Option<ForwardCellDisposition>, ReactorError> {
+        let early = matches!(cell, RelayMaybeEarlyChanMsg::RelayEarly(_));
+
         if early {
             self.relay_early_count += 1;
 
@@ -229,14 +241,6 @@ impl Forward {
         info: Option<QueuedCellPaddingInfo>,
         early: bool,
     ) -> StdResult<(), ReactorError> {
-        // TODO(relay): remove this log once we add some tests
-        // and confirm relaying cells works as expected
-        // (in practice it will be too noisy to be useful, even at trace level).
-        trace!(
-            circ_id = %self.unique_id,
-            "Forwarding unrecognized cell"
-        );
-
         let Some(chan) = self.outbound.as_mut() else {
             // The client shouldn't try to send us any cells before it gets
             // an EXTENDED2 cell from us
@@ -245,6 +249,15 @@ impl Forward {
             )
             .into());
         };
+
+        // TODO(relay): remove this log once we add some tests
+        // and confirm relaying cells works as expected
+        // (in practice it will be too noisy to be useful, even at trace level).
+        trace!(
+            circ_uniq_id = %self.unique_id,
+            forward_circ_id = %chan.circ_id,
+            "Forwarding unrecognized cell"
+        );
 
         let msg = Relay::from(BoxedCellBody::from(body));
         let relay = if early {
@@ -274,7 +287,8 @@ impl Forward {
     /// Handle a DESTROY cell originating from the client.
     fn handle_destroy_cell(&mut self, cell: &Destroy) -> StdResult<(), ReactorError> {
         debug!(
-            circ_id = %self.unique_id,
+            circ_uniq_id = %self.unique_id,
+            backward_circ_id = %self.circ_id,
             reason = %cell.reason(),
             "Received outbound DESTROY, circuit shutting down",
         );
@@ -320,8 +334,8 @@ impl ForwardHandler for Forward {
         use RelayCircChanMsg::*;
 
         match cell {
-            Relay(r) => self.handle_relay_cell(hop_mgr, r, false),
-            RelayEarly(r) => self.handle_relay_cell(hop_mgr, r.into(), true),
+            Relay(r) => self.handle_relay_cell(hop_mgr, r.into()),
+            RelayEarly(r) => self.handle_relay_cell(hop_mgr, r.into()),
             Destroy(d) => {
                 self.handle_destroy_cell(&d)?;
                 Ok(None)

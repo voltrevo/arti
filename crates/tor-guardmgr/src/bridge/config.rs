@@ -525,7 +525,7 @@ impl FromStr for Inner {
                 Ok(RelayId::Ed25519(id)) => check_several(ed_id.replace(id).is_some())?,
                 Ok(RelayId::Rsa(id)) => check_several(rsa_id.replace(id).is_some())?,
                 Ok(_) => {
-                    return Err(BPE::UnsupportedIdentityType {
+                    Err(BPE::UnsupportedIdentityType {
                         word: word.to_string(),
                     })?;
                 }
@@ -638,6 +638,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 
@@ -688,8 +689,8 @@ mod test {
                     got_s.contains(exp),
                     "{:?} => {:?} ({}) not {}",
                     s,
-                    &got,
-                    &got_s,
+                    got,
+                    got_s,
                     exp
                 );
             }
@@ -912,8 +913,8 @@ mod test {
             assert!(
                 got_emsg.contains(emsg),
                 "wrong error message: got_emsg={:?} err={:?} expected={:?}",
-                &got_emsg,
-                &err,
+                got_emsg,
+                err,
                 emsg,
             );
 

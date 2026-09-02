@@ -105,7 +105,7 @@ impl Consensus {
     }
 
     /// Try to parse a single networkstatus document from a string.
-    pub fn parse(s: &str) -> Result<(&str, &str, UncheckedConsensus)> {
+    pub fn parse(s: &str) -> crate::Result<(&str, &str, UncheckedConsensus)> {
         let mut reader = NetDocReader::new(s)?;
         Self::parse_from_reader(&mut reader).map_err(|e| e.within(s))
     }
@@ -113,7 +113,7 @@ impl Consensus {
     /// Ok(None) when we are out of voter-info sections.
     fn take_voterinfo(
         r: &mut NetDocReader<'_, NetstatusKwd>,
-    ) -> Result<Option<ConsensusAuthorityEntry>> {
+    ) -> crate::Result<Option<ConsensusAuthorityEntry>> {
         use NetstatusKwd::*;
 
         match r.peek() {
@@ -146,7 +146,7 @@ impl Consensus {
     }
 
     /// Extract the footer (but not signatures) from the reader.
-    fn take_footer(r: &mut NetDocReader<'_, NetstatusKwd>) -> Result<ConsensusFooterFields> {
+    fn take_footer(r: &mut NetDocReader<'_, NetstatusKwd>) -> crate::Result<ConsensusFooterFields> {
         use NetstatusKwd::*;
         let mut p = r.pause_at(|i| i.is_ok_with_kwd_in(&[DIRECTORY_SIGNATURE]));
         let footer_sec = NS_FOOTER_RULES.parse(&mut p)?;
@@ -156,7 +156,7 @@ impl Consensus {
 
     /// Extract a routerstatus from the reader.  Return Ok(None) if we're
     /// out of routerstatus entries.
-    fn take_routerstatus(r: &mut NetDocReader<'_, NetstatusKwd>) -> Result<Option<(Pos, RouterStatus)>> {
+    fn take_routerstatus(r: &mut NetDocReader<'_, NetstatusKwd>) -> crate::Result<Option<(Pos, RouterStatus)>> {
         use NetstatusKwd::*;
         match r.peek() {
             None => return Ok(None),
@@ -197,7 +197,7 @@ impl Consensus {
     /// string, and an UncheckedConsensus.
     fn parse_from_reader<'a>(
         r: &mut NetDocReader<'a, NetstatusKwd>,
-    ) -> Result<(&'a str, &'a str, UncheckedConsensus)> {
+    ) -> crate::Result<(&'a str, &'a str, UncheckedConsensus)> {
         use NetstatusKwd::*;
         let ((flavor, preamble), start_pos) = {
             let mut h = r.pause_at(|i| i.is_ok_with_kwd_in(&[DIR_SOURCE]));
@@ -269,8 +269,8 @@ impl Consensus {
         };
 
         // Find the appropriate digest.
-        let signed_str = &r.str()[start_pos..end_pos];
-        let remainder = &r.str()[end_pos..];
+        let signed_str = r.str().get(start_pos..end_pos).ok_or(internal!("chopped utf8"))?;
+        let remainder = r.str().get(end_pos..).ok_or(internal!("chopped utf8"))?;
         let (sha256, sha1) = match RouterStatus::flavor() {
             ConsensusFlavor::Plain => (
                 None,
@@ -297,18 +297,15 @@ impl Consensus {
             siggroup,
             n_authorities: None,
         };
-        let lifetime = unval.consensus.preamble.lifetime.clone();
-        let delay = unval.consensus.preamble.voting_delay.unwrap_or((0, 0));
-        let dist_interval = time::Duration::from_secs(delay.1.into());
-        let starting_time = *lifetime.valid_after - dist_interval;
-        let timebound = TimerangeBound::new(unval, starting_time..*lifetime.valid_until);
+        let timebound_range = unval.consensus.preamble.validity_time_range();
+        let timebound = TimeRangeBound::new(unval, timebound_range);
         Ok((signed_str, remainder, timebound))
     }
 }
 
 impl Preamble {
     /// Extract the CommonPreamble members from a single preamble section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<(ConsensusFlavor, Preamble)> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> crate::Result<(ConsensusFlavor, Preamble)> {
         use NetstatusKwd::*;
 
         {
@@ -348,20 +345,26 @@ impl Preamble {
             .into();
         let lifetime = Lifetime::new(valid_after, fresh_until, valid_until)?;
 
-        let client_versions = sec
-            .maybe(CLIENT_VERSIONS)
-            .args_as_str()
-            .unwrap_or("")
-            .split(',')
-            .map(str::to_string)
-            .collect();
-        let server_versions = sec
-            .maybe(SERVER_VERSIONS)
-            .args_as_str()
-            .unwrap_or("")
-            .split(',')
-            .map(str::to_string)
-            .collect();
+        let parse_rec_versions = |item| {
+            let item = sec
+                .maybe(item);
+            let args = item
+                .args_as_str()
+                .unwrap_or("")
+                // C Tor emits an item with trailing whitespace which we must ignore
+                .trim();
+            // We want only the first arg, according to the spec.
+            // We could want to use MaybeItem::parse_arg, but it treats absence of the
+            // argument as an error.  There is no parse_optional_arg on `MaybeItem`.
+            // We could add that, but I am trying to avoid adding code to the old parser.
+            // So instead we reimplement argument splitting (again).
+            args
+                .split_once(|c: char| c.is_ascii_whitespace()).map(|(l, _r)| l).unwrap_or(args)
+                .parse()
+                .map_err(|_e| EK::BadArgument.at_pos(item.pos()))
+        };
+        let client_versions = parse_rec_versions(CLIENT_VERSIONS)?;
+        let server_versions = parse_rec_versions(SERVER_VERSIONS)?;
 
         let proto_statuses = {
             let client = ProtoStatus::from_section(
@@ -523,7 +526,7 @@ impl ExternallySigned<Consensus> for UnvalidatedConsensus {
     fn key_is_correct(&self, k: &Self::Key) -> result::Result<(), Self::KeyHint> {
         let (n_ok, missing) = self.siggroup.list_missing(k);
         match self.n_authorities {
-            Some(n) if n_ok > (n / 2) => Ok(()),
+            Some(n) if consensus_threshold(n).contains(&n_ok) => Ok(()),
             _ => Err(missing.iter().map(|cert| cert.key_ids).collect()),
         }
     }
@@ -533,11 +536,8 @@ impl ExternallySigned<Consensus> for UnvalidatedConsensus {
                 "Didn't set authorities on consensus"
             ))),
             Some(authority) => {
-                if self.siggroup.validate(authority, k) {
-                    Ok(())
-                } else {
-                    Err(EK::BadSignature.err())
-                }
+                self.siggroup.validate(authority, k)
+                    .map_err(|_: VerifyFailed| EK::BadSignature.err())
             }
         }
     }
@@ -548,5 +548,180 @@ impl ExternallySigned<Consensus> for UnvalidatedConsensus {
 
 /// A Consensus object that has been parsed, but not checked for
 /// signatures and timeliness.
-pub type UncheckedConsensus = TimerangeBound<UnvalidatedConsensus>;
+pub type UncheckedConsensus = TimeRangeBound<UnvalidatedConsensus>;
 
+impl NetworkStatusUnverified {
+    /// Could we verify this consensus or do we need more authcerts?
+    ///
+    /// `Ok` means that we have enough authcerts to verify the signature.
+    ///
+    /// `Err` means that we have not enough authcerts,
+    /// or the consensus has not enough signatures.
+    /// The [`ConsensusVerifiabilityError`] error gives the details.
+    pub fn can_verify(
+        &self,
+        trusted_authorities: &[RsaIdentity],
+        certs_already: &[AuthCert],
+    ) -> Result<(), ConsensusVerifiabilityError> {
+        let sigs = self.inspect_unverified().1;
+        Self::verify_general(
+            sigs,
+            trusted_authorities,
+            certs_already,
+            |_signature| {
+                // indeed, we don't actuaally verify, so this is a no-op
+                Ok(SignatureVerifiedIfIntended {})
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Verify the signatures
+    ///
+    /// Doesn't check the validity period:
+    /// the document is wrapped in [`TimeRangeBound`],
+    /// ensuring that the caller does that check.
+    pub fn verify(
+        self,
+        trusted_authorities: &[RsaIdentity],
+        certs: &[AuthCert],
+    ) -> Result<TimeRangeBound<NetworkStatus>, ConsensusVerifyFailed> {
+        let (body, sigs) = self.unwrap_unverified();
+
+        Self::verify_general(
+            &sigs,
+            trusted_authorities,
+            certs,
+            |tv| tv.verify().map_err(ConsensusVerifyFailed::InvalidSignature),
+        )?;
+
+        let time_range = body.preamble.validity_time_range();
+        Ok(TimeRangeBound::new(
+            body,
+            time_range,
+        ))
+    }
+
+    /// Glue to call `SignatureGroup::verify_general` given our `SignaturesData`
+    ///
+    /// [`SignatureGroup::verify_general`] contains the actual verification code,
+    /// shared between the old parser and the new.
+    fn verify_general<E>(
+        sigs: &parse2::SignaturesData<Self>,
+        trusted: &[RsaIdentity],
+        certs: &[AuthCert],
+        do_verify: impl Fn(ConsensusSignatureToVerify) -> Result<SignatureVerifiedIfIntended, E>,
+    ) -> Result<(), E>
+    where ConsensusVerifiabilityError: Into<E>,
+    {
+        SignatureGroup {
+            hashes: sigs.hashes,
+            signatures: sigs.sigs.directory_signature.clone(),
+        }.verify_general(
+            VerifyGeneralTrustedAuthorities::TrustThese { trusted },
+            certs,
+            do_verify,
+        )
+    }
+}
+
+#[cfg(feature = "retain-unknown")]
+#[test]
+fn verify_error_netstatus() -> Result<(), anyhow::Error> {
+    use assert_matches::assert_matches;
+    use ConsensusVerifiabilityError as CVE;
+
+    let file = ns_expr!(
+        "testdata2/cached-consensus",
+        "testdata2/cached-microdesc-consensus",
+        unreachable(),
+    );
+    let (mut doc, _text, certs, authorities, _now) =
+        super::test::prep_netstatus_verify::<NetworkStatusUnverified>(file)?;
+
+    macro_rules! assert_consensus_verifiability_error { {
+        ( $($verify_args:tt)* ),
+        $($assert_matches_rhs:tt)*
+    } => {
+        assert_matches! {
+            doc.can_verify($($verify_args)*),
+            Err(e)
+                => assert_matches!(e, $($assert_matches_rhs)*)
+        };
+        assert_matches! {
+            doc.clone().verify($($verify_args)*),
+            Err(ConsensusVerifyFailed::CertificationInsufficient(e))
+                => assert_matches!(e, $($assert_matches_rhs)*)
+        };
+    } }
+
+    // missing authcerts
+
+    assert_consensus_verifiability_error! {
+        (&authorities, &certs[..1]),
+        ConsensusVerifiabilityError::MissingAuthCerts { deficit, missing } => {
+            assert_eq!(deficit, authorities.len() / 2); // one short of strict majority
+            itertools::assert_equal(
+                missing.into_iter().sorted(),
+                certs[1..].iter().map(|a| a.key_ids()).sorted(),
+            );
+        }
+    }
+
+    // wrong signers
+
+    let wrong_authorities = authorities
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, a)| {
+            if i < 2 {
+                [i as u8; _].into()
+            } else {
+                a
+            }
+        })
+        .collect_vec();
+
+    assert_consensus_verifiability_error! {
+        (&wrong_authorities, &certs),
+        CVE::InsufficientTrustedSigners
+    }
+
+    // one broken signature, but enough others
+
+    doc.sigs.sigs.directory_signature[0].signature.fill(0xff);
+
+    assert_matches! {
+        doc.can_verify(&authorities, &certs),
+        Ok(())
+    }
+    assert_matches! {
+        doc.clone().verify(&authorities, &certs),
+        Ok(_)
+    }
+
+    // too few signatories, and one broken signature
+
+    doc.sigs.sigs.directory_signature.truncate(authorities.len() / 2 + 1);
+
+    assert_matches! {
+        doc.can_verify(&authorities, &certs),
+        Ok(())
+    }
+    assert_matches! {
+        doc.clone().verify(&authorities, &certs),
+        Err(ConsensusVerifyFailed::InvalidSignature(VerifyFailed::VerifyFailed))
+    }
+
+    // too few signatures, no broken signatures
+
+    doc.sigs.sigs.directory_signature.remove(0);
+
+    assert_consensus_verifiability_error! {
+        (&authorities, &certs),
+        CVE::InsufficientTrustedSigners
+    }
+
+    Ok(())
+}

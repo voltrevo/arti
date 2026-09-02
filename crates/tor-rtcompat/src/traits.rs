@@ -416,11 +416,19 @@ pub trait SpawnExt: Spawn {
         Fut: Future<Output = ()> + Send + 'static,
     {
         use tracing::Instrument as _;
-        self.spawn_obj(Box::new(future.in_current_span()).into())
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.spawn_obj(Box::new(future.in_current_span()).into())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            wasm_bindgen_futures::spawn_local(future.in_current_span());
+            Ok(())
+        }
     }
 
     /// Spawns a task that polls the given future to completion and returns a future that resolves
-    /// to the spawned future’s output.
+    /// to the spawned future's output.
     ///
     /// See [`futures::task::SpawnExt::spawn_with_handle`].
     #[track_caller]
@@ -539,6 +547,15 @@ pub trait NetStreamProvider<ADDR = net::SocketAddr>: Clone + Send + Sync + 'stat
     type Stream: AsyncRead + AsyncWrite + StreamOps + Send + Sync + Unpin + 'static;
     /// The type for the listeners returned by [`Self::listen()`].
     type Listener: NetStreamListener<ADDR, Stream = Self::Stream> + Send + Sync + Unpin + 'static;
+    /// The options that can be passed to [`Self::connect()`].
+    ///
+    /// It can include options set with `setsockopt`,
+    /// as well as options that influence higher layers (eg, the runtime).
+    ///
+    /// For connected streams,
+    /// you can use [`StreamOps`] to perform additional operations
+    /// or to configure additional options.
+    type ConnectOptions: Clone + Default + Send + Sync + Unpin + 'static;
     /// The options that can be passed to [`Self::listen()`].
     ///
     /// This includes both options that affect the listening,
@@ -558,7 +575,7 @@ pub trait NetStreamProvider<ADDR = net::SocketAddr>: Clone + Send + Sync + 'stat
     /// any types other than a single `ADDR`.  We do this because
     /// we must be absolutely sure not to perform
     /// unnecessary DNS lookups.
-    async fn connect(&self, addr: &ADDR) -> IoResult<Self::Stream>;
+    async fn connect(&self, addr: &ADDR, options: &Self::ConnectOptions) -> IoResult<Self::Stream>;
 
     /// Open a listener on a given socket address.
     async fn listen(&self, addr: &ADDR, options: &Self::ListenOptions) -> IoResult<Self::Listener>;

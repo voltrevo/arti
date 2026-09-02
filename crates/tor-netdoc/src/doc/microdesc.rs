@@ -22,6 +22,7 @@ use crate::util;
 use crate::util::PeekableIterator;
 use crate::util::str::Extent;
 use crate::{AllowAnnotations, Error, NetdocErrorKind as EK, Result};
+use tor_basic_utils::intern::Intern;
 use tor_error::internal;
 use tor_llcrypto::d;
 use tor_llcrypto::pk::{curve25519, ed25519, rsa};
@@ -29,7 +30,6 @@ use tor_llcrypto::pk::{curve25519, ed25519, rsa};
 use derive_deftly::Deftly;
 use digest::Digest;
 use std::str::FromStr as _;
-use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time;
 
@@ -59,54 +59,99 @@ pub type MdDigest = [u8; DOC_DIGEST_LEN];
 ///
 /// <https://spec.torproject.org/dir-spec/computing-microdescriptors.html>
 #[derive(Clone, Debug, Deftly, PartialEq, Eq)]
-#[derive_deftly(NetdocParseable)]
-#[non_exhaustive]
+#[derive_deftly(Constructor, NetdocEncodable, NetdocParseable)]
+#[allow(clippy::exhaustive_structs)]
 pub struct Microdesc {
     /// The legacy onion key, whose object is optional but whose item serves
     /// as the intro line for these kind of descriptors.
-    ///
-    /// Let's keep this private for now to prevent interfacing applications
-    /// from generating microdesc's with an onion-key; they are not necessary
-    /// anymore and just waste space.
-    onion_key: OnionKeyIntro,
+    pub onion_key: MicrodescIntroItem,
 
     /// Public key used for the ntor circuit extension protocol.
+    #[deftly(constructor)]
     #[deftly(netdoc(single_arg))]
     pub ntor_onion_key: Curve25519Public,
 
     /// Declared family for this relay.
-    #[deftly(netdoc(default))]
-    pub family: Arc<RelayFamily>,
+    #[deftly(netdoc(default(skip)))]
+    pub family: Intern<RelayFamily>,
 
     /// Family identities for this relay.
-    #[deftly(netdoc(default))]
+    #[deftly(netdoc(default(skip)))]
     pub family_ids: RelayFamilyIds,
 
     /// List of IPv4 ports to which this relay will exit
-    #[deftly(netdoc(keyword = "p", default))]
-    pub ipv4_policy: Arc<PortPolicy>,
+    #[deftly(netdoc(keyword = "p", default(skip)))]
+    pub ipv4_policy: Intern<PortPolicy>,
 
     /// List of IPv6 ports to which this relay will exit
-    #[deftly(netdoc(keyword = "p6", default))]
-    pub ipv6_policy: Arc<PortPolicy>,
+    #[deftly(netdoc(keyword = "p6", default(skip)))]
+    pub ipv6_policy: Intern<PortPolicy>,
 
     /// Ed25519 identity for this relay
     // TODO SPEC: Set this to "exactly once".
+    #[deftly(constructor)]
     #[deftly(netdoc(keyword = "id", with = "Ed25519IdentityLine"))]
     pub ed25519_id: Ed25519IdentityLine,
 
     // addr is obsolete and doesn't go here any more
     // pr is obsolete and doesn't go here any more.
-    /// The SHA256 digest of the text of this microdescriptor.  This
-    /// value is used to identify the microdescriptor when downloading
-    /// it, and when listing it in a consensus document.
-    // TODO: maybe this belongs somewhere else. Once it's used to store
-    // correlate the microdesc to a consensus, it's never used again.
+    #[doc(hidden)]
     #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
+}
+
+/// A single microdescriptor and also its SHA256 hash
+///
+/// API compatibility type.
+///
+/// This type is only generated when the microdescriptor is parsed
+/// using the old parser ([`MicrodescAndHash::parse`])
+/// rather than the new one
+/// (`Microdesc as `[`NetdocParseable`](crate::parse2::NetdocParseable)).
+#[derive(Clone, Debug, Deftly, PartialEq, Eq, derive_more::Deref, derive_more::DerefMut)]
+#[non_exhaustive]
+pub struct MicrodescAndHash {
+    /// The microdescriptor
+    #[deref]
+    #[deref_mut]
+    pub md: Microdesc,
+
+    /// The SHA256 digest of the text of this microdescriptor.
+    ///
+    /// This value is used to identify the microdescriptor when
+    /// downloading it, and when listing it in a consensus document.
     pub sha256: MdDigest,
 }
 
 impl Microdesc {
+    /// Return the ntor onion key for this microdesc
+    pub fn ntor_key(&self) -> &curve25519::PublicKey {
+        &self.ntor_onion_key.0
+    }
+    /// Return the ipv4 exit policy for this microdesc
+    pub fn ipv4_policy(&self) -> &Intern<PortPolicy> {
+        &self.ipv4_policy
+    }
+    /// Return the ipv6 exit policy for this microdesc
+    pub fn ipv6_policy(&self) -> &Intern<PortPolicy> {
+        &self.ipv6_policy
+    }
+    /// Return the relay family for this microdesc
+    pub fn family(&self) -> &RelayFamily {
+        self.family.as_ref()
+    }
+    /// Return the ed25519 identity for this microdesc, if its
+    /// Ed25519 identity is well-formed.
+    pub fn ed25519_id(&self) -> &ed25519::Ed25519Identity {
+        &self.ed25519_id.pk.0
+    }
+    /// Return a list of family ids for this microdesc.
+    pub fn family_ids(&self) -> &[RelayFamilyId] {
+        self.family_ids.as_ref()
+    }
+}
+
+impl MicrodescAndHash {
     /// Create a new MicrodescBuilder that can be used to construct
     /// microdescriptors.
     ///
@@ -127,40 +172,19 @@ impl Microdesc {
     pub fn digest(&self) -> &MdDigest {
         &self.sha256
     }
-    /// Return the ntor onion key for this microdesc
-    pub fn ntor_key(&self) -> &curve25519::PublicKey {
-        &self.ntor_onion_key.0
-    }
-    /// Return the ipv4 exit policy for this microdesc
-    pub fn ipv4_policy(&self) -> &Arc<PortPolicy> {
-        &self.ipv4_policy
-    }
-    /// Return the ipv6 exit policy for this microdesc
-    pub fn ipv6_policy(&self) -> &Arc<PortPolicy> {
-        &self.ipv6_policy
-    }
-    /// Return the relay family for this microdesc
-    pub fn family(&self) -> &RelayFamily {
-        self.family.as_ref()
-    }
-    /// Return the ed25519 identity for this microdesc, if its
-    /// Ed25519 identity is well-formed.
-    pub fn ed25519_id(&self) -> &ed25519::Ed25519Identity {
-        &self.ed25519_id.pk.0
-    }
-    /// Return a list of family ids for this microdesc.
-    pub fn family_ids(&self) -> &[RelayFamilyId] {
-        self.family_ids.as_ref()
-    }
 }
 
 /// Intro line for a [`Microdesc`].
 ///
 /// The object (the onion key) is deprecated and optional, but the item itself
 /// must be present, because it is used to mark the start of the netdoc.
+///
+/// The object is private to prevent interfacing applications
+/// from generating microdesc's with an onion-key; they are not necessary
+/// anymore and just waste space.
 #[derive(Debug, Clone, Default, Deftly, PartialEq, Eq)]
-#[derive_deftly(ItemValueParseable)]
-struct OnionKeyIntro(#[deftly(netdoc(object))] Option<rsa::PublicKey>);
+#[derive_deftly(ItemValueEncodable, ItemValueParseable)]
+pub struct MicrodescIntroItem(#[deftly(netdoc(object))] Option<rsa::PublicKey>);
 
 /// A microdescriptor annotated with additional data
 ///
@@ -169,7 +193,7 @@ struct OnionKeyIntro(#[deftly(netdoc(object))] Option<rsa::PublicKey>);
 #[derive(Clone, Debug)]
 pub struct AnnotatedMicrodesc {
     /// The microdescriptor
-    md: Microdesc,
+    md: MicrodescAndHash,
     /// The annotations for the microdescriptor
     ann: MicrodescAnnotation,
     /// Where did we find the microdescriptor with the originally parsed
@@ -179,13 +203,13 @@ pub struct AnnotatedMicrodesc {
 
 impl AnnotatedMicrodesc {
     /// Consume this annotated microdesc and discard its annotations.
-    pub fn into_microdesc(self) -> Microdesc {
+    pub fn into_microdesc(self) -> MicrodescAndHash {
         self.md
     }
 
     /// Return a reference to the microdescriptor within this annotated
     /// microdescriptor.
-    pub fn md(&self) -> &Microdesc {
+    pub fn md(&self) -> &MicrodescAndHash {
         &self.md
     }
 
@@ -258,9 +282,9 @@ impl MicrodescAnnotation {
     }
 }
 
-impl Microdesc {
+impl MicrodescAndHash {
     /// Parse a string into a new microdescriptor.
-    pub fn parse(s: &str) -> Result<Microdesc> {
+    pub fn parse(s: &str) -> Result<MicrodescAndHash> {
         let mut items = crate::parse::tokenize::NetDocReader::new(s)?;
         let (result, _) = Self::parse_from_reader(&mut items).map_err(|e| e.within(s))?;
         items.should_be_exhausted()?;
@@ -270,7 +294,7 @@ impl Microdesc {
     /// Extract a single microdescriptor from a NetDocReader.
     fn parse_from_reader(
         reader: &mut NetDocReader<'_, MicrodescKwd>,
-    ) -> Result<(Microdesc, Option<Extent>)> {
+    ) -> Result<(MicrodescAndHash, Option<Extent>)> {
         use MicrodescKwd::*;
         let s = reader.str();
 
@@ -386,21 +410,22 @@ impl Microdesc {
             })?
         };
 
-        let text = &s[start_pos..end_pos];
+        let text = s.get(start_pos..end_pos).ok_or(internal!("chopped utf8"))?;
         let sha256 = d::Sha256::digest(text.as_bytes()).into();
 
         let location = Extent::new(s, text);
 
         let md = Microdesc {
             onion_key: Default::default(),
-            sha256,
             ntor_onion_key,
             family,
             ipv4_policy: ipv4_policy.intern(),
             ipv6_policy: ipv6_policy.intern(),
             ed25519_id,
             family_ids,
+            __non_exhaustive: (),
         };
+        let md = MicrodescAndHash { md, sha256 };
         Ok((md, location))
     }
 }
@@ -468,7 +493,7 @@ impl<'a> MicrodescReader<'a> {
     /// On error, parsing stops after the first failure.
     fn take_annotated_microdesc_raw(&mut self) -> Result<AnnotatedMicrodesc> {
         let ann = self.take_annotation()?;
-        let (md, location) = Microdesc::parse_from_reader(&mut self.reader)?;
+        let (md, location) = MicrodescAndHash::parse_from_reader(&mut self.reader)?;
         Ok(AnnotatedMicrodesc { md, ann, location })
     }
 
@@ -521,8 +546,10 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
+    use crate::encode::encode_netdoc_unsigned;
     use hex_literal::hex;
     const TESTDATA: &str = include_str!("../../testdata/microdesc1.txt");
     const TESTDATA2: &str = include_str!("../../testdata/microdesc2.txt");
@@ -542,13 +569,13 @@ mod test {
 
     #[test]
     fn parse_single() -> Result<()> {
-        let _md = Microdesc::parse(TESTDATA)?;
+        let _md = MicrodescAndHash::parse(TESTDATA)?;
         Ok(())
     }
 
     #[test]
     fn parse_no_tap_key() -> Result<()> {
-        let _md = Microdesc::parse(TESTDATA3)?;
+        let _md = MicrodescAndHash::parse(TESTDATA3)?;
         Ok(())
     }
 
@@ -613,7 +640,7 @@ mod test {
         use crate::types::policy::PolicyError;
         fn check(fname: &str, e: &Error) {
             let content = read_bad(fname);
-            let res = Microdesc::parse(&content);
+            let res = MicrodescAndHash::parse(&content);
             assert!(res.is_err());
             assert_eq!(&res.err().unwrap(), e);
         }
@@ -626,6 +653,12 @@ mod test {
         );
         check(
             "bogus-policy",
+            &EK::BadPolicy
+                .at_pos(Pos::from_line(9, 1))
+                .with_source(PolicyError::InvalidPort),
+        );
+        check(
+            "non-ascii-policy",
             &EK::BadPolicy
                 .at_pos(Pos::from_line(9, 1))
                 .with_source(PolicyError::InvalidPort),
@@ -655,7 +688,7 @@ mod test {
     /// replaced by a copy and paste in the case one replaces the testdata2
     /// vector's in the future.
     #[test]
-    fn parse2() {
+    fn parse2() -> anyhow::Result<()> {
         use tor_llcrypto::pk::ed25519::Ed25519Identity;
 
         use crate::parse2;
@@ -671,7 +704,7 @@ mod test {
         assert_eq!(
             mds[0],
             Microdesc {
-                onion_key: OnionKeyIntro(rsa::PublicKey::from_der(
+                onion_key: MicrodescIntroItem(rsa::PublicKey::from_der(
                     pem::parse(
                         "
 -----BEGIN RSA PUBLIC KEY-----
@@ -684,7 +717,6 @@ Yl0wCKpUZFHs5CHsajLSfXZKHkwfqRXFEJu9aMtmQdQFfqE9JOJHAgMBAAE=
                     .unwrap()
                     .contents()
                 )),
-                sha256: [0; 32],
                 ntor_onion_key: curve25519::PublicKey::from(<[u8; 32]>::from(
                     FixedB64::<32>::from_str("I1S8JfcqPPHWVTxfjq/eGmGiu/OtR+fF0Z86Ge1mq3s")
                         .unwrap()
@@ -699,8 +731,15 @@ Yl0wCKpUZFHs5CHsajLSfXZKHkwfqRXFEJu9aMtmQdQFfqE9JOJHAgMBAAE=
                 ))
                 .into(),
                 family_ids: Default::default(),
+                __non_exhaustive: (),
             }
         );
+
+        let enc = encode_netdoc_unsigned(&mds)?;
+        let exp = md;
+        assert_eq_or_diff!(&enc, &exp);
+
+        Ok(())
     }
 
     /// Manual test for happy families.

@@ -14,8 +14,9 @@ use tor_proto::{
         self,
         hs_ntor::{self, HsNtorHkdfKeyGenerator},
     },
-    client::stream::{IncomingStream, IncomingStreamRequestFilter},
+    stream::{IncomingStream, IncomingStreamRequestFilter},
 };
+use tor_protover::Protocols;
 
 /// An error produced while trying to process an introduction request we have
 /// received from a client via an introduction point.
@@ -49,6 +50,11 @@ pub enum IntroRequestError {
     #[error("Invalid link specifiers in INTRODUCE2 payload")]
     InvalidLinkSpecs(#[source] tor_linkspec::decode::ChanTargetDecodeError),
 
+    /// The client requested a capability or combination of capabilities
+    /// that we don't support, or don't support negotiating.
+    #[error("Client requested an invalid or unsupported subprotocol capability")]
+    UnsupportedCapability,
+
     /// We weren't able to obtain the subcredentials for decrypting the Introduce2 message.
     #[error("Could not obtain subcredentials")]
     Subcredentials(#[source] crate::FatalError),
@@ -65,6 +71,7 @@ impl HasKind for IntroRequestError {
             E::InvalidHandshake(e) => e.kind(),
             E::InvalidPayload(_) => EK::RemoteProtocolViolation,
             E::InvalidLinkSpecs(_) => EK::RemoteProtocolViolation,
+            E::UnsupportedCapability => EK::RemoteProtocolViolation,
             E::Subcredentials(e) => e.kind(),
         }
     }
@@ -141,6 +148,9 @@ pub(crate) struct IntroRequest {
     /// The decrypted and parsed body of the introduce2 message.
     intro_payload: IntroduceHandshakePayload,
 
+    /// A set of capabilities requested by the client that we are willing to support.
+    requested_protocols: Protocols,
+
     /// The circuit target for the rendezvous point.
     rend_point: VerbatimLinkSpecCircTarget<OwnedCircTarget>,
 }
@@ -215,15 +225,15 @@ pub(crate) struct RequestFilter {
 impl IncomingStreamRequestFilter for RequestFilter {
     fn disposition(
         &mut self,
-        _ctx: &tor_proto::client::stream::IncomingStreamRequestContext<'_>,
+        _ctx: &tor_proto::stream::IncomingStreamRequestContext<'_>,
         circ: &tor_proto::circuit::CircHopSyncView<'_>,
-    ) -> tor_proto::Result<tor_proto::client::stream::IncomingStreamRequestDisposition> {
+    ) -> tor_proto::Result<tor_proto::stream::IncomingStreamRequestDisposition> {
         if circ.n_open_streams() >= self.max_concurrent_streams {
             // TODO: We may want to have a way to send back an END message as
             // well and not tear down the circuit.
-            Ok(tor_proto::client::stream::IncomingStreamRequestDisposition::CloseCircuit)
+            Ok(tor_proto::stream::IncomingStreamRequestDisposition::CloseCircuit)
         } else {
-            Ok(tor_proto::client::stream::IncomingStreamRequestDisposition::Accept)
+            Ok(tor_proto::stream::IncomingStreamRequestDisposition::Accept)
         }
     }
 }
@@ -261,6 +271,7 @@ impl IntroRequest {
             // explicitly expect the payload of an introduce2 message to be
             // padded to hide its size.
         };
+        let requested_protocols = crate::caps::negotiated_capabilities(&intro_payload)?;
 
         // We build the rend_point now, so that we can detect any
         // problems as early as possible.
@@ -272,6 +283,7 @@ impl IntroRequest {
             OnionKey::NtorOnionKey(ntor_key) => ntor_key,
             _ => return Err(E::UnsupportedOnionKey),
         };
+
         let rend_point = netdir
             .circ_target_from_verbatim_linkspecs(intro_payload.link_specifiers(), ntor_onion_key)
             .map_err(E::InvalidRendezvousPoint)?;
@@ -283,6 +295,7 @@ impl IntroRequest {
             key_gen,
             rend1_msg,
             intro_payload,
+            requested_protocols,
             rend_point,
         })
     }
@@ -332,11 +345,11 @@ impl IntroRequest {
         let tunnel = tunnel.ok_or_else(|| E::RendCirc(retry_err))?;
 
         // We'll need parameters to extend the virtual hop.
+        //
+        // (TODO #2594: If we stored our cc_sendme_inc along with our intro points, this would be the
+        // place to look at it.)
         let params = onion_circparams_from_netparams(netdir.params())
             .map_err(into_internal!("Unable to build CircParameters"))?;
-
-        // TODO CC: We may be able to do better based on the client's handshake message.
-        let protocols = netdir.client_protocol_status().required_protocols().clone();
 
         // We won't need the netdir any longer; stop holding the reference.
         drop(netdir);
@@ -352,7 +365,7 @@ impl IntroRequest {
                 handshake::HandshakeRole::Responder,
                 self.key_gen,
                 params,
-                &protocols,
+                &self.requested_protocols,
             )
             .await
             .map_err(E::VirtualHop)?;

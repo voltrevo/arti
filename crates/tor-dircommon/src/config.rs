@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use derive_deftly::Deftly;
 use getset::{CopyGetters, Getters};
-use tor_checkable::timed::TimerangeBound;
+use tor_checkable::timed::TimeRangeBound;
 use tor_config::derive::prelude::*;
 use tor_config::{ConfigBuildError, define_list_builder_accessors};
 use tor_netdoc::doc::netstatus::Lifetime;
@@ -158,12 +158,12 @@ pub struct DirTolerance {
 }
 
 impl DirTolerance {
-    /// Return a new [`TimerangeBound`] that extends the validity interval of
+    /// Return a new [`TimeRangeBound`] that extends the validity interval of
     /// `timebound` according to this configuration.
-    pub fn extend_tolerance<B>(&self, timebound: TimerangeBound<B>) -> TimerangeBound<B> {
+    pub fn extend_tolerance<B>(&self, timebound: TimeRangeBound<B>) -> TimeRangeBound<B> {
         timebound
-            .extend_tolerance(self.post_valid_tolerance)
-            .extend_pre_tolerance(self.pre_valid_tolerance)
+            .extend_end_bound(self.post_valid_tolerance)
+            .extend_start_bound(self.pre_valid_tolerance)
     }
 
     /// Return a new consensus [`Lifetime`] that extends the validity intervals
@@ -192,6 +192,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::unnecessary_wraps)]
 

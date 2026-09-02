@@ -94,12 +94,18 @@ impl<SC: StreamCipher + KeyIvInit, D: Digest + Clone> CryptInit for CryptStatePa
         let binding_key = take_seed(CIRC_BINDING_LEN);
 
         let fwd = CryptState {
-            cipher: SC::new(kf.into(), &Default::default()),
+            cipher: SC::new(
+                kf.try_into().expect("Incorrect size, despite validation!"),
+                &Default::default(),
+            ),
             digest: D::new().chain_update(df),
             last_sendme_tag: [0_u8; SENDME_TAG_LEN].into(),
         };
         let back = CryptState {
-            cipher: SC::new(kb.into(), &Default::default()),
+            cipher: SC::new(
+                kb.try_into().expect("Incorrect size, despite validation!"),
+                &Default::default(),
+            ),
             digest: D::new().chain_update(db),
             last_sendme_tag: [0_u8; SENDME_TAG_LEN].into(),
         };
@@ -321,6 +327,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use crate::crypto::cell::{

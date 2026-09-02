@@ -11,7 +11,7 @@ use crate::{Error, Result};
 use pin_project::pin_project;
 use tor_async_utils::peekable_stream::{PeekableStream, UnobtrusivePeekableStream};
 use tor_async_utils::stream_peek::StreamUnobtrusivePeeker;
-use tor_cell::relaycell::flow_ctrl::{Xoff, Xon, XonKbpsEwma};
+use tor_cell::relaycell::flow_ctrl::{Xoff, Xon, XonKBpsEwma};
 use tor_cell::relaycell::{RelayMsg, UnparsedRelayMsg};
 use tor_cell::relaycell::{StreamId, msg::AnyRelayMsg};
 
@@ -97,7 +97,7 @@ impl OpenStreamEnt {
     ///
     /// If we should, then returns the XON message that should be sent.
     /// Returns an error if XON/XOFF messages aren't supported for this type of flow control.
-    pub(crate) fn maybe_send_xon(&mut self, rate: XonKbpsEwma) -> Result<Option<Xon>> {
+    pub(crate) fn maybe_send_xon(&mut self, rate: XonKBpsEwma) -> Result<Option<Xon>> {
         self.flow_ctrl
             .maybe_send_xon(rate, self.approx_stream_bytes_buffered())
     }
@@ -582,12 +582,22 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
-    use crate::client::circuit::test::fake_mpsc;
     use crate::stream::queue::fake_stream_queue;
+    use crate::stream::{StreamMpscReceiver, StreamMpscSender};
     use crate::{client::stream::OutboundDataCmdChecker, congestion::sendme::StreamSendWindow};
+    use std::fmt::Debug;
+    use tor_memquota::HasMemoryCost;
     use web_time_compat::InstantExt;
+
+    /// Make an MPSC queue, of the type we use in Channels, but a fake one for testing
+    fn fake_mpsc<T: HasMemoryCost + Debug + Send>(
+        buffer: usize,
+    ) -> (StreamMpscSender<T>, StreamMpscReceiver<T>) {
+        crate::fake_mpsc(buffer)
+    }
 
     #[test]
     fn test_wrapping_next_stream_id() {
@@ -599,7 +609,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
     fn streammap_basics() -> Result<()> {
         let mut map = StreamMap::new();
         let mut next_id = map.next_stream_id;

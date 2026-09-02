@@ -244,6 +244,24 @@ macro_rules! decl_extension_group {
                 $id :: Unrecognized(val)
             }
         }
+
+        impl ExtList<$id> {
+            $(
+                /// Return the first
+                #[doc = stringify!($case)]
+                // extension in this ExtList, or None if no such extension exists.
+                #[allow(dead_code)]
+                $( #[$fmeta] )?
+                pub(super) fn [<get_ $case:snake:lower>](&self) -> Option<&$case> {
+                    self.extensions.iter().find_map(|ext| {
+                        match ext {
+                            $id :: $case(x) => Some(x),
+                            _ => None,
+                        }
+                    })
+                }
+            )*
+        }
 }}
 }
 pub(super) use decl_extension_group;

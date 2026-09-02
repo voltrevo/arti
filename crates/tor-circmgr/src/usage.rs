@@ -109,9 +109,11 @@ impl ExitPolicy {
 
         Self {
             v4: PortPolicy::from_allowed_port_list(v4_ports.iter().map(|port| port.port).collect())
-                .intern(),
+                .intern()
+                .into(),
             v6: PortPolicy::from_allowed_port_list(v6_ports.iter().map(|port| port.port).collect())
-                .intern(),
+                .intern()
+                .into(),
         }
     }
 

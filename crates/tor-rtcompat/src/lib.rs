@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -68,7 +69,7 @@ mod traits;
 pub mod unimpl;
 pub mod unix;
 
-#[cfg(any(feature = "async-std", feature = "tokio", feature = "smol"))]
+#[cfg(all(any(feature = "async-std", feature = "tokio", feature = "smol"), not(target_arch = "wasm32")))]
 use std::io;
 pub use traits::{
     Blocking, CertifiedConn, CoarseTimeProvider, NetStreamListener, NetStreamProvider,
@@ -78,7 +79,10 @@ pub use traits::{
 
 pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};
 pub use dyn_time::DynTimeProvider;
-pub use network::{CommonListenOptions, TcpListenOptions, UnixListenOptions};
+pub use network::{
+    CommonConnectOptions, CommonListenOptions, TcpConnectOptions, TcpListenOptions,
+    UnixConnectOptions, UnixListenOptions,
+};
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 
 /// Traits used to describe TLS connections and objects that can
@@ -95,29 +99,32 @@ pub mod tls {
 
     #[cfg(all(
         feature = "native-tls",
-        any(feature = "tokio", feature = "async-std", feature = "smol")
+        any(feature = "tokio", feature = "async-std", feature = "smol"),
+        not(target_arch = "wasm32"),
     ))]
     pub use crate::impls::native_tls::NativeTlsProvider;
     #[cfg(all(
         feature = "rustls",
-        any(feature = "tokio", feature = "async-std", feature = "smol")
+        any(feature = "tokio", feature = "async-std", feature = "smol"),
+        not(target_arch = "wasm32"),
     ))]
     pub use crate::impls::rustls::RustlsProvider;
     #[cfg(all(
         feature = "rustls",
         feature = "tls-server",
-        any(feature = "tokio", feature = "async-std", feature = "smol")
+        any(feature = "tokio", feature = "async-std", feature = "smol"),
+        not(target_arch = "wasm32"),
     ))]
     pub use crate::impls::rustls::rustls_server::{RustlsAcceptor, RustlsServerStream};
 }
 
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio", not(target_arch = "wasm32")))]
 pub mod tokio;
 
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "async-std"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "async-std", not(target_arch = "wasm32")))]
 pub mod async_std;
 
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "smol"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "smol", not(target_arch = "wasm32")))]
 pub mod smol;
 
 pub use compound::{CompoundRuntime, RuntimeSubstExt};
@@ -125,10 +132,11 @@ pub use compound::{CompoundRuntime, RuntimeSubstExt};
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
     feature = "async-std",
-    not(feature = "tokio")
+    not(feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 use async_std as preferred_backend_mod;
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio", not(target_arch = "wasm32")))]
 use tokio as preferred_backend_mod;
 
 /// The runtime that we prefer to use, out of all the runtimes compiled into the
@@ -144,7 +152,8 @@ use tokio as preferred_backend_mod;
 /// after creating this or any other `Runtime`.
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 #[derive(Clone)]
 pub struct PreferredRuntime {
@@ -154,7 +163,8 @@ pub struct PreferredRuntime {
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 crate::opaque::implement_opaque_runtime! {
     PreferredRuntime { inner : preferred_backend_mod::PreferredRuntime }
@@ -162,7 +172,8 @@ crate::opaque::implement_opaque_runtime! {
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 impl PreferredRuntime {
     /// Obtain a [`PreferredRuntime`] from the currently running asynchronous runtime.
@@ -427,6 +438,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::unnecessary_wraps)]
     use crate::SleepProviderExt;
@@ -525,7 +537,8 @@ mod test {
                 IoResult::Ok(buf)
             };
             let task2 = async {
-                let mut con = rt1.connect(&addr).await?;
+                let connect_options = Default::default();
+                let mut con = rt1.connect(&addr, &connect_options).await?;
                 con.write_all(b"Hello world").await?;
                 con.flush().await?;
                 IoResult::Ok(())
@@ -603,12 +616,13 @@ mod test {
                 }
             };
             let task2 = async {
+                let connect_options = Default::default();
                 for _ in 0_u8..5 {
-                    let mut con = rt1.connect(&addr).await?;
+                    let mut con = rt1.connect(&addr, &connect_options).await?;
                     con.write_all(b"Hello world").await?;
                     con.flush().await?;
                 }
-                let mut con = rt1.connect(&addr).await?;
+                let mut con = rt1.connect(&addr, &connect_options).await?;
                 con.write_all(b"world done!").await?;
                 con.flush().await?;
                 con.close().await?;
@@ -673,7 +687,8 @@ mod test {
         runtime.block_on(async {
             let text = b"I Suddenly Dont Understand Anything";
             let mut buf = vec![0_u8; text.len()];
-            let conn = runtime.connect(&addr).await?;
+            let connect_options = Default::default();
+            let conn = runtime.connect(&addr, &connect_options).await?;
             let mut conn = connector.negotiate_unvalidated(conn, "Kan.Aya").await?;
             assert!(conn.peer_certificate()?.is_some());
             conn.write_all(text).await?;
@@ -701,10 +716,10 @@ mod test {
         let settings = TlsAcceptorSettings::new(tls_cert).unwrap();
 
         let Ok(tls_acceptor) = runtime.tls_acceptor(settings) else {
-            println!("Skipping tls-server test for runtime {:?}", &runtime);
+            println!("Skipping tls-server test for runtime {:?}", runtime);
             return IoResult::Ok(());
         };
-        println!("Running tls-server test for runtime {:?}", &runtime);
+        println!("Running tls-server test for runtime {:?}", runtime);
 
         let tls_connector = runtime.tls_connector();
 
@@ -730,7 +745,8 @@ mod test {
 
             let h2 = runtime
                 .spawn_with_handle(async move {
-                    let conn = rt1.connect(&address).await.unwrap();
+                    let connect_options = Default::default();
+                    let conn = rt1.connect(&address, &connect_options).await.unwrap();
                     let mut conn = tls_connector
                         .negotiate_unvalidated(conn, "prospit.example.org")
                         .await

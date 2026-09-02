@@ -85,9 +85,6 @@ use tor_memquota::derive_deftly_template_HasMemoryCost;
 
 use crate::crypto::handshake::ntor::NtorPublicKey;
 
-#[cfg(test)]
-use crate::stream::{StreamMpscReceiver, StreamMpscSender};
-
 pub use crate::crypto::binding::CircuitBinding;
 pub use path::{Path, PathEntry};
 
@@ -673,12 +670,20 @@ impl ClientCirc {
     /// circuits by a single "virtual" encryption hop that represents their
     /// shared cryptographic context.
     ///
+    /// Protocol settings, capabilities, and parameters
+    /// are based on the `params` and `capabilities` arguments.
+    /// The `capabilities` argument should contains a set of capabilities that both
+    /// parties have agreed to use.  Only explicitly negotiable capabilities[^2] need
+    /// to be listed.
+    ///
     /// Once a circuit has been extended in this way, it is an error to try to
     /// extend it in any other way.
     ///
     /// [^1]: Technically, the handshake is only _mostly_ out of band: the
     ///     client sends their half of the handshake in an ` message, and the
     ///     service's response is inline in its `RENDEZVOUS2` message.
+    /// [^2]: That is to say, if a capability is always-on, then there is no need to list
+    ///     it.
     //
     // TODO hs: let's try to enforce the "you can't extend a circuit again once
     // it has been extended this way" property.  We could do that with internal
@@ -796,7 +801,7 @@ impl PendingClientTunnel {
     /// Does not send a CREATE* cell on its own.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        id: CircId,
+        circ_id: CircId,
         channel: Arc<Channel>,
         createdreceiver: oneshot::Receiver<CreateResponse>,
         input: CircuitRxReceiver,
@@ -810,7 +815,7 @@ impl PendingClientTunnel {
         let time_provider = channel.time_provider().clone();
         let (reactor, control_tx, command_tx, reactor_closed_rx, mutable) = Reactor::new(
             channel,
-            id,
+            circ_id,
             unique_id,
             input,
             runtime,
@@ -827,7 +832,7 @@ impl PendingClientTunnel {
             command: command_tx,
             reactor_closed_rx: reactor_closed_rx.shared(),
             #[cfg(test)]
-            circid: id,
+            circid: circ_id,
             memquota,
             time_provider,
             is_multi_path: false,
@@ -1005,12 +1010,14 @@ pub(crate) mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
     use crate::channel::test::{CodecResult, new_reactor};
     use crate::circuit::CircuitRxSender;
     use crate::circuit::reactor::test::rmsg_to_ccmsg;
+    use crate::circuit::test::fake_mpsc;
     use crate::client::circuit::padding::new_padding;
     use crate::client::stream::DataStream;
     use crate::congestion::params::CongestionControlParams;
@@ -1039,7 +1046,6 @@ pub(crate) mod test {
     };
     use tor_cell::relaycell::{RelayMsg, UnparsedRelayMsg};
     use tor_linkspec::OwnedCircTarget;
-    use tor_memquota::HasMemoryCost;
     use tor_rtcompat::Runtime;
     use tor_rtcompat::SpawnExt;
     use tracing::trace;
@@ -1097,14 +1103,6 @@ pub(crate) mod test {
         hex!("395cb26b83b3cd4b91dba9913e562ae87d21ecdd56843da7ca939a6a69001253");
     const EXAMPLE_ED_ID: [u8; 32] = [6; 32];
     const EXAMPLE_RSA_ID: [u8; 20] = [10; 20];
-
-    /// Make an MPSC queue, of the type we use in Channels, but a fake one for testing
-    #[cfg(test)]
-    pub(crate) fn fake_mpsc<T: HasMemoryCost + Debug + Send>(
-        buffer: usize,
-    ) -> (StreamMpscSender<T>, StreamMpscReceiver<T>) {
-        crate::fake_mpsc(buffer)
-    }
 
     /// return an example OwnedCircTarget that can get used for an ntor handshake.
     fn example_target() -> OwnedCircTarget {

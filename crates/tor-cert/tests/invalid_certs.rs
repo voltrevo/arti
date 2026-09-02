@@ -3,7 +3,7 @@ use tor_cert::CertError;
 //use tor_cert::rsa::RsaCrosscert;
 use tor_cert::Ed25519Cert;
 use tor_llcrypto::pk::ed25519;
-//use tor_checkable::{ExternallySigned, SelfSigned, Timebound};
+//use tor_checkable::{ExternallySigned, SelfSigned, TimeBound};
 
 //use std::time::{Duration, SystemTime};
 
@@ -97,7 +97,7 @@ fn expired_cert() {
     use std::time::Duration;
     use tor_cert::Ed25519Cert;
     use tor_checkable::TimeValidityError;
-    use tor_checkable::{SelfSigned, Timebound};
+    use tor_checkable::{SelfSigned, TimeBound};
 
     // The certificate in this test is taken from `testvec_certs.rs`
 
@@ -119,7 +119,7 @@ fn expired_cert() {
         .unwrap()
         .check_signature()
         .unwrap()
-        .check_valid_at(&expired_time)
+        .if_valid_at(&expired_time)
         .unwrap_err();
 
     assert_eq!(

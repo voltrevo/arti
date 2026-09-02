@@ -8,17 +8,15 @@ use anyhow::Result;
 
 use arti_client::{InertTorClient, TorClient, TorClientConfig};
 use clap::{ArgMatches, Args, FromArgMatches, Parser, Subcommand};
-use tor_keymgr::{KeyMgr, KeystoreEntry, KeystoreEntryResult, KeystoreId, UnrecognizedEntryError};
+use tor_keymgr::{
+    KeyMgr, KeyPathInfo, KeystoreEntry, KeystoreEntryResult, KeystoreId, UnrecognizedEntryError,
+};
 use tor_rtcompat::Runtime;
 
 use crate::{ArtiConfig, subcommands::prompt};
 
 #[cfg(feature = "onion-service-service")]
 use tor_hsservice::OnionService;
-
-/// Length of a line, used for formatting
-// TODO: use COLUMNS instead of an arbitrary LINE_LEN
-const LINE_LEN: usize = 80;
 
 /// The `keys` subcommands the arti CLI will be augmented with.
 #[derive(Debug, Parser)]
@@ -60,6 +58,22 @@ pub(crate) struct ListArgs {
     /// from all the keystores will be returned.
     #[arg(short, long)]
     keystore_id: Option<String>,
+
+    /// Output format.
+    #[command(flatten)]
+    output_format: OutputFormat,
+}
+
+/// Mutually exclusive output format flags.
+// NOTE: Additional output formats will be added in the future.
+#[derive(Debug, Clone, Args)]
+#[group(multiple = false)]
+struct OutputFormat {
+    /// Compact format.
+    ///
+    /// Displays every entry on a single line when enabled.
+    #[arg(long, default_value_t = false)]
+    compact: bool,
 }
 
 /// The arguments of the [`CheckIntegrity`](KeysSubcommand::CheckIntegrity) subcommand.
@@ -123,7 +137,7 @@ pub(crate) fn run<R: Runtime>(
     let client_builder = TorClient::with_runtime(runtime).config(client_config.clone());
 
     match subcommand {
-        KeysSubcommand::List(args) => run_list_keys(&args, &client_builder.create_inert()?),
+        KeysSubcommand::List(args) => run_list_keys(args, &client_builder.create_inert()?),
         KeysSubcommand::ListKeystores => run_list_keystores(&client_builder.create_inert()?),
         KeysSubcommand::CheckIntegrity(args) => run_check_integrity(
             &args,
@@ -135,38 +149,44 @@ pub(crate) fn run<R: Runtime>(
     }
 }
 
-/// Print information about a keystore entry.
-fn display_entry(entry: &KeystoreEntry, keymgr: &KeyMgr) {
-    match keymgr.describe(entry.key_path()) {
-        Some(e) => {
-            println!(" Keystore ID: {}", entry.keystore_id());
-            println!(" Role: {}", e.role());
-            println!(" Summary: {}", e.summary());
-            println!(" KeystoreItemType: {:?}", entry.key_type());
-            println!(" Location: {}", entry.raw_id());
-            let extra_info = e.extra_info();
-            println!(" Extra info:");
-            for (key, value) in extra_info {
-                println!(" - {key}: {value}");
-            }
-        }
-        None => {
-            println!(" Unrecognized path {}", entry.raw_id());
-        }
+/// Print information about a valid keystore entry.
+fn display_entry(entry: &(KeystoreEntry<'_>, KeyPathInfo), display_keystore_id: bool) {
+    let (entry, info) = entry;
+    if display_keystore_id {
+        println!("Keystore ID: {}", entry.keystore_id());
     }
-    println!("\n {}", "-".repeat(LINE_LEN));
+    println!("Role: {}", info.role());
+    println!("Summary: {}", info.summary());
+    println!("KeystoreItemType: {:?}", entry.key_type());
+    println!("Location: {}", entry.raw_id());
+    let extra_info = info.extra_info();
+    println!("Extra info:");
+    for (key, value) in extra_info {
+        println!("- {key}: {value}");
+    }
 }
 
 /// Print information about an unrecognized keystore entry.
-fn display_unrecognized_entry(entry: &UnrecognizedEntryError) {
+fn display_unrecognized_entry(
+    entry: &UnrecognizedEntryError,
+    display_keystore_id: bool,
+    compact_output: bool,
+) {
     let raw_entry = entry.entry();
-    println!(" Unrecognized entry");
     #[allow(clippy::single_match)]
     match raw_entry.raw_id() {
         tor_keymgr::RawEntryId::Path(p) => {
-            println!(" Keystore ID: {}", raw_entry.keystore_id());
-            println!(" Location: {}", p.to_string_lossy());
-            println!(" Error: {}", entry.error());
+            let path = p.to_string_lossy();
+            if compact_output {
+                println!("{path}");
+            } else {
+                if display_keystore_id {
+                    println!("Keystore ID: {}", raw_entry.keystore_id());
+                }
+                println!("Location: {path}");
+                println!("Error: {}", entry.error());
+                println!();
+            }
         }
         // NOTE: For the time being Arti only supports
         // on-disk keystores, but more supported medium
@@ -175,34 +195,74 @@ fn display_unrecognized_entry(entry: &UnrecognizedEntryError) {
             panic!("Unhandled enum variant: {:?}", other);
         }
     }
-    println!("\n {}\n", "-".repeat(LINE_LEN));
 }
 
 /// Run the `keys list` subcommand.
-fn run_list_keys(args: &ListArgs, client: &InertTorClient) -> Result<()> {
+fn run_list_keys(args: ListArgs, client: &InertTorClient) -> Result<()> {
     let keymgr = client.keymgr()?;
-    // TODO: in the future we could group entries by their type
-    // (recognized, unrecognized and unrecognized path).
-    // That way we don't need to print "Unrecognized path",
-    // "Unrecognized" entry etc. for each unrecognized entry.
-    match &args.keystore_id {
-        Some(s) => {
-            let id = KeystoreId::from_str(s)?;
-            let empty_err_msg = format!("Currently there are no entries in the keystore {}.", s);
-            display_keystore_entries(
-                &keymgr.list_by_id(&id)?,
-                keymgr,
-                "Keystore entries",
-                &empty_err_msg,
-            );
+    let (display_keystore_id, entries) = if let Some(id) = args.keystore_id {
+        let id = KeystoreId::from_str(&id)?;
+        let entries = keymgr.list_by_id(&id)?;
+        if entries.is_empty() {
+            return Ok(());
         }
-        None => {
-            display_keystore_entries(
-                &keymgr.list()?,
-                keymgr,
-                "Keystore entries",
-                "Currently there are no entries in any of the keystores.",
-            );
+        (false, entries)
+    } else {
+        let entries = keymgr.list()?;
+        if entries.is_empty() {
+            return Ok(());
+        }
+        (true, entries)
+    };
+
+    let (mut valid_entries, mut unrecognized_entries, mut unrecognized_paths) =
+        (vec![], vec![], vec![]);
+    for entry in entries {
+        match entry {
+            Ok(e) => {
+                if let Some(info) = keymgr.describe(e.key_path()) {
+                    valid_entries.push((e, info));
+                } else {
+                    unrecognized_paths.push(e);
+                }
+            }
+            Err(e) => {
+                unrecognized_entries.push(e);
+            }
+        }
+    }
+
+    // Sort the entries to make the output deterministic
+    valid_entries.sort_by_key(|(e, _info)| (e.keystore_id(), e.key_path().to_string()));
+    unrecognized_entries.sort_by_key(|e| e.entry().raw_id().to_string());
+    unrecognized_paths.sort_by_key(|e| e.key_path().to_string());
+
+    for entry in valid_entries {
+        if args.output_format.compact {
+            println!("{}", entry.0.raw_id());
+        } else {
+            display_entry(&entry, display_keystore_id);
+            println!();
+        }
+    }
+    println!();
+
+    if !unrecognized_entries.is_empty() || !unrecognized_paths.is_empty() {
+        println!("Broken entries\n");
+        for entry in unrecognized_entries {
+            display_unrecognized_entry(&entry, display_keystore_id, args.output_format.compact);
+        }
+        for entry in unrecognized_paths {
+            let raw_id = entry.raw_id();
+            if args.output_format.compact {
+                println!("{raw_id}");
+            } else {
+                if display_keystore_id {
+                    println!("Keystore ID: *not available*");
+                }
+                println!("Location: {raw_id}");
+                println!("Error: Unrecognized\n");
+            }
         }
     }
     Ok(())
@@ -216,11 +276,11 @@ fn run_list_keystores(client: &InertTorClient) -> Result<()> {
     if entries.is_empty() {
         println!("Currently there are no keystores available.");
     } else {
-        println!(" Keystores:\n");
+        println!("Keystores:\n");
         for entry in entries {
             // TODO: We need something similar to [`KeyPathInfo`](tor_keymgr::KeyPathInfo)
             // for `KeystoreId`
-            println!(" - {:?}\n", entry.as_ref());
+            println!("- {:?}\n", entry.as_ref());
         }
     }
 
@@ -363,30 +423,6 @@ fn display_invalid_keystore_entries(affected_keystores: &[InvalidKeystoreEntries
     }
 }
 
-/// Helper function of `run_list_keys`, reduces cognitive complexity.
-fn display_keystore_entries(
-    entries: &[KeystoreEntryResult<KeystoreEntry>],
-    keymgr: &KeyMgr,
-    header: &str,
-    empty_err_msg: &str,
-) {
-    if entries.is_empty() {
-        println!("{empty_err_msg}");
-        return;
-    }
-    println!(" ===== {} =====\n\n", header);
-    for entry in entries {
-        match entry {
-            Ok(entry) => {
-                display_entry(entry, keymgr);
-            }
-            Err(entry) => {
-                display_unrecognized_entry(entry);
-            }
-        }
-    }
-}
-
 /// Helper function for `run_check_integrity`.
 ///
 /// Creates an [`OnionService`] for each configured hidden service.
@@ -396,7 +432,7 @@ fn create_all_services(
     client_config: &TorClientConfig,
 ) -> Result<Vec<OnionService>> {
     let mut services = Vec::new();
-    for (_, cfg) in config.onion_services.iter() {
+    for cfg in config.onion_services.values() {
         services.push(
             TorClient::<tor_rtcompat::PreferredRuntime>::create_onion_service(
                 client_config,

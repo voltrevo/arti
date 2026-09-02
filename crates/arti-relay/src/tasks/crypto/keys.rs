@@ -1,6 +1,7 @@
 //! Key rotation tasks of the relay.
 
 use anyhow::Context;
+use std::borrow::Borrow;
 use std::time::{Duration, SystemTime};
 
 use tor_basic_utils::rand_hostname;
@@ -54,7 +55,7 @@ const RSA_CROSSCERT_LIFETIME: Duration = Duration::from_secs(6 * 30 * 24 * 60 * 
 /// are already in the keystore.
 pub(super) fn build_proto_relay_auth_material(
     now: SystemTime,
-    view: &FullKeyView,
+    view: &FullKeyView<impl Borrow<KeyMgr>>,
 ) -> anyhow::Result<RelayChannelAuthMaterial> {
     let mut rng = tor_llcrypto::rng::CautiousRng;
 
@@ -492,11 +493,10 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
-
-    use std::sync::Arc;
 
     use crate::{
         keys::{RelayLinkSigningKeypairSpecifierPattern, RelaySigningKeypairSpecifierPattern},
@@ -517,7 +517,7 @@ mod test {
     }
 
     /// Initial setup of a test. Build a mock runtime, key manager and setup identity keys.
-    fn setup() -> Arc<KeyMgr> {
+    fn setup() -> KeyMgr {
         let keymgr = new_keymgr();
         setup_identity_keys(&keymgr);
         keymgr

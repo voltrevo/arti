@@ -1,6 +1,6 @@
 //! Code to watch configuration files for any changes.
 
-use std::sync::Weak;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -100,7 +100,6 @@ pub(crate) fn watch_for_config_changes<R: Runtime>(
 /// Start watching for configuration changes.
 ///
 /// Spawned from `watch_for_config_changes`.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor? Partly due to tracing.
 #[instrument(level = "trace", skip_all)]
 async fn run_watcher<R: Runtime>(
     runtime: R,
@@ -155,7 +154,6 @@ async fn run_watcher<R: Runtime>(
 }
 
 /// Reload the configuration.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor? Partly due to tracing.
 #[instrument(level = "trace", skip_all)]
 async fn reload_configuration<R: Runtime>(
     runtime: R,
@@ -164,6 +162,7 @@ async fn reload_configuration<R: Runtime>(
     modules: &[Weak<dyn ReconfigurableModule>],
     tx: FileEventSender,
 ) -> anyhow::Result<Option<FileWatcher>> {
+    // TODO RPC: Take 'how' as an argument.
     let found_files = if watcher.is_some() {
         let mut new_watcher = FileWatcher::builder(runtime.clone());
         let found_files = prepare(&mut new_watcher, sources)
@@ -203,11 +202,75 @@ async fn reload_configuration<R: Runtime>(
     Ok(watcher)
 }
 
-impl<R: Runtime> ReconfigurableModule for TorClient<R> {
+/// A TorClient that we may or may not have told to start bootstrapping.
+pub(crate) struct LaunchableTorClient<R: Runtime> {
+    /// Original value of defer_bootstrap.
+    orig_defer_bootstrap: bool,
+
+    /// True if we have launched bootstrapping on the the client.
+    have_launched: Mutex<bool>,
+
+    /// The client itself.
+    client: Arc<TorClient<R>>,
+}
+
+impl<R: Runtime> ReconfigurableModule for LaunchableTorClient<R> {
     #[instrument(level = "trace", skip_all)]
     fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()> {
-        TorClient::reconfigure(self, &new.1, Reconfigure::WarnOnFailures)?;
+        // TODO RPC: Take 'how' as an argument.
+
+        if new.0.application().defer_bootstrap && !self.orig_defer_bootstrap {
+            warn!("Cannot enable defer_bootstrap while arti is running.");
+        }
+        if !new.0.application().defer_bootstrap {
+            self.ensure_bootstrap_launched()?;
+        }
+
+        TorClient::reconfigure(&self.client, &new.1, Reconfigure::WarnOnFailures)?;
         Ok(())
+    }
+}
+
+impl<R: Runtime> LaunchableTorClient<R> {
+    /// Create a new LaunchableTorClient.
+    ///
+    /// We assume that it has (or has not) been told to bootstrap itself based on `cfg`.
+    pub(crate) fn new(client: Arc<TorClient<R>>, cfg: &crate::ApplicationConfig) -> Self {
+        Self {
+            orig_defer_bootstrap: cfg.defer_bootstrap,
+            have_launched: Mutex::new(!cfg.defer_bootstrap),
+            client,
+        }
+    }
+
+    /// If we have not already told this LaunchableTorClient to bootstrap itself, do so.
+    fn ensure_bootstrap_launched(&self) -> anyhow::Result<()> {
+        let mut have_launched = self.have_launched.lock().expect("lock poisoned");
+
+        if *have_launched {
+            return Ok(());
+        }
+
+        let client = Arc::clone(&self.client);
+        // We spawn this as a new task since `bootstrap` is very much async,
+        // but this needs to be called from `reconfigure`, which is not.
+        self.client
+            .runtime()
+            .spawn(async move {
+                let _outcome = client.bootstrap().await;
+            })
+            .context("Launching bootstrap")?;
+
+        *have_launched = true;
+        Ok(())
+    }
+
+    /// As [`TorClient::bootstrap`], but performs necessary bookkeeping to remember
+    /// that we have launched a bootstrap attempt.
+    pub(crate) async fn bootstrap(&self) -> arti_client::Result<()> {
+        *self.have_launched.lock().expect("lock poisoned") = true;
+
+        self.client.bootstrap().await
     }
 }
 
@@ -233,7 +296,6 @@ impl Application {
 impl ReconfigurableModule for Application {
     // TODO: This should probably take "how: Reconfigure" as an argument, and
     // pass it down as appropriate. See issue #1156.
-    #[allow(clippy::cognitive_complexity)]
     #[instrument(level = "trace", skip_all)]
     fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()> {
         let original = &self.original_config;
@@ -252,7 +314,6 @@ impl ReconfigurableModule for Application {
         if config.application().permit_debugging && !original.application().permit_debugging {
             warn!("Cannot disable application hardening when it has already been enabled.");
         }
-
         // Note that this is the only config transition we actually perform so far.
         if !config.application().permit_debugging {
             #[cfg(feature = "harden")]
@@ -322,6 +383,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use crate::ArtiConfigBuilder;

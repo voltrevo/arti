@@ -675,7 +675,6 @@ impl StateDirectory {
     /// Performs all the necessary steps, including liveness checks,
     /// passing an InstanceStateHandle to filter.dispose,
     /// and deleting stale lockfiles without associated state.
-    #[allow(clippy::cognitive_complexity)] // splitting this would be more, not less, confusing
     fn maybe_purge_instance(
         &self,
         now: SystemTime,
@@ -1124,6 +1123,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

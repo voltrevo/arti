@@ -386,7 +386,7 @@ impl ErrorDetail {
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "tor: {}: {}", self.detail.kind(), &self.detail)
+        write!(f, "tor: {}: {}", self.detail.kind(), self.detail)
     }
 }
 
@@ -604,6 +604,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

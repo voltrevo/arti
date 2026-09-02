@@ -241,12 +241,12 @@ define_derive_deftly! {
     ///     size_of::<Struct<String>>() + 33 + 12,
     /// );
     /// ```
-    export HasMemoryCost expect items:
+    export HasMemoryCost expect items, beta_deftly:
 
-    impl<$tgens> $crate::HasMemoryCostStructural for $ttype
-    where $twheres ${if tmeta(has_memory_cost(bounds)) {
-              ${tmeta(has_memory_cost(bounds)) as token_stream}
-    }}
+    ${impl $crate::HasMemoryCostStructural
+      where $twheres
+            ${tmeta(has_memory_cost(bounds)) as token_stream, default {}}
+    }
     {
         fn indirect_memory_cost(&self, #[allow(unused)] et: $crate::EnabledToken) -> usize {
             ${define F_INDIRECT_COST {
@@ -297,6 +297,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::arithmetic_side_effects)] // don't mind potential panicking ops in tests
 

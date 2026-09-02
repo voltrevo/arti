@@ -252,7 +252,8 @@ fn compute_max_from_total_system_mem(mem: Result<usize, MemQueryError>) -> Qty {
                     if #[cfg(target_pointer_width = "64")] {
                         8 * GIB
                     } else {
-                        1 * GIB
+                        #[expect(clippy::identity_op, reason = "consistency with 8 * GIB")]
+                        { 1 * GIB }
                     }
                 }
             });
@@ -266,13 +267,19 @@ fn compute_max_from_total_system_mem(mem: Result<usize, MemQueryError>) -> Qty {
         // > for a single relay and should allow the relay operator to run two relays
         // > if they have additional bandwidth available.
         let mut factor = 0.75;
+
+        #[cfg(target_pointer_width = "64")]
+        let is_64bit = true;
+        #[cfg(not(target_pointer_width = "64"))]
+        let is_64bit = false;
+
         // Multiplying 8 * GIB overflows the usize limit (4 GIB - 1) on 32-bit
         // platforms. So handle this properly for 32-bit platforms. Memory on 32-bit
         // targets cannot exceed 4 GIB anyways.
-        #[cfg(target_pointer_width = "64")]
-        if mem >= 8 * GIB {
+        if is_64bit && mem >= 8 * GIB {
             factor = 0.40;
         }
+
         (mem as f64 * factor) as usize
     };
 
@@ -382,6 +389,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

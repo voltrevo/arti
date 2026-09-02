@@ -4,7 +4,7 @@ use crate::err::ProofOfWorkError;
 use tor_async_utils::oneshot;
 use tor_async_utils::oneshot::Canceled;
 use tor_cell::relaycell::hs::pow::v1::ProofOfWorkV1;
-use tor_checkable::{Timebound, timed::TimerangeBound};
+use tor_checkable::{TimeBound, timed::TimeRangeBound};
 use tor_hscrypto::pk::HsBlindId;
 use tor_hscrypto::pow::v1::{Effort, Instance, SolverInput};
 use tor_netdoc::doc::hsdesc::pow::v1::PowParamsV1;
@@ -40,7 +40,7 @@ const CLIENT_MAX_POW_EFFORT: Effort = Effort::new(10000);
 #[derive(Debug)]
 pub(super) struct HsPowClientV1 {
     /// Time limited puzzle instance
-    instance: TimerangeBound<Instance>,
+    instance: TimeRangeBound<Instance>,
     /// Next effort to use
     effort: Effort,
 }
@@ -88,7 +88,8 @@ impl HsPowClientV1 {
         if self.effort == Effort::zero() {
             return Ok(None);
         }
-        let instance = self.instance.as_ref().check_valid_now()?.clone();
+        #[allow(clippy::disallowed_methods)] // TODO don't call if_valid_now, use mockable time
+        let instance = self.instance.as_ref().if_valid_now()?.clone();
         let mut input = SolverInput::new(instance, self.effort);
         // TODO: config option
         input.runtime(Default::default());

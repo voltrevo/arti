@@ -20,4 +20,7 @@
 /chutney
 /osxcross
 /.arti_rpc_test
+node_modules
 /tmp
+# test nets written from tests/chutney/
+/chutney-net

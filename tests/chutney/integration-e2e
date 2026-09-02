@@ -8,16 +8,24 @@ import subprocess
 # stdlib "from" imports
 from pathlib import Path
 
+# local imports
+from config import Config
+
 assert __name__ == "__main__", "Can't determine script dir"
 _SCRIPT_DIR = Path(sys.argv[0]).parent.resolve()
 
 subprocess.check_call([_SCRIPT_DIR.joinpath("setup")])
+config = Config.load_json(Path(_SCRIPT_DIR).joinpath("arti.run.json"))
+config.export_env()
+
+# initialize the network
+subprocess.check_call([_SCRIPT_DIR.joinpath("init")])
 
 # Try to ensure we tear down the network on exit, including failure, ctrl-c, etc.
 atexit.register(lambda: subprocess.check_call([_SCRIPT_DIR.joinpath("teardown")]))
 
 # bootstrap the network
-subprocess.check_call([_SCRIPT_DIR.joinpath("bootstrap")])
+subprocess.check_call([config.chutney, "bootstrap"])
 
 # test the network
 subprocess.check_call([_SCRIPT_DIR.joinpath("test"), "-v"])

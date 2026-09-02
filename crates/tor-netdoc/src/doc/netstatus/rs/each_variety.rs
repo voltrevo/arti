@@ -45,7 +45,7 @@ type DocDigestB64 = FixedB64<DOC_DIGEST_LEN>;
 /// <https://spec.torproject.org/dir-spec/computing-consensus.html#flavor:microdesc>
 /// `r` item.
 #[derive(Debug, Clone, Deftly)]
-#[derive_deftly(ItemValueParseable)]
+#[derive_deftly(ItemValueEncodable, ItemValueParseable)]
 #[non_exhaustive]
 pub struct RouterStatusIntroItem {
     /// The nickname for this relay.
@@ -53,22 +53,32 @@ pub struct RouterStatusIntroItem {
     /// Nicknames can be used for convenience purpose, but no more:
     /// there is no mechanism to enforce their uniqueness.
     pub nickname: Nickname,
+
     /// Fingerprint of the old-style RSA identity for this relay.
     pub identity: Base64Fingerprint,
+
     /// Digest of the document for this relay (except md consensuses)
     // TODO SPEC rename in the spec from `digest` to "doc_digest"
     // TODO SPEC in md consensuses the referenced document digest is in a separate `m` item
     pub doc_digest: ns_type!(DocDigestB64, NotPresent, DocDigestB64),
+
     /// Publication time.
     pub publication: ns_type!(
         IgnoredPublicationTimeSp,
         IgnoredPublicationTimeSp,
         Iso8601TimeSp
     ),
+
     /// IPv4 address
     pub ip: std::net::Ipv4Addr,
+
     /// Relay port
     pub or_port: u16,
+
+    /// Directory port
+    ///
+    /// Always 0 when read by the old parser.
+    pub dir_port: u16,
 }
 
 /// A single relay's status, in a network status document.
@@ -82,7 +92,7 @@ pub struct RouterStatusIntroItem {
 // entry keywords are chosen to be very short to minimise the consensus size, so we
 // use longer names in the struct and specify the keyword separately.
 #[derive(Debug, Clone, Deftly)]
-#[derive_deftly(NetdocParseable)]
+#[derive_deftly(NetdocEncodable, NetdocParseable)]
 #[non_exhaustive]
 pub struct RouterStatus {
     /// `r` --- Introduce a routerstatus entry
@@ -100,6 +110,9 @@ pub struct RouterStatus {
     /// `r` item.
     // We call this field `m` rather than `doc_digest` because it's not always the doc digest.
     // TODO SPEC in all but md consensuses the referenced document digest is in the `r` intro item
+    //
+    // TODO SPEC Adjust microdesc consensus `m` item position in the spec.
+    // This item is here because this is where C Tor puts it.  
     #[deftly(netdoc(with = doc_digest_item_m))]
     pub m: ns_type!(NotPresent, DocDigestB64, Vec<RouterStatusMdDigestsVote>),
 
@@ -142,6 +155,25 @@ pub struct RouterStatus {
     /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:w>
     #[deftly(netdoc(flatten))]
     pub weight: RelayWeightsItem,
+
+    /// `p` --- Exit ports summary
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:p>
+    ///
+    /// This field is not properly parsed in plain consensuses by the old parser.
+    #[deftly(netdoc(keyword = "p"))]
+    pub port_policy: ns_type!(Option<Intern<PortPolicy>>, NotPresent, Option<Intern<PortPolicy>>),
+
+    /// `id` --- Relay’s (ed25519) identity
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:id>
+    #[deftly(netdoc(keyword = "id"))] 
+    pub ed25519_id: ns_type!(NotPresent, NotPresent, Ed25519IdentityLine),
+
+    /// `stats` -- Statistics for this relay
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:stats>
+    pub stats: ns_type!(NotPresent, NotPresent, NetParams<F64Finite>),
 }
 
 impl RouterStatus {
@@ -153,5 +185,13 @@ impl RouterStatus {
     /// in md routerstatus entries.
     pub fn doc_digest(&self) -> &DocDigest {
         ns_expr!(&self.r.doc_digest, &self.m, &self.r.doc_digest,)
+    }
+}
+
+impl EncodeOrd for RouterStatus {
+    fn encode_cmp(&self, other: &Self) -> Ordering {
+        // Type inference seems to need a *lot* of help here!
+        let k: for <'i> fn(&'i RouterStatus) -> &'i _  = |rs| &rs .r.identity;
+        EncodeOrd::encode_cmp(k(self), k(other))
     }
 }

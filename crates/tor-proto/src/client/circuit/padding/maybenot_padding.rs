@@ -680,7 +680,6 @@ impl<S: SleepProvider> PaddingShared<S> {
         final_hop_events: &[maybenot::TriggerEvent],
     ) {
         use itertools::Itertools as _;
-        use itertools::Position as P;
         let final_idx = usize::from(hop);
         let now = self.runtime.now();
         let next_scheduled_wakeup = self.next_scheduled_wakeup;
@@ -688,9 +687,10 @@ impl<S: SleepProvider> PaddingShared<S> {
             let Some(hop_controller) = hop_controller else {
                 continue;
             };
-            let events = match position {
-                P::First | P::Middle => intermediate_hop_events,
-                P::Last | P::Only => final_hop_events,
+            let events = if position.is_last() {
+                final_hop_events
+            } else {
+                intermediate_hop_events
             };
             hop_controller.report_events_at(events, now, next_scheduled_wakeup);
         }
@@ -709,17 +709,16 @@ impl<S: SleepProvider> PaddingShared<S> {
     /// Return an error if a padding cell from `hop` would not be acceptable.
     fn inc_padding_received(&mut self, hop: HopNum) -> Result<(), ExcessPadding> {
         use itertools::Itertools as _;
-        use itertools::Position as P;
         let final_idx = usize::from(hop);
         for (position, stats) in self.stats.iter_mut().take(final_idx + 1).with_position() {
-            match (position, stats) {
-                (P::First | P::Middle, Some(stats)) => stats.n_normal += 1,
-                (P::First | P::Middle, None) => {}
-                (P::Last | P::Only, Some(stats)) => {
+            match (position.is_last(), stats) {
+                (false, Some(stats)) => stats.n_normal += 1,
+                (false, None) => {}
+                (true, Some(stats)) => {
                     stats.n_padding += 1;
                     stats.validate()?;
                 }
-                (P::Last | P::Only, None) => {
+                (true, None) => {
                     return Err(ExcessPadding::NoPaddingNegotiated);
                 }
             }

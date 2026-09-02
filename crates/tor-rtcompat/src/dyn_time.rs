@@ -21,6 +21,7 @@ macro_rules! if_preferred_runtime {{ [$($y:tt)*] [$($n:tt)*] } => { $($n)* }}
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
     any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 /// `if_preferred_runtime!{[ Y ] [ N ]}` expands to `Y` (if there's `PreferredRuntime`) or `N`
 macro_rules! if_preferred_runtime {{ [$($y:tt)*] [$($n:tt)*] } => { $($y)* }}
@@ -270,6 +271,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::useless_format)]
     use super::*;

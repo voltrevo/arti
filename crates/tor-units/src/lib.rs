@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use derive_more::{Add, Display, Div, From, FromStr, Mul};
@@ -238,6 +239,12 @@ impl From<BoundedInt32<0, 1>> for bool {
 
 impl From<BoundedInt32<0, 255>> for u8 {
     fn from(val: BoundedInt32<0, 255>) -> u8 {
+        val.value as u8
+    }
+}
+
+impl From<BoundedInt32<1, 254>> for u8 {
+    fn from(val: BoundedInt32<1, 254>) -> u8 {
         val.value as u8
     }
 }

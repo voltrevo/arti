@@ -29,6 +29,7 @@ pub(crate) enum PtReactorMessage {
     /// Notify the reactor that the currently configured set of PTs has changed.
     Reconfigured,
     /// Ask the reactor to spawn a pluggable transport binary.
+    #[cfg_attr(not(feature = "tor-channel-factory"), allow(dead_code))]
     Spawn {
         /// Spawn a binary to provide this PT.
         pt: PtTransportName,
@@ -152,14 +153,10 @@ impl<R: Runtime> PtReactor<R> {
     pub(crate) async fn run_one_step(&mut self) -> err::Result<bool> {
         use futures::future::Either;
 
-        // FIXME(eta): This allocates a lot, which is technically unnecessary but requires careful
-        //             engineering to get right. It's not really in the hot path, at least.
         let mut all_next_messages = self
             .running
             .iter_mut()
-            // We could avoid the Box, but that'd require using unsafe to replicate what tokio::pin!
-            // does under the hood.
-            .map(|pt| Box::pin(pt.next_message()))
+            .map(|pt| pt.next_message())
             .collect::<Vec<_>>();
 
         // We can't construct a select_all if all_next_messages is empty.

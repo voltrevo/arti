@@ -1,9 +1,9 @@
 [package]
 name = "tor-async-utils"
-version = "0.43.0"
+version = "0.45.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Async/futures helpers for use with Tor"
@@ -12,25 +12,41 @@ keywords = ["tor", "arti"]
 categories = ["rust-patterns"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+full = [
+    "oneshot-fused-workaround/full",
+    "tokio",
+    "tor-basic-utils/full",
+    "tor-rtcompat/full",
+    "web-time-compat/full",
+]
+tokio = ["dep:tokio", "dep:tokio-util"]
+
 [dependencies]
-derive-deftly = { version = "~1.11.0", features = ["full", "beta"] }
+cfg-if = "1.0.0"
+derive-deftly = { version = "~1.11.4", features = ["full", "beta"] }
 educe = "0.4.22"
+extend = "1.2.0"
 futures = "0.3.14"
-oneshot-fused-workaround = { path = "../oneshot-fused-workaround", version = "0.6.0" }
+oneshot-fused-workaround = { path = "../oneshot-fused-workaround", version = "0.7.0" }
 pin-project = "1"
 postage = { version = "0.5.0", default-features = false, features = ["futures-traits"] }
+sync_wrapper = "1.0.2"
 thiserror = "2"
+tokio = { version = "1.47.1", optional = true }
+tokio-util = { version = "0.7.0", features = ["compat"], optional = true }
+tor-basic-utils = { version = "0.45.0", path = "../tor-basic-utils" }
+tor-rtcompat = { version = "0.45.0", path = "../tor-rtcompat" }
+tracing = "0.1"
 void = "1"
+web-time-compat = { version = "0.2.0", path = "../web-time-compat" }
 
 [dev-dependencies]
 futures-await-test = "0.3.0"
-tokio = { version = "1.7", features = ["macros", "net", "rt", "rt-multi-thread", "time"] }
-tor-error = { path = "../tor-error", version = "0.43.0" }
-tor-rtcompat = { version = "0.43.0", path = "../tor-rtcompat" }
-tor-rtmock = { path = "../tor-rtmock", version = "0.43.0" }
-
-[features]
-full = ["oneshot-fused-workaround/full"]
-
-[package.metadata.docs.rs]
-all-features = true
+tokio = { version = "1.47.1", features = ["macros", "net", "rt", "rt-multi-thread", "time"] }
+tor-error = { path = "../tor-error", version = "0.45.0" }
+tor-rtmock = { path = "../tor-rtmock", version = "0.45.0" }
+visibility = "0.1.0"

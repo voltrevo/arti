@@ -109,6 +109,15 @@ pub(crate) struct ApplicationConfig {
     /// This has no effect on Windows.
     #[deftly(tor_config(default))]
     pub(crate) allow_running_as_root: bool,
+
+    /// If true, then we do not bootstrap a [`TorClient`](arti_client::TorClient) on startup.
+    /// Instead, we defer bootstrapping until _either_ this option is false,
+    /// or until an RPC-using application tells us to bootstrap.
+    ///
+    /// We will still bind to proxy ports at startup, but we won't make any connections
+    /// to the network until after we are bootstrapping.
+    #[deftly(tor_config(default))]
+    pub(crate) defer_bootstrap: bool,
 }
 
 /// Configuration for one or more proxy listeners.
@@ -373,6 +382,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     // TODO add this next lint to maint/add_warning, for all tests
     #![allow(clippy::iter_overeager_cloned)]
@@ -559,6 +569,7 @@ mod test {
                 "storage.port_info_file",
                 "proxy.socket_send_buf_size",
                 "proxy.socket_recv_buf_size",
+                "application.defer_bootstrap",
             ],
         );
 
@@ -746,7 +757,7 @@ mod test {
 
         eprintln!(
             "declared config exceptions for this configuration:\n{:#?}",
-            &out
+            out
         );
         out
     }
@@ -1576,7 +1587,7 @@ example config file {which:?}, uncommented={uncommented:?}
                     .map(|(i, _)| i);
                 let i = if exactly_one {
                     i.clone().exactly_one().unwrap_or_else(|_| {
-                        panic!("RE={:?} I={:#?} L={:#?}", re, i.collect_vec(), &self.lines)
+                        panic!("RE={:?} I={:#?} L={:#?}", re, i.collect_vec(), self.lines)
                     })
                 } else {
                     i.clone().next()?
@@ -1592,7 +1603,7 @@ example config file {which:?}, uncommented={uncommented:?}
             let end = find_index(end, start + 1, false, [0, 1]).unwrap_or(self.lines.len());
             eprintln!("{:?} {:?}", start, end);
             // don't tolerate empty
-            assert!(start < end, "empty, from {:#?}", &self.lines);
+            assert!(start < end, "empty, from {:#?}", self.lines);
             self.lines = self.lines.drain(..).take(end).skip(start).collect_vec();
         }
 
@@ -1629,7 +1640,7 @@ example config file {which:?}, uncommented={uncommented:?}
         /// Panic if the section cannot be parsed.
         fn parse(&self) -> tor_config::ConfigurationTree {
             let s = self.build_string();
-            eprintln!("parsing\n  --\n{}\n  --", &s);
+            eprintln!("parsing\n  --\n{}\n  --", s);
             let mut sources = tor_config::ConfigurationSources::new_empty();
             sources.push_source(
                 tor_config::ConfigurationSource::from_verbatim(s.clone()),

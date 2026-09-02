@@ -2,20 +2,31 @@
 //! rules.
 
 use std::fmt::Display;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
+use itertools::chain;
+
 use crate::NormalItemArgument;
+use crate::encode::NetdocEncodableFields;
 use crate::parse2::{
     ErrorProblem as EP, ItemArgumentParseable, ItemStream, KeywordRef, NetdocParseableFields,
     UnparsedItem,
 };
 
+use ipnet::IpNet;
+
 use super::{PolicyError, PortRange, RuleKind};
 
-/// A sequence of rules that are applied to an address:port until one
-/// matches.
+/// Sequence of `accept` and `reject` rules
 ///
+/// <https://spec.torproject.org/dir-spec/server-descriptor-format.html#item:accept>
+///
+/// Encodable in netdocs, and parseable as [`NetdocParseableFields`].
+///
+/// A specific address:port is tested against them in order;
+/// first match wins.
+//
 /// Each rule is of the form "accept PATTERN" or "reject PATTERN",
 /// where every pattern describes a set of addresses and ports.
 /// Address sets are given as a prefix of 0-128 bits that the address
@@ -82,6 +93,13 @@ impl AddrPolicy {
     pub fn push(&mut self, kind: RuleKind, pattern: AddrPortPattern) {
         self.rules.push(AddrPolicyRule { kind, pattern });
     }
+
+    /// List the rules in this pattern
+    pub fn rules(&self) -> impl DoubleEndedIterator<Item = (RuleKind, AddrPortPattern)> + '_ {
+        self.rules
+            .iter()
+            .map(|rule| (rule.kind, rule.pattern.clone()))
+    }
 }
 
 impl NetdocParseableFields for AddrPolicy {
@@ -105,6 +123,39 @@ impl NetdocParseableFields for AddrPolicy {
 
     fn finish(acc: Self::Accumulator, _: &ItemStream) -> Result<Self, EP> {
         Ok(acc)
+    }
+}
+
+impl NetdocEncodableFields for AddrPolicy {
+    fn encode_fields(&self, out: &mut crate::encode::NetdocEncoder) -> Result<(), tor_error::Bug> {
+        // The order of this field is significant, meaning we have to emit the
+        // values as they are.  The spec also strongly recommends a trailing
+        // `accept *:*` or `reject *:*`.  To comply with this, we check for
+        // an existing final rule with an ALL pattern and add a `reject *:*`
+        // if that is not the case.  This is not super nice and ideally we would
+        // do this somewhere in the type construction, but we cannot do some
+        // right now because the legacy parser accumulates it as it is.
+        const ALL: AddrPortPattern = AddrPortPattern::new_all();
+        const DEFAULT_DENY: AddrPolicyRule = AddrPolicyRule {
+            kind: RuleKind::Reject,
+            pattern: ALL,
+        };
+
+        // Add default deny in case of an absent trailing ALL.
+        let default_deny = match self.rules.last() {
+            // Do nothing if there already is a trailing ALL.
+            Some(AddrPolicyRule {
+                kind: _,
+                pattern: ALL,
+            }) => None,
+            // Add a default deny to the end.
+            _ => Some(&DEFAULT_DENY),
+        };
+
+        for rule in chain!(&self.rules, default_deny) {
+            out.push_raw_string(&format_args!("{} {}\n", rule.kind, rule.pattern));
+        }
+        Ok(())
     }
 }
 
@@ -137,6 +188,10 @@ impl Display for AddrPolicyRule {
 /// addresses by prefix, and a port pattern, which matches a range of
 /// ports.
 ///
+/// When trying to process a policy, rather than merely construct one,
+/// match the struct with an exhaustive pattern,
+/// so that any new fields break the build rather than being silently ignored.
+///
 /// # Example
 ///
 /// ```
@@ -149,28 +204,33 @@ impl Display for AddrPolicyRule {
 /// assert!(pat.matches(&localhost, 22));
 /// assert!(! pat.matches(&not_localhost, 22));
 /// ```
-#[derive(
-    Clone, Debug, Eq, PartialEq, serde_with::SerializeDisplay, serde_with::DeserializeFromStr,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)] //
+#[derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)]
+#[allow(clippy::exhaustive_structs)]
 pub struct AddrPortPattern {
     /// A pattern to match somewhere between zero and all IP addresses.
-    pattern: IpPattern,
+    pub addrs: IpPattern,
     /// A pattern to match a range of ports.
-    ports: PortRange,
+    pub ports: PortRange,
 }
 
 impl AddrPortPattern {
+    /// Return an AddrPortPattern matching specified ports on specified addresses
+    pub fn new(addrs: IpPattern, ports: PortRange) -> Self {
+        Self { addrs, ports }
+    }
+
     /// Return an AddrPortPattern matching all targets.
-    pub fn new_all() -> Self {
+    pub const fn new_all() -> Self {
         Self {
-            pattern: IpPattern::Star,
+            addrs: IpPattern::All,
             ports: PortRange::new_all(),
         }
     }
 
     /// Return true iff this pattern matches a given address and port.
     pub fn matches(&self, addr: &IpAddr, port: u16) -> bool {
-        self.pattern.matches(addr) && self.ports.contains(port)
+        self.addrs.matches(addr) && self.ports.contains(port)
     }
     /// As matches, but accept a SocketAddr.
     pub fn matches_sockaddr(&self, addr: &SocketAddr) -> bool {
@@ -181,9 +241,9 @@ impl AddrPortPattern {
 impl Display for AddrPortPattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.ports.is_all() {
-            write!(f, "{}:*", self.pattern)
+            write!(f, "{}:*", self.addrs)
         } else {
-            write!(f, "{}:{}", self.pattern, self.ports)
+            write!(f, "{}:{}", self.addrs, self.ports)
         }
     }
 }
@@ -191,71 +251,53 @@ impl Display for AddrPortPattern {
 impl FromStr for AddrPortPattern {
     type Err = PolicyError;
     fn from_str(s: &str) -> Result<Self, PolicyError> {
-        let last_colon = s.rfind(':').ok_or(PolicyError::InvalidPolicy)?;
-        let pattern: IpPattern = s[..last_colon].parse()?;
-        let ports_s = &s[last_colon + 1..];
+        let (addrs, ports_s) = s.rsplit_once(':').ok_or(PolicyError::InvalidPolicy)?;
+        let addrs: IpPattern = addrs.parse()?;
         let ports: PortRange = if ports_s == "*" {
             PortRange::new_all()
         } else {
             ports_s.parse()?
         };
 
-        Ok(AddrPortPattern { pattern, ports })
+        Ok(AddrPortPattern { addrs, ports })
     }
 }
 
 impl NormalItemArgument for AddrPortPattern {}
 
 /// A pattern that matches one or more IP addresses.
-//
-// TODO(nickm): At present there is no way for Display or FromStr to distinguish
-// V4Star, V6Star, and Star.  If we decide it's important to have a syntax for
-// "all IPv4 addresses" that isn't "0.0.0.0/0", we'll need to revisit that.
-// At present, C tor allows '*', '*4', and '*6'.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum IpPattern {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, derive_more::From)]
+// We don't expect to extend this, and users (eg, tor-dirauth)
+// will need to match it exhaustively to make sense of a policy.
+#[allow(clippy::exhaustive_enums)]
+pub enum IpPattern {
     /// Match all addresses.
-    Star,
-    /// Match all IPv4 addresses.
-    V4Star,
-    /// Match all IPv6 addresses.
-    V6Star,
-    /// Match all IPv4 addresses beginning with a given prefix.
-    V4(Ipv4Addr, u8),
-    /// Match all IPv6 addresses beginning with a given prefix.
-    V6(Ipv6Addr, u8),
+    ///
+    /// String representation: `*`.
+    ///
+    /// This is not the same as (say) `0.0.0.0/0`, because that matches only IPv4 addresses,
+    /// whereas `*` matches both IPv4 and IPv6.
+    All,
+    /// Match addresses of a particular IP version, beginning with a given prefix.
+    ///
+    /// String representation: `n.n.n.n/prefix` or `[IPv6]/prefix`.
+    /// If the prefix is maximum it is optional, and omitted by `Display`.
+    Net(#[from] IpNet),
 }
 
 impl IpPattern {
-    /// Construct an IpPattern that matches the first `mask` bits of `addr`.
-    fn from_addr_and_mask(addr: IpAddr, mask: u8) -> Result<Self, PolicyError> {
-        match (addr, mask) {
-            (IpAddr::V4(_), 0) => Ok(IpPattern::V4Star),
-            (IpAddr::V6(_), 0) => Ok(IpPattern::V6Star),
-            (IpAddr::V4(a), m) if m <= 32 => Ok(IpPattern::V4(a, m)),
-            (IpAddr::V6(a), m) if m <= 128 => Ok(IpPattern::V6(a, m)),
-            (_, _) => Err(PolicyError::InvalidMask),
-        }
+    /// Construct an IpPattern that matches the first `prefix_len` bits of `addr`.
+    pub fn from_addr_and_prefix_len(addr: IpAddr, prefix_len: u8) -> Result<Self, PolicyError> {
+        IpNet::new(addr, prefix_len)
+            .map(IpPattern::Net)
+            .map_err(|_: ipnet::PrefixLenError| PolicyError::InvalidMask)
     }
+
     /// Return true iff `addr` is matched by this pattern.
-    fn matches(&self, addr: &IpAddr) -> bool {
-        match (self, addr) {
-            (IpPattern::Star, _) => true,
-            (IpPattern::V4Star, IpAddr::V4(_)) => true,
-            (IpPattern::V6Star, IpAddr::V6(_)) => true,
-            (IpPattern::V4(pat, mask), IpAddr::V4(addr)) => {
-                let p1 = u32::from_be_bytes(pat.octets());
-                let p2 = u32::from_be_bytes(addr.octets());
-                let shift = 32 - mask;
-                (p1 >> shift) == (p2 >> shift)
-            }
-            (IpPattern::V6(pat, mask), IpAddr::V6(addr)) => {
-                let p1 = u128::from_be_bytes(pat.octets());
-                let p2 = u128::from_be_bytes(addr.octets());
-                let shift = 128 - mask;
-                (p1 >> shift) == (p2 >> shift)
-            }
-            (_, _) => false,
+    pub fn matches(&self, addr: &IpAddr) -> bool {
+        match self {
+            IpPattern::All => true,
+            IpPattern::Net(n) => n.contains(addr),
         }
     }
 }
@@ -264,11 +306,13 @@ impl Display for IpPattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use IpPattern::*;
         match self {
-            Star | V4Star | V6Star => write!(f, "*"),
-            V4(a, 32) => write!(f, "{}", a),
-            V4(a, m) => write!(f, "{}/{}", a, m),
-            V6(a, 128) => write!(f, "[{}]", a),
-            V6(a, m) => write!(f, "[{}]/{}", a, m),
+            All => write!(f, "*"),
+            // We want to omit the /prefix_len if it's the maximum, for brevity
+            Net(IpNet::V4(n)) if n.prefix_len() == 32 => write!(f, "{}", n.addr()),
+            Net(IpNet::V4(n)) => write!(f, "{}", n),
+            // We want to include the [ ] around IPv6 addresses, which ipnet omits
+            Net(IpNet::V6(n)) if n.prefix_len() == 128 => write!(f, "[{}]", n.addr()),
+            Net(IpNet::V6(n)) => write!(f, "[{}]/{}", n.addr(), n.prefix_len()),
         }
     }
 }
@@ -276,12 +320,12 @@ impl Display for IpPattern {
 /// Helper: try to parse a plain ipv4 address, or an IPv6 address
 /// wrapped in brackets.
 fn parse_addr(mut s: &str) -> Result<IpAddr, PolicyError> {
-    let bracketed = s.starts_with('[') && s.ends_with(']');
-    if bracketed {
-        s = &s[1..s.len() - 1];
+    let trimmed = s.strip_prefix('[').and_then(|s| s.strip_suffix(']'));
+    if let Some(trimmed) = trimmed {
+        s = trimmed;
     }
     let addr: IpAddr = s.parse().map_err(|_| PolicyError::InvalidAddress)?;
-    if addr.is_ipv6() != bracketed {
+    if addr.is_ipv6() != trimmed.is_some() {
         return Err(PolicyError::InvalidAddress);
     }
     Ok(addr)
@@ -290,22 +334,22 @@ fn parse_addr(mut s: &str) -> Result<IpAddr, PolicyError> {
 impl FromStr for IpPattern {
     type Err = PolicyError;
     fn from_str(s: &str) -> Result<Self, PolicyError> {
-        let (ip_s, mask_s) = match s.find('/') {
-            Some(slash_idx) => (&s[..slash_idx], Some(&s[slash_idx + 1..])),
+        let (ip_s, plen_s) = match s.split_once('/') {
+            Some((ip_s, plen_s)) => (ip_s, Some(plen_s)),
             None => (s, None),
         };
-        match (ip_s, mask_s) {
+        match (ip_s, plen_s) {
             ("*", Some(_)) => Err(PolicyError::MaskWithStar),
-            ("*", None) => Ok(IpPattern::Star),
+            ("*", None) => Ok(IpPattern::All),
             (s, Some(m)) => {
                 let a: IpAddr = parse_addr(s)?;
                 let m: u8 = m.parse().map_err(|_| PolicyError::InvalidMask)?;
-                IpPattern::from_addr_and_mask(a, m)
+                IpPattern::from_addr_and_prefix_len(a, m)
             }
             (s, None) => {
                 let a: IpAddr = parse_addr(s)?;
                 let m = if a.is_ipv4() { 32 } else { 128 };
-                IpPattern::from_addr_and_mask(a, m)
+                IpPattern::from_addr_and_prefix_len(a, m)
             }
         }
     }
@@ -325,30 +369,40 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+    use crate::encode::{NetdocEncodable, NetdocEncoder};
+
     use super::*;
 
     #[test]
     fn test_roundtrip_rules() {
-        fn check(inp: &str, outp: &str) {
-            let policy = inp.parse::<AddrPortPattern>().unwrap();
+        fn check2(inp: &str, outp: &str) {
+            let policy = inp.parse::<AddrPortPattern>().expect(inp);
             assert_eq!(format!("{}", policy), outp);
         }
+        let check = |inp| check2(inp, inp);
 
-        check("127.0.0.2/32:77-10000", "127.0.0.2:77-10000");
-        check("127.0.0.2/32:*", "127.0.0.2:*");
-        check("127.0.0.0/16:9-100", "127.0.0.0/16:9-100");
-        check("127.0.0.0/0:443", "*:443");
-        check("*:443", "*:443");
-        check("[::1]:443", "[::1]:443");
-        check("[ffaa::]/16:80", "[ffaa::]/16:80");
-        check("[ffaa::77]/128:80", "[ffaa::77]:80");
+        check2("127.0.0.2/32:77-10000", "127.0.0.2:77-10000");
+        check2("127.0.0.2/32:*", "127.0.0.2:*");
+        check("127.0.0.0/16:9-100");
+        check("127.0.0.0/0:443");
+        check("*:443");
+        check("[::1]:443");
+        check("[ffaa::]/16:80");
+        check2("[ffaa::77]/128:80", "[ffaa::77]:80");
+        check("[::]/0:443");
+
+        // Patterns with excessive prefix length for the address.
+        // It's not clear that it's correct to accept these.
+        check("127.0.0.1/8:443");
+        check("[::1]/8:443");
     }
 
     #[test]
     fn test_bad_rules() {
         fn check(s: &str) {
-            assert!(s.parse::<AddrPortPattern>().is_err());
+            let _: PolicyError = s.parse::<AddrPortPattern>().expect_err(s);
         }
 
         check("marzipan:80");
@@ -451,10 +505,7 @@ mod test {
 
     #[test]
     fn parse2() {
-        use crate::{
-            parse2::{self, ParseInput},
-            types::Ignored,
-        };
+        use crate::parse2::{self, ParseInput};
         use derive_deftly::Deftly;
 
         const RULES: &str = "\
@@ -468,16 +519,16 @@ mod test {
         reject *:*\n";
 
         #[derive(Deftly)]
-        #[derive_deftly(NetdocParseable)]
+        #[derive_deftly(NetdocParseable, NetdocEncodable)]
         struct Wrapper {
             #[allow(dead_code)]
-            intro: Ignored,
+            intro: (),
             #[deftly(netdoc(flatten))]
             ipv4_policy: AddrPolicy,
         }
 
         let wrapper = parse2::parse_netdoc::<Wrapper>(&ParseInput::new(RULES, "")).unwrap();
-        let ap = wrapper.ipv4_policy;
+        let ap = wrapper.ipv4_policy.clone();
 
         assert_eq!(
             ap.allows_sockaddr(&"1.1.1.1:80".parse().unwrap()),
@@ -504,5 +555,38 @@ mod test {
             ap.allows_sockaddr(&"1.1.1.1:70".parse().unwrap()),
             Some(RuleKind::Reject)
         );
+
+        // Do round-trip encoding.
+        let mut enc = NetdocEncoder::default();
+        wrapper.encode_unsigned(&mut enc).unwrap();
+        assert_eq!(RULES, enc.finish().unwrap());
+
+        // Test default deny.
+        let accept_all = {
+            let mut ap = AddrPolicy::new();
+            ap.push(RuleKind::Accept, AddrPortPattern::new_all());
+            ap
+        };
+        let reject_all = {
+            let mut ap = AddrPolicy::new();
+            ap.push(RuleKind::Reject, AddrPortPattern::new_all());
+            ap
+        };
+
+        let tests = [
+            (accept_all.clone(), "accept *:*"), // do not add default deny to existing
+            (reject_all.clone(), "reject *:*"), // do not add default deny to existing
+            (AddrPolicy::new(), "reject *:*"),  // add default deny to empty
+        ];
+        for (input, expected_tail) in tests {
+            let mut enc = NetdocEncoder::default();
+            Wrapper {
+                intro: (),
+                ipv4_policy: input,
+            }
+            .encode_unsigned(&mut enc)
+            .unwrap();
+            assert_eq!(expected_tail, enc.finish().unwrap().lines().last().unwrap());
+        }
     }
 }

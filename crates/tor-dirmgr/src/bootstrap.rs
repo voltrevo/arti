@@ -3,6 +3,7 @@
 
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::result::Result as StdResult;
 use std::{
     collections::HashMap,
     sync::{Arc, Weak},
@@ -195,6 +196,148 @@ fn load_documents_from_store(
     Ok(loaded)
 }
 
+/// Try to update `state` by loading cached information, on success returns the
+/// current wall-clock time.
+fn update_state<R: Runtime>(
+    dirmgr: &Arc<DirMgr<R>>,
+    attempt_id: AttemptId,
+    state: &mut Box<dyn DirState>,
+) -> Result<SystemTime> {
+    let state_desc = state.describe();
+    let mut changed = false;
+    trace!(attempt=%attempt_id, state=%state_desc,"Attempting to load directory information from cache.");
+    let load_result = load_once(dirmgr, state, attempt_id, &mut changed);
+    trace!(attempt=%attempt_id, state=%state_desc, outcome=?load_result, "Load attempt complete.");
+    if let Err(e) = &load_result {
+        // If the load failed but the error can be blamed on a directory
+        // cache, do so.
+        if let Some(source) = e.responsible_cache() {
+            dirmgr.note_errors(attempt_id, 1);
+            note_cache_error(dirmgr.circmgr()?.deref(), source, e);
+        }
+    }
+    propagate_fatal_errors!(load_result);
+    Ok(dirmgr.runtime.wallclock())
+}
+
+/// Applies changes from `state` to the manager's netdir.
+///
+/// Updates and broadcasts download progress based on the current `state`.
+/// Panics if manager's store lock is poisoned.
+// TODO(eta): Consider deprecating state.is_ready().
+fn apply_state<R: Runtime>(
+    dirmgr: &Arc<DirMgr<R>>,
+    state: &mut Box<dyn DirState>,
+    attempt_id: AttemptId,
+) -> Result<()> {
+    let mut store = dirmgr.store.lock().expect("store lock poisoned");
+    dirmgr.apply_netdir_changes(state, &mut **store)?;
+    dirmgr.update_progress(attempt_id, state.bootstrap_progress());
+    Ok(())
+}
+
+/// Errors returned by `advance_state`.
+enum AdvanceStateError {
+    /// The directory has already been downloaded completely.
+    AlreadyComplete,
+    /// The state can't currently be advanced.
+    CantAdvanceYet,
+}
+
+/// Advances the progress of the directory download.
+///
+/// Returns `Ok(())` if the state was successfully advanced.
+///
+/// # Errors
+///
+/// - Returns `AdvanceStateError::AlreadyComplete` if the directory has already been
+///   fully downloaded.
+/// - Returns `AdvanceStateError::CantAdvanceYet` if the directory is incomplete and
+///   the download cannot advance yet.
+fn advance_state(
+    state: &mut Box<dyn DirState>,
+    attempt_id: AttemptId,
+) -> StdResult<(), AdvanceStateError> {
+    if state.is_ready(Readiness::Complete) {
+        trace!(attempt=%attempt_id, state=%state.describe(), "Directory is now Complete.");
+        return Err(AdvanceStateError::AlreadyComplete);
+    }
+
+    if state.can_advance() {
+        advance(state);
+        trace!(attempt=%attempt_id, state=%state.describe(), "State has advanced.");
+        return Ok(());
+    }
+
+    Err(AdvanceStateError::CantAdvanceYet)
+}
+
+/// Return value of `perform_download`.
+///
+/// Describes the outcome of the attempt to download the current directory's state.
+enum DownloadOutcome {
+    /// the download failed with a non-fatal error.
+    DownloadFailed,
+    /// The directory being downloaded is outdated.
+    DirectoryOutdated,
+    /// The download attempt was successful, and the result has been applied to
+    /// the state.
+    Applied,
+}
+
+/// Attempts to download the current directory's state.
+///
+/// On success, it reports the outcome of the download using a
+/// `DownloadOutcome` instance and updates `now` to the current
+/// wallclock time.
+///
+/// The possible outcomes are:
+/// - `DownloadOutcome::DownloadFailed`: the download failed with a non-fatal
+///   error; the caller should proceed to the next state.
+/// - `DownloadOutcome::DirectoryOutdated`: The directory being downloaded is
+///   outdated. The caller should attempt a new download. As a side effect,
+///   the directory state has been reset.
+/// - `DownloadOutcome::Applied`: The download attempt was successful, and the
+///   result has been applied to the state.
+///
+/// Returns an error only if a fatal error occurred.
+async fn perform_download<R: Runtime>(
+    attempt_id: AttemptId,
+    dirmgr: &Weak<DirMgr<R>>,
+    now: &mut SystemTime,
+    parallelism: u8,
+    schedule: &mut TaskSchedule<R>,
+    state: &mut Box<dyn DirState>,
+) -> Result<DownloadOutcome> {
+    let reset_time = no_more_than_a_week_from(*now, state.reset_time());
+
+    *now = {
+        let dirmgr = upgrade_weak_ref(dirmgr)?;
+        futures::select_biased! {
+            outcome = download_attempt(&dirmgr, state, parallelism.into(), attempt_id).fuse() => {
+                if let Err(e) = outcome {
+                    warn_report!(e, attempt=%attempt_id, "Error while downloading.");
+                    propagate_fatal_errors!(Err(e));
+                    return Ok(DownloadOutcome::DownloadFailed);
+                } else {
+                    trace!(attempt=%attempt_id, "Successfully downloaded some information.");
+                }
+            }
+            _ = schedule.sleep_until_wallclock(reset_time).fuse() => {
+                // We need to reset. This can happen if (for
+                // example) we're downloading the last few
+                // microdescriptors on a consensus that now
+                // we're ready to replace.
+                info!(attempt=%attempt_id, "Directory being fetched is now outdated; resetting download state.");
+                reset(state);
+                return Ok(DownloadOutcome::DirectoryOutdated);
+            },
+        };
+        dirmgr.runtime.wallclock()
+    };
+    Ok(DownloadOutcome::Applied)
+}
+
 /// Construct an appropriate ClientRequest to download a consensus
 /// of the given flavor.
 pub(crate) fn make_consensus_request(
@@ -305,7 +448,6 @@ static CANNED_RESPONSE: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::n
 /// `missing`, and return each request along with the response it received.
 ///
 /// Don't launch more than `parallelism` requests at once.
-#[allow(clippy::cognitive_complexity)] // TODO: maybe refactor?
 #[instrument(level = "trace", skip_all)]
 async fn fetch_multiple<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
@@ -403,7 +545,6 @@ fn load_once<R: Runtime>(
 /// cache in `dirmgr`, advancing the state to the extent possible.
 ///
 /// No downloads are performed; the provided state will not be reset.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor? Somewhat due to tracing.
 pub(crate) fn load<R: Runtime>(
     dirmgr: &Arc<DirMgr<R>>,
     mut state: Box<dyn DirState>,
@@ -414,11 +555,7 @@ pub(crate) fn load<R: Runtime>(
         trace!(attempt=%attempt_id, state=%state.describe(), "Loading from cache");
         let mut changed = false;
         let outcome = load_once(dirmgr, &mut state, attempt_id, &mut changed);
-        {
-            let mut store = dirmgr.store.lock().expect("store lock poisoned");
-            dirmgr.apply_netdir_changes(&mut state, &mut **store)?;
-            dirmgr.update_progress(attempt_id, state.bootstrap_progress());
-        }
+        apply_state(dirmgr, &mut state, attempt_id)?;
         trace!(attempt=%attempt_id, ?outcome, "Load operation completed.");
 
         if let Err(e) = outcome {
@@ -459,7 +596,6 @@ pub(crate) fn load<R: Runtime>(
 ///
 /// This can launch one or more download requests, but will not launch more
 /// than `parallelism` requests at a time.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor?
 #[instrument(level = "trace", skip_all)]
 async fn download_attempt<R: Runtime>(
     dirmgr: &Arc<DirMgr<R>>,
@@ -543,15 +679,14 @@ async fn download_attempt<R: Runtime>(
 /// Keep resetting the state as needed.
 ///
 /// The first time that the state becomes ["usable"](Readiness::Usable), notify
-/// the sender in `on_usable`.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor!
+/// the sender in `tx_usable`.
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn download<R: Runtime>(
     dirmgr: Weak<DirMgr<R>>,
     state: &mut Box<dyn DirState>,
     schedule: &mut TaskSchedule<R>,
     attempt_id: AttemptId,
-    on_usable: &mut Option<oneshot::Sender<()>>,
+    tx_usable: &mut Option<oneshot::Sender<()>>,
 ) -> Result<()> {
     let runtime = upgrade_weak_ref(&dirmgr)?.runtime.clone();
 
@@ -564,41 +699,16 @@ pub(crate) async fn download<R: Runtime>(
         // In theory this could be inside the loop below maybe?  If we
         // want to drop the restriction that the missing() members of a
         // state must never grow, then we'll need to move it inside.
-        let mut now = {
-            let dirmgr = upgrade_weak_ref(&dirmgr)?;
-            let mut changed = false;
-            trace!(attempt=%attempt_id, state=%state.describe(),"Attempting to load directory information from cache.");
-            let load_result = load_once(&dirmgr, state, attempt_id, &mut changed);
-            trace!(attempt=%attempt_id, state=%state.describe(), outcome=?load_result, "Load attempt complete.");
-            if let Err(e) = &load_result {
-                // If the load failed but the error can be blamed on a directory
-                // cache, do so.
-                if let Some(source) = e.responsible_cache() {
-                    dirmgr.note_errors(attempt_id, 1);
-                    note_cache_error(dirmgr.circmgr()?.deref(), source, e);
-                }
-            }
-            propagate_fatal_errors!(load_result);
-            dirmgr.runtime.wallclock()
-        };
+        let mut now = update_state(&upgrade_weak_ref(&dirmgr)?, attempt_id, state)?;
 
-        // Apply any netdir changes that the state gives us.
-        // TODO(eta): Consider deprecating state.is_ready().
-        {
-            let dirmgr = upgrade_weak_ref(&dirmgr)?;
-            let mut store = dirmgr.store.lock().expect("store lock poisoned");
-            dirmgr.apply_netdir_changes(state, &mut **store)?;
-            dirmgr.update_progress(attempt_id, state.bootstrap_progress());
-        }
+        apply_state(&upgrade_weak_ref(&dirmgr)?, state, attempt_id)?;
+
         // Skip the downloads if we can...
-        if state.can_advance() {
-            advance(state);
-            trace!(attempt=%attempt_id, state=%state.describe(), "State has advanced.");
-            continue 'next_state;
-        }
-        if state.is_ready(Readiness::Complete) {
-            trace!(attempt=%attempt_id, state=%state.describe(), "Directory is now Complete.");
-            return Ok(());
+
+        match advance_state(state, attempt_id) {
+            Ok(_) => continue 'next_state,
+            Err(AdvanceStateError::AlreadyComplete) => return Ok(()),
+            Err(AdvanceStateError::CantAdvanceYet) => {}
         }
 
         let reset_time = no_more_than_a_week_from(runtime.wallclock(), state.reset_time());
@@ -615,11 +725,9 @@ pub(crate) async fn download<R: Runtime>(
             // the final attempt.
             let next_delay = retry.next_delay(&mut rand::rng());
             if let Some(delay) = delay.replace(next_delay) {
-                let time_until_reset = {
-                    reset_time
-                        .duration_since(now)
-                        .unwrap_or(Duration::from_secs(0))
-                };
+                let time_until_reset = reset_time
+                    .duration_since(now)
+                    .unwrap_or(Duration::from_secs(0));
                 let real_delay = delay.min(time_until_reset);
                 debug!(attempt=%attempt_id, "Waiting {:?} for next download attempt...", real_delay);
                 schedule.sleep(real_delay).await?;
@@ -633,62 +741,28 @@ pub(crate) async fn download<R: Runtime>(
             }
 
             info!(attempt=%attempt_id, "{}: {}", attempt + 1, state.describe());
-            let reset_time = no_more_than_a_week_from(now, state.reset_time());
+            match perform_download(attempt_id, &dirmgr, &mut now, parallelism, schedule, state)
+                .await?
+            {
+                DownloadOutcome::DownloadFailed => continue 'next_state,
+                DownloadOutcome::DirectoryOutdated => continue 'next_attempt,
+                DownloadOutcome::Applied => {}
+            }
 
-            now = {
-                let dirmgr = upgrade_weak_ref(&dirmgr)?;
-                futures::select_biased! {
-                    outcome = download_attempt(&dirmgr, state, parallelism.into(), attempt_id).fuse() => {
-                        if let Err(e) = outcome {
-                            warn_report!(e, attempt=%attempt_id, "Error while downloading.");
-                            propagate_fatal_errors!(Err(e));
-                            continue 'next_attempt;
-                        } else {
-                            trace!(attempt=%attempt_id, "Successfully downloaded some information.");
+            propagate_fatal_errors!(apply_state(&upgrade_weak_ref(&dirmgr)?, state, attempt_id));
+
+            // Exit if the download is complete. Report usable-ness if appropriate.
+            match advance_state(state, attempt_id) {
+                Err(AdvanceStateError::AlreadyComplete) => return Ok(()),
+                Ok(()) => continue 'next_state,
+                Err(AdvanceStateError::CantAdvanceYet) => {
+                    if state.is_ready(Readiness::Usable) {
+                        if let Some(tx) = tx_usable.take() {
+                            trace!(attempt=%attempt_id, state=%state.describe(), "directory is now usable.");
+                            let _ = tx.send(());
                         }
                     }
-                    _ = schedule.sleep_until_wallclock(reset_time).fuse() => {
-                        // We need to reset. This can happen if (for
-                        // example) we're downloading the last few
-                        // microdescriptors on a consensus that now
-                        // we're ready to replace.
-                        info!(attempt=%attempt_id, "Directory being fetched is now outdated; resetting download state.");
-                        reset(state);
-                        continue 'next_state;
-                    },
-                };
-                dirmgr.runtime.wallclock()
-            };
-
-            // Apply any netdir changes that the state gives us.
-            // TODO(eta): Consider deprecating state.is_ready().
-            {
-                let dirmgr = upgrade_weak_ref(&dirmgr)?;
-                let mut store = dirmgr.store.lock().expect("store lock poisoned");
-                let outcome = dirmgr.apply_netdir_changes(state, &mut **store);
-                dirmgr.update_progress(attempt_id, state.bootstrap_progress());
-                propagate_fatal_errors!(outcome);
-            }
-
-            // Exit if there is nothing more to download.
-            if state.is_ready(Readiness::Complete) {
-                trace!(attempt=%attempt_id, state=%state.describe(), "Directory is now Complete.");
-                return Ok(());
-            }
-
-            // Report usable-ness if appropriate.
-            if on_usable.is_some() && state.is_ready(Readiness::Usable) {
-                trace!(attempt=%attempt_id, state=%state.describe(), "Directory is now Usable.");
-                // Unwrap should be safe due to parent `.is_some()` check
-                #[allow(clippy::unwrap_used)]
-                let _ = on_usable.take().unwrap().send(());
-            }
-
-            if state.can_advance() {
-                // We have enough info to advance to another state.
-                advance(state);
-                trace!(attempt=%attempt_id, state=%state.describe(), "State has advanced.");
-                continue 'next_state;
+                }
             }
         }
 
@@ -740,6 +814,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::storage::DynStore;
@@ -808,7 +883,7 @@ mod test {
 
     impl DirState for DemoState {
         fn describe(&self) -> String {
-            format!("{:?}", &self)
+            format!("{:?}", self)
         }
         fn bootstrap_progress(&self) -> crate::event::DirProgress {
             crate::event::DirProgress::default()
@@ -917,13 +992,13 @@ mod test {
             // Try a bootstrap that could (but won't!) download.
             let mut state: Box<dyn DirState> = Box::new(DemoState::new1());
 
-            let mut on_usable = None;
+            let mut tx_usable = None;
             super::download(
                 Arc::downgrade(&mgr),
                 &mut state,
                 &mut schedule,
                 attempt_id,
-                &mut on_usable,
+                &mut tx_usable,
             )
             .await
             .unwrap();
@@ -956,7 +1031,7 @@ mod test {
                 ];
             }
             let mgr = Arc::new(mgr);
-            let mut on_usable = None;
+            let mut tx_usable = None;
             let attempt_id = AttemptId::next();
 
             let mut state: Box<dyn DirState> = Box::new(DemoState::new1());
@@ -965,7 +1040,7 @@ mod test {
                 &mut state,
                 &mut schedule,
                 attempt_id,
-                &mut on_usable,
+                &mut tx_usable,
             )
             .await
             .unwrap();

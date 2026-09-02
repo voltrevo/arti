@@ -35,8 +35,6 @@ pub(crate) mod doc_digest_item_m {
     use std::result::Result;
 
     /// Output the whole `m` item value
-    #[cfg(feature = "incomplete")] // untested
-    #[expect(dead_code)] // will be used when we encode a whole routerstatus
     #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn write_item_value_onto(
         digest: &FixedB64<DOC_DIGEST_LEN>,

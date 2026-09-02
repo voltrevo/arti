@@ -249,10 +249,15 @@ impl ConsensusBuilder {
             __non_exhaustive: (),
         };
 
+        let mk_versions = |v: &[String]| {
+            crate::doc::netstatus::RecommendedTorVersions::from_iter(v.iter())
+                .map_err(|_| crate::NetdocErrorKind::BadApiUsage.err())
+        };
+
         let preamble = Preamble {
             lifetime,
-            client_versions: self.client_versions.clone(),
-            server_versions: self.server_versions.clone(),
+            client_versions: mk_versions(&self.client_versions)?,
+            server_versions: mk_versions(&self.server_versions)?,
             proto_statuses,
             params: self.params.clone(),
             voting_delay: self.voting_delay,
@@ -425,6 +430,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::types::relay_flags::RelayFlag;

@@ -25,7 +25,6 @@ pub use crate::client::circuit::padding::{
 };
 use crate::client::stream::{
     DataStream, OutboundDataCmdChecker, ResolveCmdChecker, ResolveStream, StreamParameters,
-    StreamReceiver,
 };
 use crate::congestion::sendme::StreamRecvWindow;
 use crate::crypto::cell::HopNum;
@@ -33,13 +32,13 @@ use crate::memquota::{SpecificAccount as _, StreamAccount};
 use crate::stream::STREAM_READER_BUFFER;
 use crate::stream::cmdcheck::AnyCmdChecker;
 use crate::stream::flow_ctrl::xon_xoff::reader::XonXoffReaderCtrl;
-use crate::stream::{RECV_WINDOW_INIT, StreamComponents, StreamTarget, Tunnel};
+use crate::stream::{RECV_WINDOW_INIT, StreamComponents, StreamReceiver, StreamTarget, Tunnel};
 use crate::{Error, ResolveError, Result};
 use circuit::{ClientCirc, Path};
 use reactor::{CtrlCmd, CtrlMsg, FlowCtrlMsg, MetaCellHandler};
 
 use tor_cell::relaycell::StreamId;
-use tor_cell::relaycell::flow_ctrl::XonKbpsEwma;
+use tor_cell::relaycell::flow_ctrl::XonKBpsEwma;
 use tor_cell::relaycell::msg::{AnyRelayMsg, Begin, Resolve, Resolved, ResolvedVal};
 use tor_error::bad_api_usage;
 use tor_linkspec::OwnedChanTarget;
@@ -47,10 +46,7 @@ use tor_memquota::derive_deftly_template_HasMemoryCost;
 use tor_memquota::mq_queue::{ChannelSpec as _, MpscSpec};
 
 #[cfg(feature = "hs-service")]
-use crate::stream::incoming::StreamReqInfo;
-
-#[cfg(feature = "hs-service")]
-use crate::client::stream::{IncomingCmdChecker, IncomingStream};
+use crate::stream::{IncomingCmdChecker, IncomingStream, StreamReqInfo};
 
 #[cfg(feature = "send-control-msg")]
 use msghandler::{MsgHandler, UserMsgHandler};
@@ -130,7 +126,7 @@ impl ClientTunnel {
     /// Returns an error if the tunnel has more than one circuit.
     pub fn as_single_circ(&self) -> Result<&ClientCirc> {
         if self.circ.is_multi_path {
-            return Err(bad_api_usage!("Single circuit getter on multi path tunnel"))?;
+            Err(bad_api_usage!("Single circuit getter on multi path tunnel"))?;
         }
         Ok(&self.circ)
     }
@@ -260,7 +256,7 @@ impl ClientTunnel {
         filter: FILT,
     ) -> Result<impl futures::Stream<Item = IncomingStream> + use<'a, FILT>>
     where
-        FILT: crate::client::stream::IncomingStreamRequestFilter + 'a,
+        FILT: crate::stream::IncomingStreamRequestFilter + 'a,
     {
         use futures::stream::StreamExt;
 
@@ -829,7 +825,7 @@ impl ClientTunnel {
         &self,
         stream_id: StreamId,
         hop: Option<HopLocation>,
-        rate: XonKbpsEwma,
+        rate: XonKBpsEwma,
     ) -> Result<()> {
         self.circ
             .control

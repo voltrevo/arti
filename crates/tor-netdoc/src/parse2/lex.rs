@@ -188,6 +188,7 @@ impl<'s> ItemStream<'s> {
     }
 
     /// Obtain the body so far, suitable for hashing for an Orderly signature
+    #[allow(clippy::string_slice)] // TODO
     pub fn body_sofar_for_signature(&self) -> SignedDocumentBody<'s> {
         let body = &self.whole_input[0..self.byte_position()];
         SignedDocumentBody { body }
@@ -222,10 +223,11 @@ impl<'s> ItemStream<'s> {
     ///  * **`B`**: the body type: the type to which `NetdocParseableUnverified` is applied.
     ///  * **`S`**: the signatures section type.
     ///  * **`O`**: the `FooUnverified` type, which embodies the parsed body and signatures.
+    #[allow(clippy::string_slice)] // TODO
     pub fn parse_signed<
         B: HasUnverifiedParsedBody,
         S: NetdocParseableSignatures,
-        O: NetdocUnverified<Body = B, Signatures = S>,
+        O: NetdocParseableUnverified<Body = B, Signatures = S>,
     >(
         &mut self,
         outer_stop: stop_at!(),
@@ -289,6 +291,7 @@ impl<'s> ItemStream<'s> {
     }
 
     /// Yield the next item.
+    #[allow(clippy::string_slice)] // TODO
     pub fn next_item(&mut self) -> Result<Option<UnparsedItem<'s>>, EP> {
         self.peek_internal()?;
         let peeked = match self.peeked {

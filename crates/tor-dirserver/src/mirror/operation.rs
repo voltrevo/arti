@@ -27,19 +27,16 @@ use rusqlite::Transaction;
 use strum::IntoEnumIterator;
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
+use tor_checkable::TimeBound;
 use tor_dirclient::request::{AuthCertRequest, ConsensusRequest, Requestable};
 use tor_dircommon::{authority::AuthorityContacts, config::DirTolerance};
 use tor_error::{internal, into_internal};
 use tor_netdoc::{
     doc::{
         authcert::{AuthCertKeyIds, AuthCertUnverified},
-        netstatus::ConsensusFlavor,
+        netstatus::{ConsensusFlavor, md, plain},
     },
-    parse2::{
-        self,
-        poc::netstatus::{cons, md},
-        NetdocParseable, NetdocUnverified, ParseInput,
-    },
+    parse2::{self, NetdocParseable, NetdocParseableUnverified, ParseInput},
 };
 use tor_rtcompat::PreferredRuntime;
 use tracing::{debug, warn};
@@ -241,7 +238,7 @@ enum ConsensusBoundData {
 #[derive(Debug, Clone)]
 enum FlavoredConsensus {
     /// For plain consensuses.
-    Ns(cons::NetworkStatus),
+    Plain(plain::NetworkStatus),
 
     /// For microdescriptor consensuses.
     Md(md::NetworkStatus),
@@ -253,7 +250,7 @@ enum FlavoredConsensus {
 #[derive(Debug, Clone)]
 enum FlavoredConsensusSigned {
     /// For plain consensuses.
-    Ns(cons::NetworkStatusUnverified),
+    Plain(plain::NetworkStatusUnverified),
 
     /// For microdescriptor consensus.
     Md(md::NetworkStatusUnverified),
@@ -448,8 +445,8 @@ impl StaticEngine {
         // See also the relevant MR discussion:
         // <https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/3664#note_3352723>
         let consensus = match self.flavor {
-            ConsensusFlavor::Plain => FlavoredConsensus::Ns(
-                parse2::parse_netdoc::<cons::NetworkStatusUnverified>(&ParseInput::new(
+            ConsensusFlavor::Plain => FlavoredConsensus::Plain(
+                parse2::parse_netdoc::<plain::NetworkStatusUnverified>(&ParseInput::new(
                     &consensus, "",
                 ))
                 .map_err(into_internal!("invalid netdoc in database?"))?
@@ -480,6 +477,7 @@ impl StaticEngine {
 
     /// Fetches a consensus from an upstream authority.
     // TODO DIRMIRROR: Add logging.
+    #[allow(clippy::string_slice)] // TODO
     async fn fetch_consensus(
         &self,
         data: &mut ConsensusBoundData,
@@ -493,7 +491,10 @@ impl StaticEngine {
                 .map(|(raw, doc)| {
                     doc.into_iter()
                         .map(|(doc, start, end)| {
-                            (raw[start..end].to_owned(), FlavoredConsensusSigned::Ns(doc))
+                            (
+                                raw[start..end].to_owned(),
+                                FlavoredConsensusSigned::Plain(doc),
+                            )
                         })
                         .collect()
                 }),
@@ -535,6 +536,7 @@ impl StaticEngine {
     // AND to ignore all ID PKs we do not recognize.  Also, it would probably
     // be best to move the v3idents structure to a HashMap based implementation,
     // as well as the signatories result.
+    #[allow(clippy::string_slice)] // TODO
     async fn auth_certs(
         &self,
         pool: &Pool<SqliteConnectionManager>,
@@ -593,12 +595,14 @@ impl StaticEngine {
                     return None;
                 }
 
-                let verified = unverified.verify(
-                    self.authorities.v3idents(),
-                    self.tolerance.pre_valid_tolerance(),
-                    self.tolerance.post_valid_tolerance(),
-                    now.into(),
-                );
+                let verified = unverified
+                    .verify(self.authorities.v3idents())
+                    .and_then(|v| {
+                        Ok(self
+                            .tolerance
+                            .extend_tolerance(v)
+                            .if_valid_at(&now.into())?)
+                    });
                 let verified = match verified {
                     Ok(v) => v,
                     Err(e) => {
@@ -700,7 +704,7 @@ impl StaticEngine {
             Err(e) => {
                 return Err(AuthorityRequestError::Bug(internal!(
                     "unhandled dirclient error: {e}"
-                )))
+                )));
             }
         }?;
 
@@ -715,7 +719,7 @@ impl FlavoredConsensusSigned {
     /// Wrapper to obtain the signatories of a flavored consensus.
     fn signatories(&self) -> Vec<AuthCertKeyIds> {
         let sigs = match &self {
-            Self::Ns(ns) => &ns.sigs.sigs.directory_signature,
+            Self::Plain(plain) => &plain.sigs.sigs.directory_signature,
             Self::Md(md) => &md.sigs.sigs.directory_signature,
         };
         sigs.iter().map(|sig| sig.key_ids).collect()
@@ -736,6 +740,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use std::time::{Duration, SystemTime};
@@ -746,7 +751,7 @@ mod test {
         net::TcpListener,
     };
     use tor_basic_utils::test_rng::testing_rng;
-    use tor_netdoc::parse2::NetdocUnverified;
+    use tor_netdoc::parse2::NetdocParseableUnverified;
 
     use crate::database::sql;
 
@@ -883,7 +888,7 @@ mod test {
                 micro_queue,
             } => {
                 match consensus {
-                    FlavoredConsensus::Ns(_) => {}
+                    FlavoredConsensus::Plain(_) => {}
                     _ => panic!("consensus not ns"),
                 }
                 assert_eq!(
@@ -937,9 +942,9 @@ mod test {
         engine.fetch_consensus(&mut data, &[saddr]).await.unwrap();
         match data {
             ConsensusBoundData::Unverified { consensus, raw } => match consensus {
-                FlavoredConsensusSigned::Ns(ns) => {
+                FlavoredConsensusSigned::Plain(plain) => {
                     // El-cheapo verification, this is not a parser unit test.
-                    assert_eq!(ns.unwrap_unverified().0.r.len(), 2);
+                    assert_eq!(plain.unwrap_unverified().0.routers.len(), 2);
                     assert_eq!(raw, include_str!("../../testdata/consensus-ns"));
                 }
                 _ => panic!("data is not unverified ns consensus"),
@@ -952,7 +957,7 @@ mod test {
     async fn state_auth_certs() {
         let pool = create_dummy_db();
         let mut data = ConsensusBoundData::Unverified {
-            consensus: FlavoredConsensusSigned::Ns(
+            consensus: FlavoredConsensusSigned::Plain(
                 parse2::parse_netdoc(&ParseInput::new(
                     include_str!("../../testdata/consensus-ns"),
                     "",
@@ -1019,7 +1024,7 @@ mod test {
         let recent_authcerts = db::read_tx(&pool, |tx| {
             AuthCertMeta::query_recent(
                 tx,
-                &FlavoredConsensusSigned::Ns(
+                &FlavoredConsensusSigned::Plain(
                     parse2::parse_netdoc(&ParseInput::new(
                         include_str!("../../testdata/consensus-ns"),
                         "",

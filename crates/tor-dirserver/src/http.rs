@@ -11,7 +11,7 @@ use tor_error::internal;
 use std::{
     collections::VecDeque,
     convert::Infallible,
-    panic::{catch_unwind, AssertUnwindSafe},
+    panic::{AssertUnwindSafe, catch_unwind},
     str::FromStr,
     sync::Arc,
     task::{Context, Poll},
@@ -20,7 +20,7 @@ use std::{
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
-use http::{header, Method, Request, Response, StatusCode};
+use http::{Method, Request, Response, StatusCode, header};
 use http_body::{Body, Frame};
 use hyper::{
     body::Incoming,
@@ -28,7 +28,7 @@ use hyper::{
     service::service_fn,
 };
 use hyper_util::rt::TokioIo;
-use rusqlite::{params, Transaction};
+use rusqlite::{Transaction, params};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     task::JoinSet,
@@ -36,7 +36,7 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::database::{self, sql, ContentEncoding, DocumentId};
+use crate::database::{self, ContentEncoding, DocumentId, sql};
 
 mod cache;
 
@@ -145,7 +145,6 @@ impl HttpServer {
     /// This function does not fail, because all errors that could potentially
     /// occur, occur in further sub-tasks spawned by it and handled appropriately,
     /// that is usually logging the error and continuing the execution.
-    #[allow(clippy::cognitive_complexity)]
     pub(crate) async fn serve<I, S, E>(self, mut listener: I) -> Result<(), tor_error::Bug>
     where
         I: Stream<Item = Result<S, E>> + Unpin,
@@ -272,7 +271,6 @@ impl HttpServer {
     /// 6. Compose the [`Response`]
     ///
     /// TODO DIRMIRROR: Implement [`Method::HEAD`].
-    #[allow(clippy::cognitive_complexity)]
     fn handler_tx(
         cache: &Arc<StoreCache>,
         endpoints: &[Endpoint],
@@ -573,6 +571,7 @@ pub(in crate::http) mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use crate::database;
 
@@ -584,8 +583,8 @@ pub(in crate::http) mod test {
     };
 
     use flate2::{
-        write::{DeflateDecoder, DeflateEncoder, GzEncoder},
         Compression,
+        write::{DeflateDecoder, DeflateEncoder, GzEncoder},
     };
     use http::Version;
     use http_body_util::{BodyExt, Empty};

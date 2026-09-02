@@ -120,12 +120,12 @@ impl GlobalId {
     /// Returns `Ok(None)` if `s` is not tagged as an identifier for a `GlobalId`.
     pub(crate) fn try_decode(key: &MacKey, s: &ObjectId) -> Result<Option<Self>, LookupError> {
         use base64ct::{Base64Unpadded as B64, Encoding};
-        if !s.as_ref().starts_with(GlobalId::TAG_CHAR) {
+        let Some(remainder) = s.as_ref().strip_prefix(GlobalId::TAG_CHAR) else {
             return Ok(None);
-        }
+        };
         let mut bytes = [0_u8; Self::ENCODED_LEN];
-        let byte_slice = B64::decode(&s.as_ref()[1..], &mut bytes[..])
-            .map_err(|_| LookupError::NoObject(s.clone()))?;
+        let byte_slice =
+            B64::decode(remainder, &mut bytes[..]).map_err(|_| LookupError::NoObject(s.clone()))?;
         Self::try_decode_from_bytes(key, byte_slice)
             .ok_or_else(|| LookupError::NoObject(s.clone()))
             .map(Some)
@@ -173,6 +173,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

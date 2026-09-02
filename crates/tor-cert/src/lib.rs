@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 mod err;
@@ -55,6 +56,7 @@ pub use tor_cert_x509 as x509;
 use caret::caret_int;
 use tor_bytes::{Error as BytesError, Result as BytesResult};
 use tor_bytes::{Readable, Reader, Writeable, Writer};
+use tor_checkable::{TimeRange, TimeRangeBound};
 use tor_llcrypto::pk::*;
 
 use web_time_compat as time;
@@ -166,7 +168,7 @@ caret_int! {
 
 /// Structure for an Ed25519-signed certificate as described in Tor's
 /// cert-spec.txt.
-#[derive(Debug, Clone, derive_builder::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_builder::Builder)]
 #[builder(build_fn(skip))]
 pub struct Ed25519Cert {
     /// How many _hours_ after the epoch will this certificate expire?
@@ -260,7 +262,7 @@ impl CertifiedKey {
 }
 
 /// An extension in a Tor certificate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum CertExt {
     /// Indicates which Ed25519 public key signed this cert.
     SignedWithEd25519(SignedWithEd25519Ext),
@@ -269,7 +271,7 @@ enum CertExt {
 }
 
 /// Any unrecognized extension on a Tor certificate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(unused)]
 struct UnrecognizedExt {
     /// True iff this extension must be understand in order to validate the
@@ -292,7 +294,7 @@ impl CertExt {
 }
 
 /// Extension indicating that a key that signed a given certificate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SignedWithEd25519Ext {
     /// The key that signed the certificate including this extension.
     pk: ed25519::Ed25519Identity,
@@ -415,8 +417,10 @@ impl Ed25519Cert {
     }
 
     /// Return true iff this certificate will be expired at the time `when`.
+    ///
+    /// This is inclusive, meaning that `when == self.expiry()` is still valid.
     pub fn is_expired_at(&self, when: std::time::SystemTime) -> bool {
-        when >= self.expiry()
+        when > self.expiry()
     }
 
     /// Return the signed key or object that is authenticated by this
@@ -444,7 +448,7 @@ impl Ed25519Cert {
 /// [`should_have_signing_key`](KeyUnknownCert::should_have_signing_key);
 /// in the latter, call
 /// [`should_be_signed_with`](KeyUnknownCert::should_be_signed_with).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyUnknownCert {
     /// The certificate whose signing key might not be known.
     cert: UncheckedCert,
@@ -526,7 +530,7 @@ impl KeyUnknownCert {
 
 /// A certificate that has been parsed, but whose signature and
 /// timeliness have not been checked.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UncheckedCert {
     /// The parsed certificate, possibly modified by inserting an externally
     /// supplied key as its signing key.
@@ -544,7 +548,7 @@ pub struct UncheckedCert {
 
 /// A certificate that has been parsed and signature-checked, but whose
 /// timeliness has not been checked.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SigCheckedCert {
     /// The certificate that might or might not be timely
     cert: Ed25519Cert,
@@ -617,19 +621,11 @@ impl tor_checkable::SelfSigned<SigCheckedCert> for UncheckedCert {
     }
 }
 
-impl tor_checkable::Timebound<Ed25519Cert> for Ed25519Cert {
-    type Error = tor_checkable::TimeValidityError;
+impl tor_checkable::TimeBound for Ed25519Cert {
+    type Inner = Ed25519Cert;
 
-    fn is_valid_at(&self, t: &time::SystemTime) -> Result<(), Self::Error> {
-        if self.is_expired_at(*t) {
-            let expiry = self.expiry();
-            Err(Self::Error::Expired(
-                t.duration_since(expiry)
-                    .expect("certificate expiry time inconsistent"),
-            ))
-        } else {
-            Ok(())
-        }
+    fn bounds(&self) -> TimeRange {
+        TimeRangeBound::new((), ..=self.expiry())
     }
 
     fn dangerously_assume_timely(self) -> Ed25519Cert {
@@ -637,10 +633,11 @@ impl tor_checkable::Timebound<Ed25519Cert> for Ed25519Cert {
     }
 }
 
-impl tor_checkable::Timebound<Ed25519Cert> for SigCheckedCert {
-    type Error = tor_checkable::TimeValidityError;
-    fn is_valid_at(&self, t: &time::SystemTime) -> std::result::Result<(), Self::Error> {
-        self.cert.is_valid_at(t)
+impl tor_checkable::TimeBound for SigCheckedCert {
+    type Inner = Ed25519Cert;
+
+    fn bounds(&self) -> TimeRange {
+        self.cert.bounds()
     }
 
     fn dangerously_assume_timely(self) -> Ed25519Cert {
@@ -649,7 +646,7 @@ impl tor_checkable::Timebound<Ed25519Cert> for SigCheckedCert {
 }
 
 /// A certificate expiration time, represented in _hours_ since the unix epoch.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ExpiryHours(u32);
 
 /// The number of seconds in an hour.
@@ -710,6 +707,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use hex_literal::hex;

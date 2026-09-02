@@ -1624,43 +1624,8 @@ should_not_be_used_in_collection! {
     std::time::Duration,
 }
 
-/// Give a compile time error if the type $t implements $trait.
-///
-/// Includes the identifier $rule in the error message, to help the user diagnose
-/// the problem.  (This is the main difference between this macro and the one in
-/// `static_assertions`.)
-///
-/// # Example (Succeeding.)
-///
-/// ```
-/// // No error will occur; String is not Buildable.
-/// tor_config::derive::assert_not_impl!{
-///     [copy_is_forbidden_here] String : tor_config::load::Buildable
-/// }
-/// ```
-///
-/// ```compile_fail
-/// // Compile-time error _is_ given; String implements Clone.
-/// tor_config::derive::assert_not_impl!{
-///     [clone_is_forbidden_here] String : Clone
-/// }
-/// ```
-#[macro_export]
-macro_rules! assert_not_impl {
-    {[$rule:ident] $t:ty : $trait:path } => {
-        const _ : () = {
-            #[allow(dead_code, non_camel_case_types)]
-            trait $rule<X> {
-                fn item();
-            }
-            impl $rule<()> for $t { fn item() {}}
-            struct Invalid;
-            impl<T : $trait + ?Sized> $rule<Invalid> for T { fn item() {} }
-            let _ = <$t as $rule<_>>::item;
-        };
-    }
-}
-pub use assert_not_impl;
+#[deprecated = "use as tor_basic_utils::assert_not_impl instead"]
+pub use tor_basic_utils::assert_not_impl;
 
 define_derive_deftly! {
     /// Define a builder type for a given type, with settings appropriate to participate in the Arti
@@ -2175,8 +2140,7 @@ define_derive_deftly! {
     // Define the setter/accessors methods.
 
     #[allow(dead_code)]
-    impl<$tgens> $<$ttype Builder>
-    where $twheres {
+    ${impl for $<$ttype Builder>} {
         $(
             ${if any(fmeta(tor_config(setter(skip))),
                      fmeta(tor_config(skip)),
@@ -2273,8 +2237,7 @@ define_derive_deftly! {
     // Define the build method and the new() method.
 
     #[allow(dead_code)]
-    impl<$tgens> $<$ttype Builder>
-    where $twheres {
+    ${impl for $<$ttype Builder>} {
         /// Return a new builder object.
         $BLD_TVIS fn new() -> Self {
             Self::default()
@@ -2345,8 +2308,7 @@ define_derive_deftly! {
     // -------------------
     // Implement ConfigBuilder
 
-    impl<$tgens> $E::ConfigBuilder for $<$ttype Builder>
-    where $twheres {
+    ${impl $E::ConfigBuilder for $<$ttype Builder>} {
         fn apply_defaults(&mut self) -> Result<(), $E::ConfigBuildError> {
             #[allow(unused_imports)]
             use $E::ConfigBuilder as _;
@@ -2381,8 +2343,7 @@ define_derive_deftly! {
     // I'm not using that trait here because complying with its input format is rather
     // baroque, and it's easier just to do it ourselves.
 
-    impl<$tgens> $ttype
-    where $twheres {
+    $impl {
         #[doc = ${concat "Return a new [`" $tname " Builder`] to construct an instance of this type."}]
         #[allow(dead_code)]
         $tvis fn builder() -> $<$ttype Builder> {
@@ -2394,8 +2355,7 @@ define_derive_deftly! {
     // Implement `$crate::load::Builder` for the Builder type.
 
     ${if not(tmeta(tor_config(no_builder_trait))) {
-        impl<$tgens> $E::BuilderTrait for $<$ttype Builder>
-        where $twheres {
+        ${impl $E::BuilderTrait for $<$ttype Builder>} {
             type Built = $ttype;
             // We're writing it this way in case Builder::build() returns
             // a different Error type.
@@ -2412,8 +2372,7 @@ define_derive_deftly! {
     // written to apply to the configuration type and modify its builder. (!))
 
     ${if not(tmeta(tor_config(no_extendbuilder_trait))) {
-        impl<$tgens> $E::ExtendBuilder for $<$ttype Builder>
-        where $twheres {
+        ${impl $E::ExtendBuilder for $<$ttype Builder>} {
             #[allow(unused_variables)]
             fn extend_from(&mut self, other: Self, strategy: $E::ExtendStrategy) {
                 ${for fields {
@@ -2454,8 +2413,7 @@ define_derive_deftly! {
     // -------------------
     // Implement `$crate::load::Buildable` for the configuration type.
     ${if not(tmeta(tor_config(no_buildable_trait))) {
-        impl<$tgens> $E::BuildableTrait for $ttype
-        where $twheres {
+        ${impl $E::BuildableTrait} {
             type Builder = $<$ttype Builder>;
 
             fn builder() -> $<$ttype Builder> {
@@ -2469,8 +2427,7 @@ define_derive_deftly! {
     // Implement `Default` for the configuration type, in terms of the Builder.
     // (Unless the no_default_trait attribute was present.)
     ${if not(tmeta(tor_config(no_default_trait))) {
-        impl<$tgens> $E::Default for $ttype
-        where $twheres {
+        ${impl $E::Default} {
             fn default() -> Self {
                 // It's okay to use unwrap; one of the test cases verifies it.
                 $<$ttype Builder>::default().$BLD_NAME().unwrap()
@@ -2515,6 +2472,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use crate::ConfigBuildError;

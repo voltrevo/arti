@@ -24,6 +24,7 @@ mod superuser;
 use listener::RpcListenerSetConfig;
 pub(crate) use session::{RpcStateSender, RpcVisibleArtiState};
 
+use crate::reload_cfg::LaunchableTorClient;
 use crate::rpc::superuser::RpcSuperuser;
 
 /// Configuration for Arti's RPC subsystem.
@@ -65,7 +66,6 @@ type IncomingConn = (
 /// Bind to all configured RPC listeners in `cfg`.
 ///
 /// On success, return a stream of `IncomingConn`.
-#[allow(clippy::cognitive_complexity)] // TODO: Refactor?
 async fn launch_all_listeners<R: Runtime>(
     runtime: &R,
     cfg: &RpcConfig,
@@ -134,6 +134,7 @@ pub(crate) async fn launch_rpc_mgr<R: Runtime>(
     resolver: &CfgPathResolver,
     mistrust: &Mistrust,
     client: Arc<TorClient<R>>,
+    launchable: Arc<LaunchableTorClient<R>>,
 ) -> Result<Option<RpcProxySupport>> {
     if !cfg.enable {
         return Ok(None);
@@ -157,7 +158,15 @@ pub(crate) async fn launch_rpc_mgr<R: Runtime>(
     // succeeded or not. This is something we should fix when we refactor
     // our service-launching code.
     runtime.spawn(async move {
-        let result = run_rpc_listener(rt_clone, incoming, rpc_mgr_clone, client, rpc_state).await;
+        let result = run_rpc_listener(
+            rt_clone,
+            incoming,
+            rpc_mgr_clone,
+            client,
+            launchable,
+            rpc_state,
+        )
+        .await;
         if let Err(e) = result {
             tracing::warn!("RPC manager quit with an error: {}", e);
         }
@@ -175,6 +184,7 @@ async fn run_rpc_listener<R: Runtime>(
     mut incoming: impl futures::Stream<Item = IoResult<IncomingConn>> + Unpin,
     rpc_mgr: Arc<RpcMgr>,
     client: Arc<TorClient<R>>,
+    launchable: Arc<LaunchableTorClient<R>>,
     rpc_state: Arc<RpcVisibleArtiState>,
 ) -> Result<()> {
     while let Some((stream, _addr, info)) = incoming.next().await.transpose()? {
@@ -182,8 +192,9 @@ async fn run_rpc_listener<R: Runtime>(
 
         let client_clone = client.clone();
         let rpc_state_clone = rpc_state.clone();
+        let launchable = launchable.clone();
         let connection = rpc_mgr.new_connection(info.auth.clone(), move |auth| {
-            ArtiRpcSession::new(auth, &client_clone, &rpc_state_clone, &info) as _
+            ArtiRpcSession::new(auth, &client_clone, &launchable, &rpc_state_clone, &info) as _
         });
         let (input, output) = stream.split();
 
@@ -219,6 +230,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use listener::{ConnectPointOptionsBuilder, RpcListenerSetConfigBuilder};

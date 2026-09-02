@@ -10,9 +10,12 @@
 //! (We can't just use `coarsetime`'s mocking facilities,
 //! because they still use a process-wide global for the current time.)
 //!
-//! We use [`coarsetime::Instant::now`],
+//! On native platforms, this uses [`coarsetime::Instant::now`],
 //! which in turn calls the OS's
 //! `CLOCK_MONOTONIC_COARSE`, `CLOCK_MONOTONIC_FAST`, or similar.
+//!
+//! On WASM, this falls back to the standard `Instant` type since browser
+//! `performance.now()` is already relatively cheap.
 //!
 //! We don't use the non-updating coarsetime methods
 //! such as `coarsetime::Instant:: now_without_cache_update`.
@@ -44,6 +47,7 @@
 use std::time;
 
 use derive_more::{Add, AddAssign, Sub, SubAssign};
+#[cfg(not(target_arch = "wasm32"))]
 use paste::paste;
 
 use crate::traits::CoarseTimeProvider;
@@ -73,7 +77,14 @@ use crate::traits::CoarseTimeProvider;
 // methods like `from_secs`, `as_secs` etc.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)] //
 #[derive(Add, Sub, AddAssign, SubAssign)]
-pub struct CoarseDuration(coarsetime::Duration);
+pub struct CoarseDuration(
+    /// The underlying duration representation
+    #[cfg(not(target_arch = "wasm32"))]
+    coarsetime::Duration,
+    /// On WASM, use std::time::Duration directly
+    #[cfg(target_arch = "wasm32")]
+    time::Duration,
+);
 
 /// A monotonic timestamp with reduced precision, and, in the future, saturating arithmetic
 ///
@@ -109,20 +120,45 @@ pub struct CoarseDuration(coarsetime::Duration);
 /// can panic on under/overflow.
 /// We regard this as a bug.
 /// The intent is that all operations will saturate.
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)] //
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[cfg(not(target_arch = "wasm32"))]
 pub struct CoarseInstant(coarsetime::Instant);
 
+/// On WASM, use web_time_compat's Instant since coarsetime doesn't support WASM
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[cfg(target_arch = "wasm32")]
+pub struct CoarseInstant(web_time_compat::Instant);
+
+#[cfg(not(target_arch = "wasm32"))]
 impl From<time::Duration> for CoarseDuration {
     fn from(td: time::Duration) -> CoarseDuration {
         CoarseDuration(td.into())
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
 impl From<CoarseDuration> for time::Duration {
     fn from(cd: CoarseDuration) -> time::Duration {
         cd.0.into()
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+impl From<time::Duration> for CoarseDuration {
+    fn from(td: time::Duration) -> CoarseDuration {
+        CoarseDuration(td)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<CoarseDuration> for time::Duration {
+    fn from(cd: CoarseDuration) -> time::Duration {
+        cd.0
+    }
+}
+
 /// implement `$AddSub<CoarseDuration> for CoarseInstant`, and `*Assign`
+#[cfg(not(target_arch = "wasm32"))]
 macro_rules! impl_add_sub { { $($AddSub:ident),* $(,)? } => { paste! { $(
     impl std::ops::$AddSub<CoarseDuration> for CoarseInstant {
         type Output = CoarseInstant;
@@ -137,7 +173,90 @@ macro_rules! impl_add_sub { { $($AddSub:ident),* $(,)? } => { paste! { $(
         }
     }
 )* } } }
+
+#[cfg(not(target_arch = "wasm32"))]
 impl_add_sub!(Add, Sub);
+
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Add<CoarseDuration> for CoarseInstant {
+    type Output = CoarseInstant;
+    fn add(self, rhs: CoarseDuration) -> CoarseInstant {
+        CoarseInstant(self.0 + time::Duration::from(rhs))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl std::ops::AddAssign<CoarseDuration> for CoarseInstant {
+    fn add_assign(&mut self, rhs: CoarseDuration) {
+        *self = *self + rhs;
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Sub<CoarseDuration> for CoarseInstant {
+    type Output = CoarseInstant;
+    fn sub(self, rhs: CoarseDuration) -> CoarseInstant {
+        CoarseInstant(self.0 - time::Duration::from(rhs))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl std::ops::SubAssign<CoarseDuration> for CoarseInstant {
+    fn sub_assign(&mut self, rhs: CoarseDuration) {
+        *self = *self - rhs;
+    }
+}
+
+/// Implement `CoarseInstant - CoarseInstant -> CoarseDuration` (native)
+#[cfg(not(target_arch = "wasm32"))]
+impl std::ops::Sub<CoarseInstant> for CoarseInstant {
+    type Output = CoarseDuration;
+    fn sub(self, rhs: CoarseInstant) -> CoarseDuration {
+        CoarseDuration(self.0 - rhs.0)
+    }
+}
+
+/// Implement `CoarseInstant - CoarseInstant -> CoarseDuration` (WASM)
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Sub<CoarseInstant> for CoarseInstant {
+    type Output = CoarseDuration;
+    fn sub(self, rhs: CoarseInstant) -> CoarseDuration {
+        // web_time_compat::Instant subtraction returns std::time::Duration
+        CoarseDuration(self.0 - rhs.0)
+    }
+}
+
+impl CoarseInstant {
+    /// Returns the current coarse instant.
+    ///
+    /// This is a convenience method that calls the underlying platform-specific
+    /// coarse time implementation directly. On native platforms, this uses
+    /// `coarsetime::Instant::now()`. On WASM, this uses the crate's `Instant::now()`.
+    ///
+    /// Note: For mockable time in tests, prefer using `CoarseTimeProvider::now_coarse()`
+    /// from a runtime instead.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[inline]
+    pub fn now() -> Self {
+        CoarseInstant(coarsetime::Instant::now())
+    }
+
+    /// Returns the current coarse instant (WASM version).
+    #[cfg(target_arch = "wasm32")]
+    #[inline]
+    pub fn now() -> Self {
+        CoarseInstant(web_time_compat::Instant::now())
+    }
+
+    /// Returns the time elapsed since this instant was created.
+    ///
+    /// Note: For mockable time in tests, prefer computing elapsed time using
+    /// `CoarseTimeProvider::now_coarse()` from a runtime instead.
+    #[inline]
+    pub fn elapsed(&self) -> CoarseDuration {
+        Self::now() - *self
+    }
+}
 
 /// Provider of reduced-precision timestamps using the real OS clock
 ///
@@ -158,7 +277,7 @@ impl RealCoarseTimeProvider {
 
 impl CoarseTimeProvider for RealCoarseTimeProvider {
     fn now_coarse(&self) -> CoarseInstant {
-        CoarseInstant(coarsetime::Instant::now())
+        CoarseInstant::now()
     }
 }
 
@@ -177,6 +296,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     #![allow(clippy::erasing_op)]
     use super::*;

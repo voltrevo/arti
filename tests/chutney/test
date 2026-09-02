@@ -152,7 +152,7 @@ class TestNetwork(unittest.TestCase):
                 "--socks5",
                 addr_and_port_str(ip, port),
                 "-o",
-                "benchmark_results.json",
+                str(self._network.dir.joinpath("benchmark_results.json")),
             ],
             env=dict(os.environ) | dict(RUST_LOG="debug"),
         )

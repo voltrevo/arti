@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -58,6 +59,7 @@ mod time_store;
 mod internal_prelude;
 
 mod anon_level;
+mod caps;
 pub mod config;
 mod err;
 mod helpers;
@@ -337,7 +339,12 @@ impl OnionService {
             keymgr.clone(),
             pow_manager_storage_handle,
             netdir_provider.clone(),
-            status_tx.clone().into(),
+            // With hs-pow-full, PowManager::new expects PowManagerStatusSender (a newtype).
+            // Without it, the stub expects a plain StatusSender.
+            #[cfg(feature = "hs-pow-full")]
+            { status::PowManagerStatusSender::from(status_tx.clone()) },
+            #[cfg(not(feature = "hs-pow-full"))]
+            { status_tx.clone() },
             config_rx.clone(),
         )?;
 
@@ -736,6 +743,7 @@ pub(crate) mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

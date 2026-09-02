@@ -66,7 +66,7 @@ impl<W: Write + Send + Debug> SpanExporter for FileExporter<W> {
         }))
     }
 
-    fn force_flush(&mut self) -> OTelSdkResult {
+    fn force_flush(&self) -> OTelSdkResult {
         let mut writer = self
             .writer
             .lock()

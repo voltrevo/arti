@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use extend::ext;
 use std::sync::LazyLock;
 
 /// Cached value of our observed home directory.
@@ -51,7 +52,8 @@ const HOME_SUBSTITUTION: &str = {
 };
 
 /// An extension trait for [`Path`].
-pub trait PathExt {
+#[ext]
+pub impl Path {
     /// If this is a path within our home directory, try to replace the home
     /// directory component with a symbolic reference to our home directory.
     ///
@@ -69,10 +71,6 @@ pub trait PathExt {
     ///            "${HOME}/.config/arti.toml");
     /// panic!();
     /// ```
-    fn anonymize_home(&self) -> AnonHomePath<'_>;
-}
-
-impl PathExt for Path {
     fn anonymize_home(&self) -> AnonHomePath<'_> {
         AnonHomePath(self)
     }
@@ -126,6 +124,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

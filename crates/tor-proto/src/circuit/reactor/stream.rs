@@ -18,9 +18,12 @@ use crate::stream::incoming::{
 };
 
 use tor_async_utils::{SinkTrySend as _, SinkTrySendError as _};
-use tor_cell::relaycell::msg::{AnyRelayMsg, Begin, End, EndReason};
-use tor_cell::relaycell::{AnyRelayMsgOuter, RelayCellFormat, StreamId, UnparsedRelayMsg};
-use tor_error::into_internal;
+use tor_cell::chancell::CircId;
+use tor_cell::relaycell::msg::{AnyRelayMsg, Begin, BeginDir, End, EndReason, Resolve};
+use tor_cell::relaycell::{
+    AnyRelayMsgOuter, RelayCellFormat, RelayCmd, StreamId, UnparsedRelayMsg,
+};
+use tor_error::{internal, into_internal};
 use tor_log_ratelim::log_ratelim;
 use tor_rtcompat::{DynTimeProvider, Runtime, SleepProvider as _};
 
@@ -53,7 +56,7 @@ pub(crate) trait StreamHandler: Send + Sync + 'static {
 ///
 /// Drives the application streams.
 ///
-/// This reactor accepts [`StreamMsg`]s from the forward reactor over its [`Self::cell_rx`]
+/// This reactor accepts [`CtrlMsg`]s from the forward reactor over its [`Self::cell_rx`]
 /// MPSC channel, and delivers them to the corresponding stream entries in the stream map.
 ///
 /// The local streams are polled from the main loop, and any ready messages are sent
@@ -77,9 +80,12 @@ pub(crate) struct StreamReactor {
     time_provider: DynTimeProvider,
     /// An identifier for logging about this reactor's circuit.
     unique_id: UniqId,
+    /// The circuit identifier on the inbound Tor channel.
+    circ_id: CircId,
     /// Receiver for Tor stream data that need to be delivered to a Tor stream.
     ///
-    /// The sender is in [`ForwardReactor`](super::ForwardReactor), which will forward all cells
+    /// The sender is in the [`HopMgr`](super::hop_mgr::HopMgr) of the
+    /// [`ForwardReactor`](super::ForwardReactor), which will forward all cells
     /// carrying Tor stream data to us.
     ///
     /// This serves a dual purpose:
@@ -88,7 +94,7 @@ pub(crate) struct StreamReactor {
     ///   * it lets the `StreamReactor` know if the `ForwardReactor` has shut down:
     ///     we select! on this MPSC channel in the main loop, so if the `ForwardReactor`
     ///     shuts down, we will get EOS upon calling `.next()`)
-    cell_rx: mpsc::Receiver<StreamMsg>,
+    cell_rx: mpsc::Receiver<CtrlMsg>,
     /// Sender for sending Tor stream data to [`BackwardReactor`](super::BackwardReactor).
     bwd_tx: mpsc::Sender<ReadyStreamMsg>,
     /// A handler for incoming streams.
@@ -117,7 +123,8 @@ impl StreamReactor {
         hopnum: Option<HopNum>,
         hop: CircHopOutbound,
         unique_id: UniqId,
-        cell_rx: mpsc::Receiver<StreamMsg>,
+        circ_id: CircId,
+        cell_rx: mpsc::Receiver<CtrlMsg>,
         bwd_tx: mpsc::Sender<ReadyStreamMsg>,
         inner: Arc<dyn StreamHandler>,
         #[cfg(any(feature = "hs-service", feature = "relay"))] //
@@ -129,6 +136,7 @@ impl StreamReactor {
             hop,
             time_provider: DynTimeProvider::new(runtime),
             unique_id,
+            circ_id,
             #[cfg(any(feature = "hs-service", feature = "relay"))]
             incoming,
             cell_rx,
@@ -207,11 +215,7 @@ impl StreamReactor {
                 // and to remove the stream from the stream map.
                 //
                 // TODO(relay): the local sender part is not implemented yet
-                return Poll::Ready(StreamEvent::Closed {
-                    sid,
-                    behav: CloseStreamBehavior::default(),
-                    reason: streammap::TerminateReason::StreamTargetClosed,
-                });
+                return Poll::Ready(StreamEvent::ApplicationStreamClosed(sid));
             };
 
             let msg = streams.take_ready_msg(sid).expect("msg disappeared");
@@ -239,13 +243,31 @@ impl StreamReactor {
     /// Handle a stream message sent to us by the forward reactor.
     ///
     /// Delivers the message to its corresponding application stream.
-    async fn handle_reactor_cmd(&mut self, msg: StreamMsg) -> StdResult<(), ReactorError> {
-        let StreamMsg {
-            sid,
-            msg,
-            cell_counts_toward_windows,
-        } = msg;
+    async fn handle_reactor_cmd(&mut self, msg: CtrlMsg) -> StdResult<(), ReactorError> {
+        match msg {
+            CtrlMsg::DeliverStreamMsg {
+                sid,
+                msg,
+                cell_counts_toward_windows,
+            } => {
+                self.deliver_message_to_stream(sid, msg, cell_counts_toward_windows)
+                    .await
+            }
+            #[cfg(any(feature = "hs-service", feature = "relay"))]
+            CtrlMsg::ClosePendingStream { stream_id, behav } => {
+                self.close_stream(stream_id, behav, streammap::TerminateReason::ExplicitEnd)
+                    .await
+            }
+        }
+    }
 
+    /// Deliver `msg` to the specified stream
+    async fn deliver_message_to_stream(
+        &mut self,
+        sid: StreamId,
+        msg: UnparsedRelayMsg,
+        cell_counts_toward_windows: bool,
+    ) -> StdResult<(), ReactorError> {
         // We need to apply stream-level flow control *before* encoding the message.
         // May optionally return a message that needs to be sent back to the client.
         let bwd_msg = self.handle_msg(sid, msg, cell_counts_toward_windows)?;
@@ -264,8 +286,12 @@ impl StreamReactor {
             // (the BWD handles the encoding)
             if c_t_w {
                 if let Some(stream_id) = bwd_msg.stream_id() {
-                    self.hop
-                        .about_to_send(self.unique_id, stream_id, bwd_msg.msg())?;
+                    self.hop.about_to_send(
+                        self.unique_id,
+                        self.circ_id,
+                        stream_id,
+                        bwd_msg.msg(),
+                    )?;
                 }
             }
 
@@ -321,9 +347,7 @@ impl StreamReactor {
                     return self.handle_incoming_stream_request(streamid, msg);
                 } else {
                     return Err(
-                        tor_error::internal!(
-                            "incoming stream not rejected, but relay and hs-service features are disabled?!"
-                            ).into()
+                        Error::CircProto(format!("Cannot handle {} cells on this circuit", msg.cmd())).into(),
                     );
                 }
             }
@@ -361,9 +385,11 @@ impl StreamReactor {
     ) -> StdResult<Option<AnyRelayMsgOuter>, ReactorError> {
         let mut lock = self.incoming.lock().expect("poisoned lock");
         let Some(handler) = lock.as_mut() else {
-            return Err(
-                Error::CircProto("Cannot handle BEGIN cells on this circuit".into()).into(),
-            );
+            return Err(Error::CircProto(format!(
+                "Cannot handle {} cells on this circuit",
+                msg.cmd()
+            ))
+            .into());
         };
 
         if self.hopnum != handler.hop_num {
@@ -448,7 +474,8 @@ impl StreamReactor {
                 // IncomingStreamRequestHandler, we need to do it elsewhere, in
                 // a different way.
                 debug!(
-                    circ_id = %self.unique_id,
+                    circ_uniq_id = %self.unique_id,
+                    backward_circ_id = %self.circ_id,
                     "Incoming stream request receiver dropped",
                 );
                 // This will _cause_ the circuit to get closed.
@@ -502,24 +529,51 @@ impl StreamReactor {
     /// Handle a [`StreamEvent`].
     async fn handle_stream_event(&mut self, event: StreamEvent) -> StdResult<(), ReactorError> {
         match event {
-            StreamEvent::Closed { sid, behav, reason } => {
-                let timeout = self.inner.halfstream_expiry(&self.hop);
-                let expire_at = self.time_provider.now() + timeout;
-                let res =
-                    self.hop
-                        .close_stream(self.unique_id, sid, None, behav, reason, expire_at)?;
-                let Some(msg) = res else {
-                    // We may not need to send anything at all...
-                    return Ok(());
-                };
-
-                self.send_msg_to_bwd(msg.cell).await
+            StreamEvent::ApplicationStreamClosed(sid) => {
+                self.close_stream(
+                    sid,
+                    CloseStreamBehavior::default(),
+                    streammap::TerminateReason::StreamTargetClosed,
+                )
+                .await
             }
             StreamEvent::ReadyMsg { sid, msg } => {
                 self.send_msg_to_bwd(AnyRelayMsgOuter::new(Some(sid), msg))
                     .await
             }
         }
+    }
+
+    /// Close the stream that has the specified `sid`.
+    ///
+    /// The `behav` controls whether an `END` will be sent or not.
+    ///
+    /// This calls [`CircHopOutbound::close_stream`] under the hood,
+    /// which removes the stream from the stream map,
+    /// and returns an optional `END` cell to send back to the other party.
+    async fn close_stream(
+        &mut self,
+        sid: StreamId,
+        behav: CloseStreamBehavior,
+        reason: streammap::TerminateReason,
+    ) -> StdResult<(), ReactorError> {
+        let timeout = self.inner.halfstream_expiry(&self.hop);
+        let expire_at = self.time_provider.now() + timeout;
+        let res = self.hop.close_stream(
+            self.unique_id,
+            self.circ_id,
+            sid,
+            None,
+            behav,
+            reason,
+            expire_at,
+        )?;
+        let Some(msg) = res else {
+            // We may not need to send anything at all...
+            return Ok(());
+        };
+
+        self.send_msg_to_bwd(msg.cell).await
     }
 
     /// Wrap `msg` in [`ReadyStreamMsg`], and send it to the backward reactor.
@@ -542,17 +596,10 @@ impl StreamReactor {
 
 /// A Tor stream-related event.
 enum StreamEvent {
-    /// A stream was closed.
+    /// An application stream was closed.
     ///
-    /// It needs to be removed from the reactor's stream map.
-    Closed {
-        /// The ID of the stream to close.
-        sid: StreamId,
-        /// The stream-closing behavior.
-        behav: CloseStreamBehavior,
-        /// The reason for closing the stream.
-        reason: streammap::TerminateReason,
-    },
+    /// The corresponding entry needs to be removed from the reactor's stream map.
+    ApplicationStreamClosed(StreamId),
     /// A stream has a ready message.
     ReadyMsg {
         /// The ID of the stream to close.
@@ -564,15 +611,46 @@ enum StreamEvent {
 
 /// Convert an incoming stream request message (BEGIN, BEGIN_DIR, RESOLVE, etc.)
 /// to an [`IncomingStreamRequest`]
+///
+// TODO(dedup): when we rewrite the client reactor in the multi-reactor register,
+// we should rethink this part a bit: ideally, onion services shouldn't even
+// try to parse BEGIN_DIR, RESOLVE.
+//
+// We will likely need an implementation-specific hook for this,
+// similar to the `{Forward,Backward}Handler` implementation-specific handlers
+// we have for the FWD and BWD reactors.
+//
+// See https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4188#note_3432579
 #[cfg(any(feature = "hs-service", feature = "relay"))]
 fn parse_incoming_stream_req(msg: UnparsedRelayMsg) -> crate::Result<IncomingStreamRequest> {
-    // TODO(relay): support other stream-initiating messages, not just BEGIN
-    let begin = msg
-        .decode::<Begin>()
-        .map_err(|e| Error::from_bytes_err(e, "Invalid Begin message"))?
-        .into_msg();
+    /// Helper for parsing an incoming stream request
+    /// (BEGIN, BEGIN_DIR, or RESOLVE)
+    macro_rules! parse_stream_req {
+        ($msg:expr, $type:tt) => {{
+            let req = $msg
+                .decode::<$type>()
+                .map_err(|e| {
+                    Error::from_bytes_err(e, concat!("Invalid ", stringify!($type), " message"))
+                })?
+                .into_msg();
 
-    Ok(IncomingStreamRequest::Begin(begin))
+            IncomingStreamRequest::$type(req)
+        }};
+    }
+
+    let req = match msg.cmd() {
+        RelayCmd::BEGIN => parse_stream_req!(msg, Begin),
+        RelayCmd::BEGIN_DIR => parse_stream_req!(msg, BeginDir),
+        RelayCmd::RESOLVE => parse_stream_req!(msg, Resolve),
+        cmd => {
+            // It's a bug if we reach this point, because CircHopOutbound::handle_msg()
+            // should have consumed the message (by forwarding it to the appropriate stream
+            // in its stream map)
+            return Err(internal!("{cmd} is not an incoming stream request").into());
+        }
+    };
+
+    Ok(req)
 }
 
 /// A stream message to be sent to the backward reactor for delivery.
@@ -587,13 +665,26 @@ pub(crate) struct ReadyStreamMsg {
     pub(crate) ccontrol: Arc<Mutex<CongestionControl>>,
 }
 
-/// Stream data received from the other endpoint
+/// A control message
 /// that needs to be handled by [`StreamReactor`].
-pub(crate) struct StreamMsg {
-    /// The ID of the stream this message is for.
-    pub(crate) sid: StreamId,
-    /// The message.
-    pub(crate) msg: UnparsedRelayMsg,
-    /// Whether the cell this message came from counts towards flow-control windows.
-    pub(crate) cell_counts_toward_windows: bool,
+pub(crate) enum CtrlMsg {
+    /// Stream data received from the other endpoint
+    /// that needs to be delivered to a Tor stream
+    DeliverStreamMsg {
+        /// The ID of the stream this message is for.
+        sid: StreamId,
+        /// The message.
+        msg: UnparsedRelayMsg,
+        /// Whether the cell this message came from counts towards flow-control windows.
+        cell_counts_toward_windows: bool,
+    },
+
+    /// Close the specified pending incoming stream, sending the provided END message.
+    #[cfg(any(feature = "hs-service", feature = "relay"))]
+    ClosePendingStream {
+        /// The stream ID to send the END for.
+        stream_id: StreamId,
+        /// The END message to send, if any.
+        behav: CloseStreamBehavior,
+    },
 }

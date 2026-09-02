@@ -18,13 +18,18 @@
 
 mod addrpolicy;
 mod portpolicy;
+mod summary;
 
+use std::fmt;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use std::{collections::BTreeSet, fmt::Display};
 use thiserror::Error;
+use tor_basic_utils::iter_join;
 
-pub use addrpolicy::{AddrPolicy, AddrPortPattern};
+pub use addrpolicy::{AddrPolicy, AddrPortPattern, IpPattern};
 pub use portpolicy::PortPolicy;
+pub use summary::{PortPolicies, PortSummaryThresholds};
 
 use crate::NormalItemArgument;
 use crate::parse2::{ArgumentError, ArgumentStream, ItemArgumentParseable};
@@ -42,11 +47,13 @@ pub enum PolicyError {
     /// An address could not be interpreted.
     #[error("Invalid address")]
     InvalidAddress,
-    /// Tried to use a bitmask with the address "*".
-    #[error("mask with star")]
+    /// Tried to use a bitmask or prefix len with the address "*".
+    // TODO maybe rename this, we never use masks, only prefix lengths
+    #[error("mask or prefix length with star")]
     MaskWithStar,
     /// A bit mask was out of range.
-    #[error("invalid mask")]
+    // TODO maybe rename this, we never use masks, only prefix lengths
+    #[error("invalid prefix length or mask")]
     InvalidMask,
     /// A policy could not be parsed for some other reason.
     #[error("Invalid policy")]
@@ -67,8 +74,9 @@ pub enum PolicyError {
 /// assert!(! r.contains(21));
 /// assert!(! r.contains(8001));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(derive_more::Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(clippy::exhaustive_structs)]
+#[debug("PortRange({})", &self)]
 pub struct PortRange {
     /// The first port in this range.
     lo: u16,
@@ -79,13 +87,13 @@ pub struct PortRange {
 impl PortRange {
     /// Create a new port range spanning from lo to hi, asserting that
     /// the correct invariants hold.
-    fn new_unchecked(lo: u16, hi: u16) -> Self {
+    const fn new_unchecked(lo: u16, hi: u16) -> Self {
         assert!(lo != 0);
         assert!(lo <= hi);
         PortRange { lo, hi }
     }
     /// Create a port range containing all ports.
-    pub fn new_all() -> Self {
+    pub const fn new_all() -> Self {
         PortRange::new_unchecked(1, 65535)
     }
     /// Create a new PortRange.
@@ -99,6 +107,18 @@ impl PortRange {
         } else {
             None
         }
+    }
+    /// Create a new `PortRange` from a `RangeInclusive`
+    ///
+    /// Returns `None` if the range is ill-formed, or contains zero.
+    pub fn from_range(r: RangeInclusive<u16>) -> Option<Self> {
+        Self::new(*r.start(), *r.end())
+    }
+    /// Create a new `PortRange` from a `RangeInclusive`
+    ///
+    /// Returns `None` if the range is ill-formed, or contains zero.
+    pub fn to_range(self) -> RangeInclusive<u16> {
+        self.lo..=self.hi
     }
     /// Return true if a port is in this range.
     pub fn contains(&self, port: u16) -> bool {
@@ -142,22 +162,16 @@ impl Display for PortRange {
 impl FromStr for PortRange {
     type Err = PolicyError;
     fn from_str(s: &str) -> Result<Self, PolicyError> {
-        let idx = s.find('-');
-        // Find "lo" and "hi".
-        let (lo, hi) = if let Some(pos) = idx {
-            // This is a range; parse each part.
-            (
-                s[..pos]
-                    .parse::<u16>()
-                    .map_err(|_| PolicyError::InvalidPort)?,
-                s[pos + 1..]
-                    .parse::<u16>()
-                    .map_err(|_| PolicyError::InvalidPort)?,
-            )
-        } else {
-            // There was no hyphen, so try to parse this range as a singleton.
-            let v = s.parse::<u16>().map_err(|_| PolicyError::InvalidPort)?;
-            (v, v)
+        let (lo, hi) = match s.split_once('-') {
+            Some((lo, hi)) => (
+                lo.parse::<u16>().map_err(|_| PolicyError::InvalidPort)?,
+                hi.parse::<u16>().map_err(|_| PolicyError::InvalidPort)?,
+            ),
+            None => {
+                // There was no hyphen, so try to parse this range as a singleton.
+                let v = s.parse::<u16>().map_err(|_| PolicyError::InvalidPort)?;
+                (v, v)
+            }
         };
         PortRange::new(lo, hi).ok_or(PolicyError::InvalidRange)
     }
@@ -224,10 +238,10 @@ impl PortRanges {
             .is_ok()
     }
 
-    /// Inverts a [`PortRanges`].
+    /// Returns an inverted [`PortRanges`].
     ///
     /// For example, a [`PortRanges`] of `80-443` would become `1-79,444-65535`.
-    fn invert(&mut self) {
+    fn inverted(&self) -> PortRanges {
         let mut prev_hi = 0;
         let mut new_allowed = Vec::new();
         for entry in &self.0 {
@@ -241,12 +255,38 @@ impl PortRanges {
         if prev_hi < 65535 {
             new_allowed.push(PortRange::new_unchecked(prev_hi + 1, 65535));
         }
-        self.0 = new_allowed;
+        PortRanges(new_allowed)
+    }
+
+    /// Inverts a [`PortRanges`] in place
+    ///
+    /// For example, a [`PortRanges`] of `80-443` would become `1-79,444-65535`.
+    fn invert(&mut self) {
+        *self = self.inverted();
     }
 
     /// Returns an iterator for [`PortRanges`].
-    fn iter(&self) -> impl Iterator<Item = &PortRange> {
+    fn iter(&self) -> impl Iterator<Item = &PortRange> + Clone {
         self.0.iter()
+    }
+
+    /// If set of ranges is non-empty, returns a string representation
+    ///
+    /// We don't provide a normal `Display` impl, because it would have to
+    /// emit the empty string for an empty range, which would be quite odd.
+    ///
+    /// When displaying accept/reject ranges, the caller needs to
+    /// choose between prepending `accept` and prepending `reject`.
+    fn display(&self) -> Option<impl Display + '_> {
+        struct DisplayWrapper<'r>(&'r PortRanges);
+
+        impl Display for DisplayWrapper<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{}", iter_join(",", self.0.iter()))
+            }
+        }
+
+        (!self.is_empty()).then_some(DisplayWrapper(self))
     }
 }
 
@@ -285,11 +325,6 @@ impl FromIterator<u16> for PortRanges {
         out
     }
 }
-
-// There is deliberately no Display implementation for PortRanges because this
-// highly depends on the semantic wrapper around it.  For example, an empty
-// PortRanges may either be represented as `reject 1-65535` or `accept 1-65535`
-// depending on the context.
 
 impl FromStr for PortRanges {
     type Err = PolicyError;
@@ -345,6 +380,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::Result;

@@ -61,14 +61,15 @@ impl CmdLine {
             })
             .and_then(|pos| self.contents.get(pos));
 
-        match (source_line, span.as_ref()) {
+        let within = span.as_ref().and_then(|r| toml_str.get(r.clone()));
+
+        match (source_line, within) {
             (Some(source), _) => {
                 format!("Couldn't parse command line: {error_message} in {source:?}")
             }
-            (None, Some(range)) if toml_str.get(range.clone()).is_some() => format!(
-                "Couldn't parse command line: {error_message} within {:?}",
-                &toml_str[range.clone()]
-            ),
+            (None, Some(within)) => {
+                format!("Couldn't parse command line: {error_message} within {within:?}",)
+            }
             _ => format!("Couldn't parse command line: {error_message}"),
         }
     }
@@ -142,6 +143,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use figment::Provider as _;

@@ -15,24 +15,11 @@ mod data;
 mod params;
 mod resolve;
 
-#[cfg(feature = "hs-service")]
-#[cfg_attr(docsrs, doc(cfg(feature = "hs-service")))]
-pub(crate) use crate::stream::incoming::IncomingCmdChecker;
 pub use data::{DataReader, DataStream, DataWriter};
 
-// TODO(relay): stop reexporting these from here
-#[cfg(feature = "hs-service")]
-pub use crate::stream::incoming::{
-    IncomingStream, IncomingStreamRequest, IncomingStreamRequestContext,
-    IncomingStreamRequestDisposition, IncomingStreamRequestFilter,
-};
-pub use crate::stream::raw::StreamReceiver;
 pub use params::StreamParameters;
 pub use resolve::ResolveStream;
 pub(crate) use {data::OutboundDataCmdChecker, resolve::ResolveCmdChecker};
-
-#[cfg(feature = "hs-service")]
-pub(crate) use crate::stream::incoming::InboundDataCmdChecker;
 
 pub use tor_cell::relaycell::msg::IpVersionPreference;
 

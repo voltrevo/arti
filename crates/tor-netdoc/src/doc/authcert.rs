@@ -15,22 +15,25 @@ use crate::parse::parser::{Section, SectionRules};
 use crate::parse::tokenize::{ItemResult, NetDocReader};
 use crate::parse2::{
     self, ArgumentError, ArgumentStream, ItemArgumentParseable, ItemObjectParseable,
-    NetdocUnverified as _, sig_hashes::Sha1WholeKeywordLine,
+    NetdocParseableUnverified as _, sig_hashes::Sha1WholeKeywordLine,
 };
 use crate::types::misc::{Fingerprint, Iso8601TimeSp, RsaPublicParse1Helper, RsaSha1Signature};
 use crate::util::str::Extent;
 use crate::{NetdocErrorKind as EK, NormalItemArgument, Result};
 
 use tor_basic_utils::impl_debug_hex;
-use tor_checkable::{signed, timed};
-use tor_error::into_internal;
+use tor_checkable::{
+    TimeBound, signed,
+    timed::{self, TimeRangeBound},
+};
+use tor_error::{internal, into_internal};
 use tor_llcrypto::pk::rsa;
 use tor_llcrypto::{d, pk, pk::rsa::RsaIdentity};
 
 use std::sync::LazyLock;
 
 use std::result::Result as StdResult;
-use std::{net, time, time::Duration, time::SystemTime};
+use std::{net, time, time::SystemTime};
 
 use derive_deftly::Deftly;
 use digest::Digest;
@@ -42,9 +45,7 @@ mod build;
 #[allow(deprecated)]
 pub use build::AuthCertBuilder;
 
-#[cfg(feature = "incomplete")]
 mod encoded;
-#[cfg(feature = "incomplete")]
 pub use encoded::EncodedAuthCert;
 
 decl_keyword! {
@@ -192,7 +193,7 @@ pub struct UncheckedAuthCert {
     location: Option<Extent>,
 
     /// The actual unchecked certificate.
-    c: signed::SignatureGated<timed::TimerangeBound<AuthCert>>,
+    c: signed::SignatureGated<timed::TimeRangeBound<AuthCert>>,
 }
 
 impl UncheckedAuthCert {
@@ -398,7 +399,10 @@ impl AuthCert {
             #[allow(clippy::unwrap_used)]
             let end_offset = body.last_item().unwrap().offset_in(s).unwrap();
             let end_offset = end_offset + "dir-key-certification\n".len();
-            sha1.update(&s[start_offset..end_offset]);
+            sha1.update(
+                s.get(start_offset..end_offset)
+                    .ok_or(internal!("chopped utf8"))?,
+            );
             let sha1 = sha1.finalize();
             // TODO: we need to accept prefixes here. COMPAT BLOCKER.
 
@@ -411,7 +415,9 @@ impl AuthCert {
             let start_idx = start_pos.offset_within(s);
             let end_idx = end_pos.offset_within(s);
             match (start_idx, end_idx) {
-                (Some(a), Some(b)) => Extent::new(s, &s[a..b + 1]),
+                (Some(a), Some(b)) => {
+                    Extent::new(s, s.get(a..b + 1).ok_or(internal!("chopped utf8"))?)
+                }
                 _ => None,
             }
         };
@@ -431,7 +437,7 @@ impl AuthCert {
         let signatures: Vec<Box<dyn pk::ValidatableSignature>> =
             vec![Box::new(v_crosscert), Box::new(v_sig)];
 
-        let timed = timed::TimerangeBound::new(authcert, *dir_key_published..*dir_key_expires);
+        let timed = timed::TimeRangeBound::new(authcert, *dir_key_published..*dir_key_expires);
         let signed = signed::SignatureGated::new(timed, signatures);
         let unchecked = UncheckedAuthCert {
             location,
@@ -590,10 +596,10 @@ impl ItemObjectEncodable for CrossCertObject {
     }
 }
 
-impl tor_checkable::SelfSigned<timed::TimerangeBound<AuthCert>> for UncheckedAuthCert {
+impl tor_checkable::SelfSigned<timed::TimeRangeBound<AuthCert>> for UncheckedAuthCert {
     type Error = signature::Error;
 
-    fn dangerously_assume_wellsigned(self) -> timed::TimerangeBound<AuthCert> {
+    fn dangerously_assume_wellsigned(self) -> timed::TimeRangeBound<AuthCert> {
         self.c.dangerously_assume_wellsigned()
     }
     fn is_well_signed(&self) -> std::result::Result<(), Self::Error> {
@@ -622,10 +628,7 @@ impl AuthCertUnverified {
     pub fn verify(
         self,
         v3idents: &[RsaIdentity],
-        pre_tolerance: Duration,
-        post_tolerance: Duration,
-        now: SystemTime,
-    ) -> StdResult<AuthCert, parse2::VerifyFailed> {
+    ) -> StdResult<TimeRangeBound<AuthCert>, parse2::VerifyFailed> {
         let (body, sigs) = (self.body, self.sigs);
 
         // (1) Check whether this comes from a valid authority in `v3idents`.
@@ -635,7 +638,6 @@ impl AuthCertUnverified {
 
         // (2) Check whether the timestamps are valid (± tolerance).
         let validity = *body.dir_key_published..=*body.dir_key_expires;
-        parse2::check_validity_time_tolerance(now, validity, pre_tolerance, post_tolerance)?;
 
         // (3) Check whether the fingerprint and long-term identity key match.
         if body.dir_identity_key.to_rsa_identity() != *body.fingerprint {
@@ -654,7 +656,7 @@ impl AuthCertUnverified {
             &sigs.sigs.dir_key_certification.signature,
         )?;
 
-        Ok(body)
+        Ok(TimeRangeBound::new(body, validity))
     }
 
     /// Verify the signatures (and check validity times)
@@ -666,7 +668,7 @@ impl AuthCertUnverified {
     /// The caller must check that the KP_auth_id is correct/relevant.
     pub fn verify_selfcert(self, now: SystemTime) -> StdResult<AuthCert, parse2::VerifyFailed> {
         let h_kp_auth_id_rsa = self.inspect_unverified().0.fingerprint.0;
-        self.verify(&[h_kp_auth_id_rsa], Duration::ZERO, Duration::ZERO, now)
+        Ok(self.verify(&[h_kp_auth_id_rsa])?.if_valid_at(&now)?)
     }
 }
 
@@ -716,9 +718,6 @@ impl AuthCert {
     ///
     /// Yields the string representation of the signed, encoded, document,
     /// as an [`EncodedAuthCert`].
-    // TODO these features are quite tangled
-    // `EncodedAuthCert` is only available with `parse2` and `plain-consensus`
-    #[cfg(feature = "incomplete")] // Needs EncodedAuthCert
     pub fn encode_sign(&self, k_auth_id_rsa: &rsa::KeyPair) -> StdResult<EncodedAuthCert, Bug> {
         let mut encoder = NetdocEncoder::new();
         self.encode_unsigned(&mut encoder)?;
@@ -754,18 +753,22 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::{
         Pos,
+        encode::encode_netdoc_unsigned,
         parse2::{ErrorProblem, ParseError, ParseInput, VerifyFailed, parse_netdoc},
         types,
     };
     use humantime::parse_rfc3339;
     use std::result::Result;
     use std::{
+        fs,
         net::{Ipv4Addr, SocketAddrV4},
         str::FromStr,
+        time::Duration,
     };
     use tor_basic_utils::test_rng;
 
@@ -784,7 +787,7 @@ mod test {
 
     #[test]
     fn parse_one() -> crate::Result<()> {
-        use tor_checkable::{SelfSigned, Timebound};
+        use tor_checkable::{SelfSigned, TimeBound};
         let cert = AuthCert::parse(TESTDATA)?
             .check_signature()
             .unwrap()
@@ -1053,120 +1056,99 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             parse2::parse_netdoc::<AuthCertUnverified>(&ParseInput::new(AUTHCERT_RAW, "")).unwrap();
 
         // Test a valid signature.
-        res.clone()
-            .verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::ZERO,
-                to_system_time(VALID_SYSTEM_TIME),
-            )
+        let _: AuthCert = res
+            .clone()
+            .verify(&[to_rsa_id(FINGERPRINT)])
+            .unwrap()
+            .if_valid_at(&to_system_time(VALID_SYSTEM_TIME))
             .unwrap();
 
         // Test with an invalid authority.
         assert_eq!(
-            res.clone()
-                .verify(
-                    &[],
-                    Duration::ZERO,
-                    Duration::ZERO,
-                    to_system_time(VALID_SYSTEM_TIME),
-                )
-                .unwrap_err(),
+            res.clone().verify(&[],).unwrap_err(),
             VerifyFailed::InsufficientTrustedSigners
         );
 
         // Test a key too far in the future.
         assert_eq!(
             res.clone()
-                .verify(
-                    &[to_rsa_id(FINGERPRINT)],
-                    Duration::ZERO,
-                    Duration::ZERO,
-                    SystemTime::UNIX_EPOCH,
-                )
+                .verify(&[to_rsa_id(FINGERPRINT)],)
+                .unwrap()
+                .if_valid_at(&SystemTime::UNIX_EPOCH,)
+                .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooNew
         );
 
         // Test an almost too new.
-        res.clone()
-            .verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::ZERO,
-                to_system_time(DIR_KEY_PUBLISHED),
-            )
+        let _: AuthCert = res
+            .clone()
+            .verify(&[to_rsa_id(FINGERPRINT)])
+            .unwrap()
+            .if_valid_at(&to_system_time(DIR_KEY_PUBLISHED))
             .unwrap();
 
         // Now fail when we are 1s below ...
         assert_eq!(
             res.clone()
-                .verify(
-                    &[to_rsa_id(FINGERPRINT)],
-                    Duration::ZERO,
-                    Duration::ZERO,
-                    to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1),
-                )
+                .verify(&[to_rsa_id(FINGERPRINT)],)
+                .unwrap()
+                .if_valid_at(&(to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1)),)
+                .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooNew
         );
 
         // ... but succeed again with a clock skew tolerance.
-        res.clone()
-            .verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::from_secs(1),
-                Duration::ZERO,
-                to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1),
-            )
+        let _: AuthCert = res
+            .clone()
+            .verify(&[to_rsa_id(FINGERPRINT)])
+            .unwrap()
+            .extend_start_bound(Duration::from_secs(1))
+            .if_valid_at(&(to_system_time(DIR_KEY_PUBLISHED) - Duration::from_secs(1)))
             .unwrap();
 
         // Test a key too old.
         assert_eq!(
             res.clone()
-                .verify(
-                    &[to_rsa_id(FINGERPRINT)],
-                    Duration::ZERO,
-                    Duration::ZERO,
-                    SystemTime::UNIX_EPOCH
+                .verify(&[to_rsa_id(FINGERPRINT)],)
+                .unwrap()
+                .if_valid_at(
+                    &SystemTime::UNIX_EPOCH
                         .checked_add(Duration::from_secs(2000000000))
                         .unwrap(),
                 )
+                .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooOld
         );
 
         // Test an almost too old.
-        res.clone()
-            .verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::ZERO,
-                to_system_time(DIR_KEY_EXPIRES),
-            )
+        let _: AuthCert = res
+            .clone()
+            .verify(&[to_rsa_id(FINGERPRINT)])
+            .unwrap()
+            .if_valid_at(&to_system_time(DIR_KEY_EXPIRES))
             .unwrap();
 
         // Now fail when we are 1s above ...
         assert_eq!(
             res.clone()
-                .verify(
-                    &[to_rsa_id(FINGERPRINT)],
-                    Duration::ZERO,
-                    Duration::ZERO,
-                    to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1),
-                )
+                .verify(&[to_rsa_id(FINGERPRINT)],)
+                .unwrap()
+                .if_valid_at(&(to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1)),)
+                .map_err(VerifyFailed::from)
                 .unwrap_err(),
             VerifyFailed::TooOld
         );
 
         // ... but succeed again with a clock skew tolerance.
-        res.clone()
-            .verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::from_secs(1),
-                to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1),
-            )
+        let _: AuthCert = res
+            .clone()
+            .verify(&[to_rsa_id(FINGERPRINT)])
+            .unwrap()
+            .extend_end_bound(Duration::from_secs(1))
+            .if_valid_at(&(to_system_time(DIR_KEY_EXPIRES) + Duration::from_secs(1)))
             .unwrap();
 
         // Check with non-matching fingerprint and long-term identity key.
@@ -1179,13 +1161,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
         .unwrap();
         cert.body.dir_identity_key = alternative_cert.body.dir_identity_key.clone();
         assert_eq!(
-            cert.verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::ZERO,
-                to_system_time(VALID_SYSTEM_TIME),
-            )
-            .unwrap_err(),
+            cert.verify(&[to_rsa_id(FINGERPRINT)],).unwrap_err(),
             VerifyFailed::Inconsistent
         );
 
@@ -1194,13 +1170,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             parse2::parse_netdoc::<AuthCertUnverified>(&ParseInput::new(AUTHCERT_RAW, "")).unwrap();
         cert.body.dir_key_crosscert = alternative_cert.body.dir_key_crosscert.clone();
         assert_eq!(
-            cert.verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::ZERO,
-                to_system_time(VALID_SYSTEM_TIME),
-            )
-            .unwrap_err(),
+            cert.verify(&[to_rsa_id(FINGERPRINT)],).unwrap_err(),
             VerifyFailed::VerifyFailed
         );
 
@@ -1209,13 +1179,7 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
             parse2::parse_netdoc::<AuthCertUnverified>(&ParseInput::new(AUTHCERT_RAW, "")).unwrap();
         cert.sigs = alternative_cert.sigs.clone();
         assert_eq!(
-            cert.verify(
-                &[to_rsa_id(FINGERPRINT)],
-                Duration::ZERO,
-                Duration::ZERO,
-                to_system_time(VALID_SYSTEM_TIME),
-            )
-            .unwrap_err(),
+            cert.verify(&[to_rsa_id(FINGERPRINT)],).unwrap_err(),
             VerifyFailed::VerifyFailed
         );
     }
@@ -1239,16 +1203,13 @@ mzMT023bleZ574az+117yNAr6XbIgqQfzbySzVLPXM8ZN9BrGR40KDZ2638ZJjRu
 ids 1234567812345678123456781234567812345678 ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD
 "#;
         let doc = parse2::parse_netdoc::<Doc>(&ParseInput::new(text, "<text>"))?;
-        let mut re_encode = NetdocEncoder::new();
-        doc.encode_unsigned(&mut re_encode)?;
-        let re_encode = re_encode.finish()?;
+        let re_encode = encode_netdoc_unsigned([&doc])?;
 
-        assert_eq!(text, re_encode);
+        assert_eq_or_diff!(text, re_encode);
         Ok(())
     }
 
     #[test]
-    #[cfg(feature = "incomplete")]
     fn roundtrip() -> Result<(), anyhow::Error> {
         let mut rng = test_rng::testing_rng();
         let k_auth_id_rsa = rsa::KeyPair::generate(&mut rng)?;
@@ -1270,15 +1231,30 @@ ids 1234567812345678123456781234567812345678 ABCDABCDABCDABCDABCDABCDABCDABCDABC
 
         let reparsed_uv: AuthCertUnverified =
             parse_netdoc(&ParseInput::new(encoded.as_ref(), "<encoded>"))?;
-        let reparsed_value = reparsed_uv.verify(
-            &[k_auth_id_rsa.to_public_key().to_rsa_identity()],
-            tolerance,
-            tolerance,
-            now,
-        )?;
+        let reparsed_value = reparsed_uv
+            .verify(&[k_auth_id_rsa.to_public_key().to_rsa_identity()])?
+            .extend_start_bound(tolerance)
+            .extend_end_bound(tolerance)
+            .if_valid_at(&now)?;
         dbg!(&reparsed_value);
 
         assert_eq!(input_value, reparsed_value);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_authcert() -> anyhow::Result<()> {
+        let file = "testdata2/cached-certs--1";
+        let now = parse_rfc3339("2000-06-01T00:00:05Z")?;
+        let text = fs::read_to_string(file)?;
+        let input = ParseInput::new(&text, file);
+        let doc: AuthCertUnverified = parse_netdoc(&input)?;
+        let doc = doc.verify_selfcert(now)?;
+        println!("{doc:?}");
+        assert_eq!(
+            doc.fingerprint.0.to_string(),
+            "$0b8997614ec647c1c6b6a044e2b5408f0b823fb0",
+        );
         Ok(())
     }
 }

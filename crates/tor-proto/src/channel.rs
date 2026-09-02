@@ -60,6 +60,9 @@ pub mod params;
 mod reactor;
 mod unique_id;
 
+#[cfg(test)]
+pub(crate) mod test_utils;
+
 pub use crate::channel::params::*;
 pub(crate) use crate::channel::reactor::Reactor;
 use crate::channel::reactor::{BoxedChannelSink, BoxedChannelStream};
@@ -87,7 +90,7 @@ use tor_cell::chancell::{AnyChanCell, CircId, msg::Netinfo, msg::PaddingNegotiat
 use tor_error::internal;
 use tor_linkspec::{HasRelayIds, OwnedChanTarget};
 use tor_memquota::mq_queue::{self, ChannelSpec as _, MpscSpec};
-use tor_rtcompat::{CoarseTimeProvider, DynTimeProvider, Runtime, SleepProvider};
+use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, DynTimeProvider, Runtime, SleepProvider};
 
 #[cfg(feature = "circ-padding")]
 use tor_async_utils::counting_streams::{self, CountingSink, CountingStream};
@@ -302,7 +305,7 @@ pub struct Channel {
     /// created.
     clock_skew: ClockSkew,
     /// The time when this channel was successfully completed
-    opened_at: coarsetime::Instant,
+    opened_at: CoarseInstant,
     /// Mutable state used by the `Channel.
     mutable: Mutex<MutableDetails>,
     /// Information shared with the reactor
@@ -598,7 +601,7 @@ impl Channel {
             peer_id,
             peer: peer.map(Arc::new),
             clock_skew,
-            opened_at: coarsetime::Instant::now(),
+            opened_at: CoarseInstant::now(),
             mutable: Mutex::new(mutable),
             details: Arc::clone(&details),
             canonicity,
@@ -819,10 +822,11 @@ impl Channel {
     ///
     /// Return `None` if the channel is currently in use.
     pub fn duration_unused(&self) -> Option<std::time::Duration> {
-        self.details
-            .unused_since
-            .time_since_update()
-            .map(Into::into)
+        let duration = self.details.unused_since.time_since_update();
+        #[cfg(not(target_arch = "wasm32"))]
+        { duration.map(Into::into) }
+        #[cfg(target_arch = "wasm32")]
+        { duration }
     }
 
     /// Return a new [`ChannelSender`] to transmit cells on this channel.
@@ -863,21 +867,23 @@ impl Channel {
         // TODO: blocking is risky, but so is unbounded.
         let (sender, receiver) =
             MpscSpec::new(128).new_mq(time_prov.clone(), memquota.as_raw_account())?;
+        let (sender, receiver) = crate::circuit::circ_sender::channel(sender, receiver);
         let (createdsender, createdreceiver) = oneshot::channel::<CreateResponse>();
 
         let (tx, rx) = oneshot::channel();
+
         self.send_control(CtrlMsg::AllocateCircuit {
             created_sender: createdsender,
             sender,
             tx,
         })?;
-        let (id, circ_unique_id, padding_ctrl, padding_stream) =
+        let (circ_id, circ_unique_id, padding_ctrl, padding_stream) =
             rx.await.map_err(|_| ChannelClosed)??;
 
-        trace!("{}: Allocated CircId {}", circ_unique_id, id);
+        trace!("{}: Allocated CircId {}", circ_unique_id, circ_id);
 
         Ok(PendingClientTunnel::new(
-            id,
+            circ_id,
             self.clone(),
             createdreceiver,
             receiver,
@@ -911,6 +917,7 @@ impl Channel {
         // TODO: blocking is risky, but so is unbounded.
         let (sender, receiver) =
             MpscSpec::new(128).new_mq(time_prov.clone(), memquota.as_raw_account())?;
+        let (sender, receiver) = crate::circuit::circ_sender::channel(sender, receiver);
         let (createdsender, createdreceiver) = oneshot::channel::<CreateResponse>();
 
         let (tx, rx) = oneshot::channel();
@@ -1045,7 +1052,7 @@ impl Channel {
             peer_id,
             peer: MaybeSensitive::not_sensitive(Arc::new(PeerInfo::EMPTY)),
             clock_skew: ClockSkew::None,
-            opened_at: coarsetime::Instant::now(),
+            opened_at: CoarseInstant::now(),
             mutable: Default::default(),
             details,
             canonicity: Canonicity::new_canonical(),
@@ -1215,7 +1222,7 @@ pub(crate) mod test {
             peer_id,
             peer: MaybeSensitive::not_sensitive(Arc::new(PeerInfo::EMPTY)),
             clock_skew: ClockSkew::None,
-            opened_at: coarsetime::Instant::now(),
+            opened_at: CoarseInstant::now(),
             mutable: Default::default(),
             details: fake_channel_details(),
             canonicity: Canonicity::new_canonical(),

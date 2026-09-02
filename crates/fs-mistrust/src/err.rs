@@ -11,12 +11,9 @@ use crate::anon_home::PathExt as _;
 /// Define a local-only version of anonymize_home so that we can define our errors
 /// unconditionally.
 #[cfg(not(feature = "anon_home"))]
-trait PathExt {
+#[extend::ext]
+impl Path {
     /// A do-nothing extension function.
-    fn anonymize_home(&self) -> impl std::fmt::Display + '_;
-}
-#[cfg(not(feature = "anon_home"))]
-impl PathExt for Path {
     #[allow(clippy::disallowed_methods)] // lossiness is expected
     fn anonymize_home(&self) -> impl std::fmt::Display + '_ {
         self.display()
@@ -302,6 +299,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

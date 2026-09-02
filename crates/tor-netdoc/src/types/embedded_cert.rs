@@ -1,7 +1,12 @@
 //! Types related to certificates
 
-use crate::encode::{ItemEncoder, ItemObjectEncodable, ItemValueEncodable};
-use crate::parse2::{ErrorProblem as P2EP, ItemObjectParseable, ItemValueParseable, UnparsedItem};
+use crate::encode::{
+    ItemEncoder, ItemObjectEncodable, ItemValueEncodable, NetdocEncodable, NetdocEncoder,
+};
+use crate::parse2::{
+    ErrorProblem as P2EP, IsStructural, ItemObjectParseable, ItemStream, ItemValueParseable,
+    KeywordRef, NetdocParseable, UnparsedItem,
+};
 use tor_bytes::{Writeable, Writer};
 use tor_error::{Bug, internal};
 
@@ -74,7 +79,7 @@ use tor_error::{Bug, internal};
 /// # Example
 ///
 /// See `crates/tor-netdoc/src/types/embedded_cert/test.rs`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EmbeddedCert<VD, UR> {
     /// The verified form, if this `EmbeddedCert` is verified.
     verified: Option<VD>,
@@ -207,6 +212,15 @@ where
     }
 }
 
+impl<VD, UR> NetdocEncodable for EmbeddedCert<VD, UR>
+where
+    UR: NetdocEncodable,
+{
+    fn encode_unsigned(&self, out: &mut NetdocEncoder) -> Result<(), Bug> {
+        self.unverified.encode_unsigned(out)
+    }
+}
+
 impl<VD, UR> ItemObjectParseable for EmbeddedCert<VD, UR>
 where
     VD: EmbeddableCertObject<UR>,
@@ -234,6 +248,28 @@ where
         let object = item.object().ok_or(P2EP::MissingObject)?;
         <Self as ItemObjectParseable>::check_label(object.label())?;
         <Self as ItemObjectParseable>::from_bytes(&object.decode_data()?)
+    }
+}
+
+impl<VD, UR> NetdocParseable for EmbeddedCert<VD, UR>
+where
+    UR: NetdocParseable,
+{
+    fn doctype_for_error() -> &'static str {
+        UR::doctype_for_error()
+    }
+
+    fn is_intro_item_keyword(kw: KeywordRef<'_>) -> bool {
+        UR::is_intro_item_keyword(kw)
+    }
+
+    fn is_structural_keyword(kw: KeywordRef<'_>) -> Option<IsStructural> {
+        UR::is_structural_keyword(kw)
+    }
+
+    fn from_items(input: &mut ItemStream<'_>, stop_at: stop_at!()) -> Result<Self, P2EP> {
+        let unverified = UR::from_items(input, stop_at)?;
+        Ok(EmbeddedCert::new_unverified_hazardous(unverified))
     }
 }
 

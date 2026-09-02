@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // This clippy lint produces a false positive on `use strum`, below.
@@ -85,6 +86,7 @@ use tor_netdir::params::NetParameters;
 use tor_netdir::{DirEvent, MdReceiver, NetDir, NetDirProvider};
 
 use async_trait::async_trait;
+pub use storage::BoxedDirStore;
 use futures::stream::BoxStream;
 use oneshot_fused_workaround as oneshot;
 use tor_netdoc::doc::netstatus::ProtoStatuses;
@@ -131,12 +133,26 @@ pub struct DirMgrStore<R: Runtime> {
 }
 
 impl<R: Runtime> DirMgrStore<R> {
-    /// Open the storage, according to the specified configuration
+    /// Open the storage, according to the specified configuration.
+    ///
+    /// Uses SQLite on native. For custom backends, use [`DirMgrStore::from_custom_store()`].
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(config: &DirMgrConfig, runtime: R, offline: bool) -> Result<Self> {
         let store = Arc::new(Mutex::new(config.open_store(offline)?));
         drop(runtime);
         let runtime = PhantomData;
         Ok(DirMgrStore { store, runtime })
+    }
+
+    /// Create a `DirMgrStore` from a custom storage implementation.
+    ///
+    /// This allows external code to provide custom storage backends
+    /// (e.g., IndexedDB on WASM, or any custom backend on native).
+    pub fn from_custom_store(store: storage::BoxedDirStore) -> Self {
+        DirMgrStore {
+            store: Arc::new(Mutex::new(Box::new(store))),
+            runtime: PhantomData,
+        }
     }
 }
 
@@ -366,6 +382,7 @@ impl<R: Runtime> DirMgr<R> {
     /// In general, you shouldn't use this function in a long-running
     /// program; it's only suitable for command-line or batch tools.
     // TODO: I wish this function didn't have to be async or take a runtime.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_once(runtime: R, config: DirMgrConfig) -> Result<Arc<NetDir>> {
         let store = DirMgrStore::new(&config, runtime.clone(), true)?;
         let dirmgr = Arc::new(Self::from_config(config, runtime, store, None, true)?);
@@ -441,7 +458,6 @@ impl<R: Runtime> DirMgr<R> {
     ///
     /// Panics if the `DirMgr` passed to this function was not created in online mode, such as
     /// via `load_once`.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor
     #[instrument(level = "trace", skip_all)]
     pub async fn bootstrap(self: &Arc<Self>) -> Result<()> {
         if self.offline {
@@ -576,7 +592,6 @@ impl<R: Runtime> DirMgr<R> {
     /// message using `on_complete`.
     ///
     /// If we eventually become the owner, return Ok().
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor?
     async fn reload_until_owner(
         weak: &Weak<Self>,
         schedule: &mut TaskSchedule<R>,
@@ -650,7 +665,6 @@ impl<R: Runtime> DirMgr<R> {
     ///
     /// If we have begin to have a bootstrapped directory, send a
     /// message using `on_complete`.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor?
     #[instrument(level = "trace", skip_all)]
     async fn download_forever(
         weak: Weak<Self>,
@@ -1049,7 +1063,6 @@ impl<R: Runtime> DirMgr<R> {
     }
 
     /// If `state` has netdir changes to apply, apply them to our netdir.
-    #[allow(clippy::cognitive_complexity)]
     fn apply_netdir_changes(
         self: &Arc<Self>,
         state: &mut Box<dyn DirState>,
@@ -1201,6 +1214,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::docmeta::{AuthCertMeta, ConsensusMeta};

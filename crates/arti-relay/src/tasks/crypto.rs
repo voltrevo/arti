@@ -3,26 +3,34 @@
 mod keys;
 mod views;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use base64ct::{Base64Unpadded, Encoding};
-use futures::{FutureExt as _, StreamExt as _};
+use futures::{FutureExt as _, StreamExt as _, channel::mpsc};
 use std::{
     sync::Arc,
     time::{Duration, SystemTime},
 };
 use tracing::trace;
 
+use tor_async_utils::{mpsc_channel_no_memquota, oneshot};
 use tor_chanmgr::ChanMgr;
+use tor_error::warn_report;
 use tor_keymgr::KeyMgr;
 use tor_netdir::{DirEvent, NetDirProvider};
 use tor_proto::RelayChannelAuthMaterial;
 use tor_proto::relay::CreateRequestHandler;
-use tor_relay_crypto::pk::{RelayIdentityKeypair, RelayIdentityRsaKeypair, RelayNtorKeys};
+use tor_relay_crypto::pk::{
+    RelayIdentityKeypair, RelayIdentityRsaKeypair, RelayNtorKeys, RelayNtorPublicKey,
+    RelaySigningKeypair,
+};
 use tor_rtcompat::{Runtime, SleepProviderExt};
 
 use crate::{
     keys::{RelayIdentityKeypairSpecifier, RelayIdentityRsaKeypairSpecifier},
-    tasks::crypto::views::FullKeyView,
+    tasks::{
+        crypto::views::FullKeyView,
+        descriptor::{DescriptorCommand, DescriptorCommandSender},
+    },
 };
 
 /// Buffer time before key expiry to trigger rotation. This ensures we rotate slightly before the
@@ -31,6 +39,34 @@ use crate::{
 /// C-tor uses 3 hours for the link/auth key and 1 day for the signing key. Let's use 3 hours here,
 /// it should be plenty to make it happen even if hiccups happen.
 const KEY_ROTATION_EXPIRE_BUFFER: Duration = Duration::from_secs(3 * 60 * 60);
+
+/// A command sent handled by the [`Reactor`] over a command channel.
+#[derive(Debug)]
+#[non_exhaustive]
+pub(crate) enum CryptoCommand {
+    /// Request to get the latest ntor key.
+    GetLatestNtorKey {
+        /// Reply channel for the key.
+        tx: oneshot::Sender<RelayNtorPublicKey>,
+    },
+    /// Request to get the relay signing key.
+    GetSignKey {
+        /// Reply channel for the key.
+        tx: oneshot::Sender<RelaySigningKeypair>,
+    },
+}
+
+/// The sending side of the [`DescriptorCommand`] channel.
+pub(crate) type CryptoCommandSender = mpsc::Sender<CryptoCommand>;
+/// The receiving side of the [`DescriptorCommand`] channel.
+pub(crate) type CryptoCommandReceiver = mpsc::Receiver<CryptoCommand>;
+
+/// Returns a new [`CryptoCommand`] channel.
+///
+/// This is a bounded to limit key request spamming (in case of a bug).
+pub(crate) fn new_command_channel() -> (CryptoCommandSender, CryptoCommandReceiver) {
+    mpsc_channel_no_memquota(128)
+}
 
 /// Key rotation parameters derived from the consensus.
 #[derive(Copy, Clone, Debug)]
@@ -79,15 +115,15 @@ pub(crate) struct InitKeyMaterial {
 /// Returned the initialization key material.
 pub(crate) fn init_keys<R: Runtime>(
     runtime: &R,
-    keymgr: Arc<KeyMgr>,
+    keymgr: &KeyMgr,
 ) -> anyhow::Result<InitKeyMaterial> {
     let now = runtime.wallclock();
 
     // Attempt to generate our identity keys (ed and RSA). Those keys DO NOT rotate. It won't be
     // replaced if they already exists.
-    keys::generate_key::<RelayIdentityKeypair>(&keymgr, &RelayIdentityKeypairSpecifier::new())?;
+    keys::generate_key::<RelayIdentityKeypair>(keymgr, &RelayIdentityKeypairSpecifier::new())?;
     keys::generate_key::<RelayIdentityRsaKeypair>(
-        &keymgr,
+        keymgr,
         &RelayIdentityRsaKeypairSpecifier::new(),
     )?;
 
@@ -95,7 +131,7 @@ pub(crate) fn init_keys<R: Runtime>(
     // there is no consensus yet, so we have to use the default parameters.
     let _ = keys::try_rotate_keys(
         now,
-        &keymgr,
+        keymgr,
         KeyRotationParams::from(&tor_netdir::params::NetParameters::default()),
     )?;
 
@@ -117,9 +153,13 @@ pub(crate) struct Reactor<R: Runtime> {
     /// Reference to the create request handler so we can update it.
     create_request_handler: Arc<CreateRequestHandler>,
     /// Full key view.
-    view: FullKeyView,
+    view: FullKeyView<KeyMgr>,
     /// Net directory provider used to watch for consensus changes.
     netdir: Arc<dyn NetDirProvider>,
+    /// Descriptor task TX channel.
+    desc_tx: DescriptorCommandSender,
+    /// Our crypto command RX channel.
+    our_rx: CryptoCommandReceiver,
 }
 
 impl<R: Runtime> Reactor<R> {
@@ -128,8 +168,10 @@ impl<R: Runtime> Reactor<R> {
         runtime: R,
         chanmgr: Arc<ChanMgr<R>>,
         create_request_handler: Arc<CreateRequestHandler>,
-        keymgr: Arc<KeyMgr>,
+        keymgr: KeyMgr,
         netdir: Arc<dyn NetDirProvider>,
+        desc_tx: DescriptorCommandSender,
+        our_rx: CryptoCommandReceiver,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             runtime,
@@ -137,6 +179,8 @@ impl<R: Runtime> Reactor<R> {
             create_request_handler,
             view: FullKeyView::new(keymgr)?,
             netdir,
+            desc_tx,
+            our_rx,
         })
     }
 
@@ -157,6 +201,24 @@ impl<R: Runtime> Reactor<R> {
         tracing::info!("RSA identity: {rsa_id}");
         tracing::info!("Ed25519 identity: {ed_id}");
         tracing::info!("Ntor public key: {ntor}");
+
+        Ok(())
+    }
+
+    /// Handle a [`CryptoCommand`] received by the reactor.
+    fn handle_command(&mut self, cmd: CryptoCommand) -> anyhow::Result<()> {
+        match cmd {
+            CryptoCommand::GetLatestNtorKey { tx } => {
+                let pubkey = self.view.ks_ntor_keys()?.latest().public();
+                tx.send(pubkey)
+                    .map_err(|_| anyhow!("GetLatestNtorKey replay tx failed"))?;
+            }
+            CryptoCommand::GetSignKey { tx } => {
+                let keypair = self.view.ks_relaysign_ed()?;
+                tx.send(keypair)
+                    .map_err(|_| anyhow!("GetSignKey replay tx failed"))?;
+            }
+        }
 
         Ok(())
     }
@@ -187,6 +249,13 @@ impl<R: Runtime> Reactor<R> {
                 ev = consensus_events.next().fuse() => {
                     ev.context("NetDir event stream ended unexpectedly")?;
                 }
+                // Crypto command channel.
+                cmd = self.our_rx.next().fuse() => {
+                    let cmd = cmd.context("Crypto command channel closed")?;
+                    if let Err(e) = self.handle_command(cmd) {
+                        warn_report!(e, "Crypto task command failure");
+                    }
+                }
             }
         }
     }
@@ -207,6 +276,16 @@ impl<R: Runtime> Reactor<R> {
         if changed.ntor_latest || changed.ntor_previous {
             let ntor_keys = self.view.ks_ntor_keys()?;
             self.create_request_handler.update_ntor_keys(ntor_keys);
+        }
+
+        // Notify the descriptor task that its keys have changed.
+        if changed.relay_desc_keys_changed() {
+            self.desc_tx
+                .try_send(DescriptorCommand::Publish)
+                .context("Desc task channel try_send failed")?;
+            // Note, we can never wait for the publish to finish here because the
+            // descriptor task upon receiving the command will send us commands to get
+            // the keys it needs. Waiting here would lead to a deadlock.
         }
 
         // Sleep until the earliest key expiry minus buffer so we rotate before it expires.
@@ -247,6 +326,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
@@ -255,14 +335,12 @@ mod test {
     use tor_rtmock::MockRuntime;
 
     /// Initialize test basics that is runtime and a KeyMgr.
-    pub(super) fn new_keymgr() -> Arc<KeyMgr> {
+    pub(super) fn new_keymgr() -> KeyMgr {
         let store = Box::new(ArtiEphemeralKeystore::new("test".to_string()));
-        Arc::new(
-            KeyMgrBuilder::default()
-                .primary_store(store)
-                .build()
-                .unwrap(),
-        )
+        KeyMgrBuilder::default()
+            .primary_store(store)
+            .build()
+            .unwrap()
     }
 
     /// Test the actual bootstrap function, `try_generate_keys()` which is in charge of
@@ -270,7 +348,7 @@ mod test {
     #[test]
     fn test_bootstrap() {
         MockRuntime::test_with_various(|runtime| async move {
-            let _auth_material = match init_keys(&runtime, new_keymgr()) {
+            let _auth_material = match init_keys(&runtime, &new_keymgr()) {
                 Ok(a) => a,
                 Err(e) => {
                     panic!("Unable to bootstrap keys and generate RelayChannelAuthMaterial: {e}");

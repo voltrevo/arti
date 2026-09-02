@@ -230,10 +230,7 @@ where
             .body_no_rand()
             .map_err(|e| Error::ChanProto(format!("AUTHENTICATE body_no_rand malformed: {e}")))?;
         // This equality is in constant-time to avoid timing attack oracle.
-        if peer_auth_cell_body_no_rand
-            .ct_eq(&expected_auth_body)
-            .into()
-        {
+        if (!peer_auth_cell_body_no_rand.ct_eq(&expected_auth_body)).into() {
             return Err(Error::ChanProto(
                 "AUTHENTICATE was unexpected. Failing authentication".into(),
             ));

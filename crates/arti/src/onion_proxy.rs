@@ -277,6 +277,17 @@ pub(crate) struct ProxySet<R: Runtime> {
 }
 
 impl<R: Runtime> ProxySet<R> {
+    /// Create a new empty onion service proxy set.
+    ///
+    /// We do this when we are running with deferred bootstrapping,
+    /// since we can't launch an onion service on an unbootstrapped client.
+    pub(crate) fn new_deferred(client: Arc<arti_client::TorClient<R>>) -> Self {
+        Self {
+            client,
+            proxies: Mutex::new(BTreeMap::new()),
+        }
+    }
+
     /// Create and launch a set of onion service proxies.
     pub(crate) fn launch_new(
         client: Arc<arti_client::TorClient<R>>,
@@ -372,6 +383,12 @@ impl<R: Runtime> ProxySet<R> {
 
 impl<R: Runtime> crate::reload_cfg::ReconfigurableModule for ProxySet<R> {
     fn reconfigure(&self, new: &crate::ArtiCombinedConfig) -> anyhow::Result<()> {
+        if new.0.application().defer_bootstrap {
+            // Do not actually launch any onion services unless we are trying
+            // to bootstrap the client.
+            return Ok(());
+        }
+
         ProxySet::reconfigure(self, new.0.onion_services.clone())?;
         Ok(())
     }
@@ -391,6 +408,7 @@ mod tests {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
 

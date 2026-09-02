@@ -39,7 +39,6 @@ impl<B: BackoffSchedule, R: Runtime> Runner<B, R> {
     /// If `fallible_fn` eventually returns `Ok(_)`, return that output. Otherwise,
     /// keep retrying until either `fallible_fn` has failed too many times, or until
     /// a fatal error occurs.
-    #[allow(clippy::cognitive_complexity)] // TODO: Refactor
     pub(super) async fn run<T, E, F>(
         mut self,
         mut fallible_fn: impl FnMut() -> F,
@@ -239,6 +238,7 @@ mod tests {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

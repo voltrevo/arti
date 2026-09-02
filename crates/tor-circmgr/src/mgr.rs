@@ -970,7 +970,6 @@ impl<B: AbstractTunnelBuilder<R> + 'static, R: Runtime> AbstractTunnelMgr<B, R> 
     /// under the assumption that it will be used for that spec.
     ///
     /// This is the primary entry point for AbstractTunnelMgr.
-    #[allow(clippy::cognitive_complexity)] // TODO #2010: Refactor?
     #[instrument(level = "trace", skip_all)]
     pub(crate) async fn get_or_launch(
         self: &Arc<Self>,
@@ -1204,7 +1203,7 @@ impl<B: AbstractTunnelBuilder<R> + 'static, R: Runtime> AbstractTunnelMgr<B, R> 
 
     /// Execute an action returned by pick-action, and return the
     /// resulting tunnel or error.
-    #[allow(clippy::cognitive_complexity, clippy::type_complexity)] // TODO #2010: Refactor
+    #[allow(clippy::type_complexity)] // TODO #2010: Refactor
     #[instrument(level = "trace", skip_all)]
     async fn take_action(
         self: Arc<Self>,
@@ -1863,6 +1862,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use crate::isolation::test::{IsolationTokenEq, assert_isoleq};

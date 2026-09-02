@@ -1,0 +1,75 @@
+# Wasm TODOs
+
+## Required
+
+- [ ] Code review tor-time
+- [ ] Merge tor-time
+- [ ] Code review tor-async-compat
+- [ ] Merge tor-async-compat
+- [x] Fix pre-existing tests (`cargo test`) (see `scripts/check.sh`)
+- [ ] Automated testing
+- [x] Fix warnings, clippy
+- [ ] Check/clean ai code
+- [x] Make tor-js API same/similar to https://www.npmjs.com/package/tor-js
+  - [x] Use standard `Response` incl streaming
+  - [x] Fix awkward initialization
+  - [x] Make initialization portable (don't use wasm file)
+  - [x] Fix `TorClient` async new
+  - [x] Logging
+  - [x] Remove rust inmemory storage
+  - [x] FileSystem storage
+  - [x] IndexedDb storage
+  - [x] In-memory storage
+  - [x] Platform-dependent (browser/nodejs) default storage
+- [x] Fix slow bootstrap (via non-tor sources if needed)
+- Sync with arti main branch
+  - [x] 206e629
+  - [x] 9306eec
+  - [x] 5c13837
+  - [x] 606f3ab63
+  - [x] 7cdfe1848
+  - [ ] (Probably needed again later)
+- [x] Fix/deprioritize TODO/FIXMEs added
+- [x] Implement/fix missing storage locking in JS
+- [x] Provide tiny module variant via hash-checked download
+  - jsdelivr/unpkg/githubusercontent
+- [x] WebRTC demo
+- [x] Fix: Repeated "Unable to select a guard relay" issues when changing bridges (sometimes?)
+  - Sometimes it recovers (can complete request), other times it gets stuck
+  - Workaround: delete state:guards on startup (has FIXME comment) (update: seems to be incomplete fix)
+    - Update 2: Seems fixed since storage bug fixed. Test again when stored consensus is stale.
+- [x] Fix sourcemaps
+- [x] Check npm pack content
+- [x] Add singleton entry points
+- [x] README for npm package
+- [x] Check incremental build logic in tor-js (rerun-if-changed prevents ordinary cache invalidation? intent was to build only more often, never skip)
+- [x] Confirm trace logging works in js
+- [x] Fix wasm-base64 (should be self-contained, but requires `<script type="importmap">` in showcase index.html)
+- [x] Fix slow js storage startup (loading '000s items into memory - fix with parallelism or chunked storage of microdescs)
+- [x] Symbol dispose polyfill
+- [x] Fail more helpfully when required TorClient options are missing
+- [x] Fail fast when websocket does not connect
+- [x] Fix wasm-file fallback - throw if wasm source isn't configured
+- [x] Make ready() more meaningful/strict - need guard connection + usable consensus + sufficient microdescs
+- [x] Fix stubbed wait_for_unlock in custom storage (and any/all associated TODO/FIXME)
+- [x] Remove completed TODO/FIXME
+- [x] Rename webtor-rs-lite → tor-snowflake
+- [ ] Code review
+- [ ] Merge
+- [ ] Publish on npm
+
+## Nice to Have
+
+- [ ] API extensions
+  - [ ] Isolated clients (share network caching)
+  - [ ] WebSocket
+  - [ ] Regular sockets
+- [ ] Make wasm small
+- [ ] Fix performance issue(s) affecting normal bootstrap
+  - [ ] Microdesc stalls when batch size or parallelism is higher
+  - [ ] Downloads unblocked by ping loop
+- [ ] Fix tor-fetch.js slow exit (prints response and hangs for a long time)
+- [ ] Fix slow-ish js storage startup (much improved, but still 0.5-1s due to '000s of files/indexeddb entries)
+- [ ] Add event IDs to logging (or just write proposal?)
+  - Hard to debug logs without seeing what triggered them
+  - When requests stall/fail, want to see all logs related to that request

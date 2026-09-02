@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,6 +44,7 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO probably remove this at some point - see tpo/core/arti#1060
@@ -546,6 +547,83 @@ where
     }
 }
 
+/// Pure-Rust zstd decoder for WASM targets where C zstd-sys is unavailable.
+///
+/// Buffers the entire compressed stream, decompresses synchronously with ruzstd,
+/// then serves reads from the decompressed bytes. This is acceptable because
+/// directory documents are at most a few MB.
+#[cfg(all(feature = "zstd-wasm", not(feature = "zstd")))]
+struct RuzstdDecoder<S> {
+    /// Current decoder state: reading compressed data or serving decompressed output.
+    inner: RuzstdState<S>,
+}
+
+/// State machine for [`RuzstdDecoder`].
+#[cfg(all(feature = "zstd-wasm", not(feature = "zstd")))]
+enum RuzstdState<S> {
+    /// Still reading compressed bytes from the async source.
+    Reading(S, Vec<u8>),
+    /// Decompressed; serving from cursor.
+    Done(std::io::Cursor<Vec<u8>>),
+}
+
+#[cfg(all(feature = "zstd-wasm", not(feature = "zstd")))]
+impl<S> RuzstdDecoder<S> {
+    /// Create a new decoder wrapping the given compressed stream.
+    fn new(stream: S) -> Self {
+        Self {
+            inner: RuzstdState::Reading(stream, Vec::new()),
+        }
+    }
+}
+
+#[cfg(all(feature = "zstd-wasm", not(feature = "zstd")))]
+impl<S: AsyncRead + Unpin> AsyncRead for RuzstdDecoder<S> {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        loop {
+            match &mut this.inner {
+                RuzstdState::Reading(stream, compressed) => {
+                    let mut tmp = [0_u8; 8192];
+                    match std::pin::Pin::new(stream).poll_read(cx, &mut tmp) {
+                        std::task::Poll::Ready(Ok(0)) => {
+                            // EOF: decompress
+                            let cursor = std::io::Cursor::new(std::mem::take(compressed));
+                            let mut decoder = ruzstd::decoding::StreamingDecoder::new(cursor)
+                                .map_err(|e| std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!("zstd: {e}"),
+                                ))?;
+                            let mut decompressed = Vec::new();
+                            std::io::Read::read_to_end(&mut decoder, &mut decompressed)?;
+                            this.inner = RuzstdState::Done(std::io::Cursor::new(decompressed));
+                            // Loop to serve from Done state
+                        }
+                        std::task::Poll::Ready(Ok(n)) => {
+                            compressed.extend_from_slice(&tmp[..n]);
+                            // Loop to read more
+                        }
+                        std::task::Poll::Ready(Err(e)) => {
+                            return std::task::Poll::Ready(Err(e));
+                        }
+                        std::task::Poll::Pending => {
+                            return std::task::Poll::Pending;
+                        }
+                    }
+                }
+                RuzstdState::Done(cursor) => {
+                    let n = std::io::Read::read(cursor, buf)?;
+                    return std::task::Poll::Ready(Ok(n));
+                }
+            }
+        }
+    }
+}
+
 /// Helper: Return a boxed decoder object that wraps the stream  $s.
 macro_rules! decoder {
     ($dec:ident, $s:expr) => {{
@@ -573,6 +651,8 @@ fn get_decoder<'a, S: AsyncBufRead + Unpin + Send + 'a>(
         (Some("x-tor-lzma"), Direct) => decoder!(XzDecoder, stream),
         #[cfg(feature = "zstd")]
         (Some("x-zstd"), Direct) => decoder!(ZstdDecoder, stream),
+        #[cfg(all(feature = "zstd-wasm", not(feature = "zstd")))]
+        (Some("x-zstd"), Direct) => Ok(Box::new(RuzstdDecoder::new(stream))),
         (Some(other), _) => Err(RequestError::ContentEncoding(other.into())),
     }
 }
@@ -591,6 +671,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use tor_rtmock::io::stream_pair;

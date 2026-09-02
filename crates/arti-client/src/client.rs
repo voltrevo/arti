@@ -32,6 +32,7 @@ use tor_persist::StateMgr;
 use tor_persist::TestingStateMgr;
 #[cfg(feature = "onion-service-service")]
 use tor_persist::state_dir::StateDirectory;
+use tor_persist::AnyStateMgr;
 use tor_proto::client::stream::{DataStream, IpVersionPreference, StreamParameters};
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
@@ -72,7 +73,7 @@ use crate::{TorClientBuilder, status, util};
 #[cfg(feature = "geoip")]
 use tor_geoip::CountryCode;
 use tor_rtcompat::scheduler::TaskHandle;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use tor_persist::FsStateMgr as UsingStateMgr;
@@ -145,8 +146,8 @@ struct ClientShared<R: Runtime> {
     /// to subsystems like `dirmgr`, `keymgr`, and `statemgr` during `TorClient` creation.
     #[cfg(feature = "onion-service-service")]
     state_directory: StateDirectory,
-    /// Location on disk where we store persistent data (cooked state manager).
-    statemgr: UsingStateMgr,
+    /// Stores persistent data (cooked state manager).
+    statemgr: AnyStateMgr,
 
     /// Directory manager persistent storage.
     dirmgr_store: DirMgrStore<R>,
@@ -170,9 +171,16 @@ struct ClientShared<R: Runtime> {
     /// mutex used to prevent two tasks from trying to bootstrap at once.
     bootstrap_in_progress: AsyncMutex<()>,
 
+    /// Sender used to update changes in our bootstrap settings.
+    bootstrap_setting_sender: Mutex<postage::watch::Sender<BootstrapSetting>>,
+
     /// Whether or not we should call `bootstrap` before doing things that require
-    /// bootstrapping. If this is `false`, we will just call `wait_for_bootstrap`
-    /// instead.
+    /// bootstrapping.
+    ///
+    /// If this is [`BootstrapBehavior::OnDemand`], we wait for the client to bootstrap
+    /// (launching a bootstrap if necessary) before performing any operation that needs circuits.
+    /// If this is [`BootstrapBehavior::Manual`], we give an error if we are told to do
+    /// something that needs circuits and we have not been told to bootstrap.
     should_bootstrap: BootstrapBehavior,
 
     /// Shared boolean for whether we're currently in "dormant mode" or not.
@@ -219,6 +227,9 @@ struct NotConstructedInner<R: Runtime> {
     /// that [`RunningInner::new`] needs to take NotConstructedInner by value.
     /// With some redesign we could simplify this, and do away with [`Inner::Poisoned`].
     status_sender: postage::watch::Sender<BootstrapStatus>,
+
+    /// A receiver used to inform the bootstrap status processor about changes in our settings.
+    bootstrap_setting_receiver: postage::watch::Receiver<BootstrapSetting>,
 
     /// A (possibly user-provided) builder used to construct our NetDirProvider.
     dirmgr_builder: Arc<dyn crate::builder::DirProviderBuilder<R>>,
@@ -308,6 +319,14 @@ impl InertTorClient {
     ///
     /// Returns `Ok(None)` if keystore use is disabled.
     fn create_keymgr(config: &TorClientConfig) -> StdResult<Option<Arc<KeyMgr>>, ErrorDetail> {
+        // On WASM, skip keystore creation entirely (no filesystem access)
+        #[cfg(target_arch = "wasm32")]
+        {
+            info!("Running without a keystore (WASM)");
+            return Ok(None);
+        }
+
+        #[allow(unreachable_code)]
         let keystore = config.storage.keystore();
         let permissions = config.storage.permissions();
         let primary_store: Box<dyn Keystore> = match keystore.primary_kind() {
@@ -588,6 +607,41 @@ pub enum BootstrapBehavior {
     /// network) before calling [`bootstrap`](TorClient::bootstrap) will fail, and
     /// return an error that has kind [`ErrorKind::BootstrapRequired`](crate::ErrorKind::BootstrapRequired).
     Manual,
+}
+
+/// A representation of whether a [`TorClient`] is allowed to bootstrap, and whether it
+/// has begun to do so.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BootstrapSetting {
+    /// The configured [`BootstrapBehavior`] for the `TorClient`.
+    behavior: BootstrapBehavior,
+
+    /// If true, we have a [`RunningInner`] in the `TorClient`,
+    /// indicating that we are trying to bootstrap it.
+    running_inner_is_present: bool,
+}
+
+impl Default for BootstrapSetting {
+    fn default() -> Self {
+        Self {
+            behavior: BootstrapBehavior::Manual,
+            running_inner_is_present: false,
+        }
+    }
+}
+
+impl BootstrapSetting {
+    /// Return true if this [`BootstrapSetting`]
+    /// indicates that the client is not trying to bootstrap,
+    /// and will not try until it is told explicitly to do so.
+    pub(crate) fn blocked(&self) -> bool {
+        use BootstrapBehavior::*;
+        match (self.behavior, self.running_inner_is_present) {
+            (OnDemand, _) => false,
+            (Manual, true) => false,
+            (Manual, false) => true,
+        }
+    }
 }
 
 /// What level of sleep to put a Tor client into.
@@ -935,6 +989,8 @@ impl<R: Runtime> TorClient<R> {
         autobootstrap: BootstrapBehavior,
         dirmgr_builder: Arc<dyn crate::builder::DirProviderBuilder<R>>,
         dirmgr_extensions: tor_dirmgr::config::DirMgrExtensions,
+        statemgr: AnyStateMgr,
+        dirstore: Option<tor_dirmgr::BoxedDirStore>,
     ) -> StdResult<Arc<Self>, ErrorDetail> {
         if crate::util::running_as_setuid() {
             return Err(tor_error::bad_api_usage!(
@@ -947,14 +1003,13 @@ impl<R: Runtime> TorClient<R> {
 
         let path_resolver = Arc::new(config.path_resolver.clone());
 
+        #[cfg(not(target_arch = "wasm32"))]
         let (state_dir, mistrust) = config.state_dir()?;
         #[cfg(feature = "onion-service-service")]
         let state_directory =
             StateDirectory::new(&state_dir, mistrust).map_err(ErrorDetail::StateAccess)?;
 
         let dormant = DormantMode::Normal;
-
-        let statemgr = Self::statemgr_from_config(config)?;
 
         // Try to take state ownership early, so we'll know if we have it.
         // Note that this `try_lock()` may return `Ok` even if we can't acquire the lock.
@@ -963,7 +1018,15 @@ impl<R: Runtime> TorClient<R> {
 
         let addr_cfg = config.address_filter.clone();
 
-        let (status_sender, status_receiver) = postage::watch::channel();
+        let bootstrap_setting = BootstrapSetting {
+            behavior: autobootstrap,
+            running_inner_is_present: false,
+        };
+        let (bootstrap_setting_sender, bootstrap_setting_receiver) =
+            postage::watch::channel_with(bootstrap_setting);
+        let bootstrap_setting_sender = Mutex::new(bootstrap_setting_sender);
+        let (status_sender, status_receiver) =
+            postage::watch::channel_with(BootstrapStatus::from_setting(bootstrap_setting));
         let status_receiver = status::BootstrapEvents {
             inner: status_receiver,
         };
@@ -974,13 +1037,28 @@ impl<R: Runtime> TorClient<R> {
         let client_isolation = IsolationToken::new();
         let inert_client = InertTorClient::new(config)?;
 
-        let dirmgr_store = DirMgrStore::new(&config.dir_mgr_config()?, runtime.clone(), false)
-            .map_err(ErrorDetail::DirMgrSetup)?;
+        let dirmgr_store = match dirstore {
+            Some(store) => DirMgrStore::from_custom_store(store),
+            None => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    DirMgrStore::new(&config.dir_mgr_config()?, runtime.clone(), false)
+                        .map_err(ErrorDetail::DirMgrSetup)?
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    return Err(tor_error::bad_api_usage!(
+                        "On WASM, a directory store must be provided via TorClientBuilder::dir_store()"
+                    ).into());
+                }
+            }
+        };
 
         let inner = Box::new(NotConstructedInner {
             config: config.clone(),
             dormant_recv,
             status_sender,
+            bootstrap_setting_receiver,
             dirmgr_builder,
             dirmgr_extensions,
         });
@@ -999,6 +1077,7 @@ impl<R: Runtime> TorClient<R> {
             reconfigure_lock: Arc::new(Mutex::new(())),
             status_receiver,
             bootstrap_in_progress: AsyncMutex::new(()),
+            bootstrap_setting_sender,
             should_bootstrap: autobootstrap,
             dormant: Mutex::new(dormant_send),
             #[cfg(feature = "onion-service-service")]
@@ -1014,7 +1093,8 @@ impl<R: Runtime> TorClient<R> {
     }
 
     /// Construct a state manager from the client configuration.
-    fn statemgr_from_config(config: &TorClientConfig) -> Result<UsingStateMgr, ErrorDetail> {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn statemgr_from_config(config: &TorClientConfig) -> Result<UsingStateMgr, ErrorDetail> {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             use tor_persist::FsStateMgr;
@@ -1089,6 +1169,7 @@ impl<R: Runtime> RunningInner<R> {
             config,
             dormant_recv,
             status_sender,
+            bootstrap_setting_receiver,
             dirmgr_builder,
             dirmgr_extensions,
         } = pending;
@@ -1237,6 +1318,7 @@ impl<R: Runtime> RunningInner<R> {
                 conn_status,
                 dir_status,
                 skew_status,
+                bootstrap_setting_receiver,
             ))
             .map_err(|e| ErrorDetail::from_spawn("top-level status reporter", e))?;
 
@@ -1317,6 +1399,9 @@ impl<R: Runtime> TorClient<R> {
     /// applied, or none will. If you have disabled all-or-nothing changes, then
     /// only fatal errors will be reported in this function's return value.
     ///
+    /// When performing a reconfiguration,
+    /// a returned error may indicate that the client is now in an inconsistent state.
+    ///
     /// This function applies its changes to **all** TorClient instances derived
     /// from the same call to `TorClient::create_*`: even ones whose circuits
     /// are isolated from this handle.
@@ -1347,24 +1432,47 @@ impl<R: Runtime> TorClient<R> {
         // deciding how to change it, then applying the changes.
         let guard = self.client.reconfigure_lock.lock().expect("Poisoned lock");
 
+        use tor_config::Reconfigure::*;
+
         match how {
-            tor_config::Reconfigure::AllOrNothing => {
+            AllOrNothing => {
                 // We have to check before we make any changes.
-                self.client.reconfigure_inner(
-                    new_config,
-                    tor_config::Reconfigure::CheckAllOrNothing,
-                    &guard,
-                )?;
+                self.client
+                    .reconfigure_inner(new_config, CheckAllOrNothing, &guard)?;
+
+                // Hopefully this doesn't fail,
+                // otherwise we may have returned early from the reconfiguration
+                // and its no longer "all-or-nothing".
+                let result = self
+                    .client
+                    .reconfigure_inner(new_config, AllOrNothing, &guard);
+
+                if result.is_err() {
+                    warn!(
+                        "Attempted an \"all-or-nothing\" reconfigure, but unexpectedly failed. \
+                        The client will continue to run in an inconsistent state."
+                    );
+                }
+
+                result
             }
-            tor_config::Reconfigure::CheckAllOrNothing => {}
-            tor_config::Reconfigure::WarnOnFailures => {}
-            _ => {}
+            WarnOnFailures => {
+                let result = self.client.reconfigure_inner(new_config, how, &guard);
+
+                // If there's a fatal error,
+                // we may have reconfigured some components and not others.
+                if result.is_err() {
+                    warn!(
+                        "Attempted a reconfigure, but failed. \
+                        The client will continue to run in an inconsistent state."
+                    );
+                }
+
+                result
+            }
+            CheckAllOrNothing => self.client.reconfigure_inner(new_config, how, &guard),
+            _ => self.client.reconfigure_inner(new_config, how, &guard),
         }
-
-        // Actually reconfigure
-        self.client.reconfigure_inner(new_config, how, &guard)?;
-
-        Ok(())
     }
 
     /// Return a new isolated `TorClient` handle.
@@ -2180,15 +2288,30 @@ impl<R: Runtime> TorClient<R> {
     /// Return a [`Future`] which resolves
     /// once this TorClient has stopped.
     #[cfg(feature = "experimental-api")]
+    #[cfg(not(target_arch = "wasm32"))]
     #[instrument(skip_all, level = "trace")]
     pub fn wait_for_stop(
         &self,
-    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<R> {
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<'_, R> {
         // We defer to the "wait for unlock" handle on our statemgr.
         //
         // The statemgr won't actually be unlocked until it is finally
         // dropped, which will happen when this TorClient is
         // dropped—which is what we want.
+        self.client.statemgr.wait_for_unlock()
+    }
+
+    /// Return a [`Future`] which resolves
+    /// once this TorClient has stopped.
+    ///
+    /// Defers to the custom storage backend's [`KeyValueStore::wait_for_unlock`].
+    ///
+    /// [`KeyValueStore::wait_for_unlock`]: tor_persist::KeyValueStore::wait_for_unlock
+    #[cfg(feature = "experimental-api")]
+    #[cfg(target_arch = "wasm32")]
+    pub fn wait_for_stop(
+        &self,
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<'_, R> {
         self.client.statemgr.wait_for_unlock()
     }
 
@@ -2218,6 +2341,11 @@ impl<R: Runtime> ClientShared<R> {
                 match RunningInner::new(*pending, self) {
                     Ok(running_inner) => {
                         *inner_guard = Inner::Running(Arc::clone(&running_inner));
+                        self.bootstrap_setting_sender
+                            .lock()
+                            .expect("lock poisoned")
+                            .borrow_mut()
+                            .running_inner_is_present = true;
                         Ok(running_inner)
                     }
                     Err(e) => {
@@ -2391,8 +2519,12 @@ impl<R: Runtime> ClientShared<R> {
         // we can change this to comply with it.
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
-            if state_cfg != self.statemgr.path() {
-                how.cannot_change("storage.state_dir").map_err(wrap_err)?;
+            // `path()` is `None` for custom (non-filesystem) storage backends,
+            // for which `storage.state_dir` does not apply.
+            if let Some(cur_path) = self.statemgr.path() {
+                if state_cfg != cur_path {
+                    how.cannot_change("storage.state_dir").map_err(wrap_err)?;
+                }
             }
         }
 
@@ -2482,6 +2614,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use tor_config::Reconfigure;

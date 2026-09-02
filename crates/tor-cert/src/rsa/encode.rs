@@ -76,11 +76,12 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use std::time::Duration;
 
     use tor_basic_utils::test_rng::testing_rng;
-    use tor_checkable::{ExternallySigned, Timebound};
+    use tor_checkable::{ExternallySigned, TimeBound};
     use web_time_compat::SystemTimeExt;
 
     use crate::SEC_PER_HOUR;
@@ -105,7 +106,7 @@ mod test {
         let parsed = parsed
             .check_signature(&keypair.to_public_key())
             .unwrap()
-            .check_valid_at(&now)
+            .if_valid_at(&now)
             .unwrap();
 
         assert!(parsed.subject_key_matches(&ed_id));

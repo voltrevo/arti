@@ -12,21 +12,31 @@ use tracing::warn;
 
 use fs_mistrust::Mistrust;
 use tor_basic_utils::iter_join;
+use tor_cell::relaycell::RelayCmd;
 use tor_chanmgr::{ChanMgr, ChanMgrConfig, Dormancy};
 use tor_config_path::CfgPathResolver;
+use tor_dircommon::authority::AuthorityContacts;
+use tor_dircommon::config::{DirTolerance, DownloadScheduleConfig};
 use tor_dirmgr::DirMgrConfig;
+use tor_dirserver::mirror::DirMirror;
 use tor_keymgr::{ArtiNativeKeystore, KeyMgr, KeyMgrBuilder};
 use tor_memquota::MemoryQuotaTracker;
 use tor_netdir::params::NetParameters;
 use tor_persist::state_dir::StateDirectory;
 use tor_persist::{FsStateMgr, StateMgr};
-use tor_proto::relay::CreateRequestHandler;
+use tor_proto::relay::{CircuitIncomingStreamReceiver, CreateRequestHandler};
 use tor_rtcompat::{NetStreamProvider, Runtime};
 
 use crate::client::RelayClient;
 use crate::config::TorRelayConfig;
+use crate::stream::RequestFilter;
 use crate::tasks::channel::build_circ_net_params;
 use crate::tasks::crypto::InitKeyMaterial;
+
+use futures::channel::mpsc;
+
+// TODO(relay): this is in the client module, but not client-specific
+use tor_proto::client::stream::DataStream;
 
 /// An initialized but unbootstrapped relay.
 ///
@@ -73,12 +83,8 @@ pub(crate) struct InertTorRelay {
     /// Location on disk where we store persistent data.
     state_mgr: FsStateMgr,
 
-    /// Key manager. The ownership is shared between the crypto task and the main task
-    /// [`TorRelay`].
-    ///
-    // NOTE: In a future world, would be great if this wouldn't be an Arc<> and we could move it to
-    // the crypto task so nobody has access to it. For now, this is the compromise for simplicity.
-    keymgr: Arc<KeyMgr>,
+    /// Key manager.
+    keymgr: KeyMgr,
 }
 
 impl InertTorRelay {
@@ -130,14 +136,14 @@ impl InertTorRelay {
     /// Connect the [`InertTorRelay`] to the Tor network.
     pub(crate) async fn init<R: Runtime>(self, runtime: R) -> anyhow::Result<TorRelay<R>> {
         // Attempt to generate any missing keys/cert from the KeyMgr.
-        let init_key_material = crate::tasks::crypto::init_keys(&runtime, Arc::clone(&self.keymgr))
+        let init_key_material = crate::tasks::crypto::init_keys(&runtime, &self.keymgr)
             .context("Failed to generate keys")?;
 
         TorRelay::init(runtime, self, init_key_material).await
     }
 
     /// Create the [key manager](KeyMgr).
-    fn create_keymgr(state_path: &Path, mistrust: &Mistrust) -> anyhow::Result<Arc<KeyMgr>> {
+    fn create_keymgr(state_path: &Path, mistrust: &Mistrust) -> anyhow::Result<KeyMgr> {
         let key_store_dir = state_path.join("keystore");
 
         let persistent_store = ArtiNativeKeystore::from_path_and_mistrust(&key_store_dir, mistrust)
@@ -151,7 +157,6 @@ impl InertTorRelay {
             .primary_store(Box::new(persistent_store))
             .build()
             .context("Failed to build the 'KeyMgr'")?;
-        let keymgr = Arc::new(keymgr);
 
         // TODO: support C-tor keystore
 
@@ -171,6 +176,15 @@ pub(crate) struct TorRelay<R: Runtime> {
     /// A "client" used by relays to construct circuits.
     client: RelayClient<R>,
 
+    /// The directory authorities that were either configured or the compiled-in defaults.
+    ///
+    /// We keep a copy here so we can pass it to the descriptor publisher task. These are not
+    /// exposed by a [`tor_dirmgr::DirProvider`] hence why we keep that copy from the config.
+    authorities: AuthorityContacts,
+
+    /// The directory mirror object, used for handling BEGIN_DIR.
+    dir_mirror: DirMirror,
+
     /// Channel manager, used by circuits etc.
     chanmgr: Arc<ChanMgr<R>>,
 
@@ -181,8 +195,14 @@ pub(crate) struct TorRelay<R: Runtime> {
     /// We can access this handler directly to update consensus parameters or keys.
     create_request_handler: Arc<CreateRequestHandler>,
 
+    /// The receiver for the [`Stream`](futures::Stream)s of `IncomingStream` of all circuits.
+    ///
+    /// Receives one [`Stream`](futures::Stream) (of tor streams) per circuit.
+    /// Each of these is handled in a new task.
+    circuit_stream_rx: CircuitIncomingStreamReceiver,
+
     /// See [`InertTorRelay::keymgr`].
-    keymgr: Arc<KeyMgr>,
+    keymgr: KeyMgr,
 
     /// Listening OR ports.
     or_listeners: Vec<<R as NetStreamProvider<SocketAddr>>::Listener>,
@@ -221,6 +241,8 @@ impl<R: Runtime> TorRelay<R> {
             .context("Failed to build chan manager")?,
         );
 
+        let authorities = inert.dirmgr_config.authorities().clone();
+
         // Init the relay's client.
         let client = RelayClient::new(
             runtime.clone(),
@@ -236,11 +258,17 @@ impl<R: Runtime> TorRelay<R> {
         let circ_net_params = build_circ_net_params(client.dirmgr().params().as_ref().as_ref())
             .context("Failed to build circuit parameters for CREATE* request handler")?;
 
+        // TODO(relay): add exit configuration, and update this to reject BEGIN and RESOLVE
+        // if we are not configured to run as an exit
+        let allow_incoming = &[RelayCmd::BEGIN, RelayCmd::BEGIN_DIR, RelayCmd::RESOLVE];
+
         // A handler that will process CREATE* requests on channels.
-        let create_request_handler = CreateRequestHandler::new(
+        let (create_request_handler, circuit_stream_rx) = CreateRequestHandler::new(
             Arc::downgrade(&chanmgr) as Weak<_>,
             circ_net_params,
             init_key_material.ntor_keys,
+            Box::new(|| Box::new(RequestFilter::default()) as Box<_>),
+            allow_incoming,
         );
         let create_request_handler = Arc::new(create_request_handler);
 
@@ -308,14 +336,26 @@ impl<R: Runtime> TorRelay<R> {
             ));
         }
 
+        // TODO DIRMIRROR: Need a config for the DirMirror and should be same as our
+        // TorRelay one.
+        let path: PathBuf = PathBuf::from("/dev/null");
+        let dir_mirror_authorities: AuthorityContacts = Default::default();
+        let schedule: DownloadScheduleConfig = Default::default();
+        let tolerance: DirTolerance = Default::default();
+
+        let dir_mirror = DirMirror::new(path, dir_mirror_authorities, schedule, tolerance);
+
         Ok(Self {
             runtime,
             memquota,
             client,
+            authorities,
+            dir_mirror,
             chanmgr,
             create_request_handler,
             keymgr: inert.keymgr,
             or_listeners,
+            circuit_stream_rx,
         })
     }
 
@@ -362,6 +402,38 @@ impl<R: Runtime> TorRelay<R> {
             }
         });
 
+        // TODO DIRMIRROR: The buffer size here was picked mostly arbitrarily
+        // (on my new and not-very-busy relay, I noticed bursts of ~5000 BEGIN_DIR requests per second,
+        // but I'm not sure how representative this is).
+        //
+        // We may be able to make this buffer even smaller, assuming the consumer (i.e. DirMirror)
+        // reads from it quickly enough (presumably it will read from this in a loop,
+        // dispatching each request to a new task?)
+        #[allow(clippy::disallowed_methods)]
+        let (begin_dir_tx, begin_dir_rx) = mpsc::channel::<tor_proto::Result<DataStream>>(4096);
+
+        // Spawn a directory mirror server task, if we are a dir cache.
+        task_handles.spawn(async {
+            // TODO DIRMIRROR: it would be nicer if serve() returned
+            // Result<Void, _> to statically prove that it indeed never
+            // returns with a non-error.
+            // Plus, if we do that, we can simplify this invocation,
+            // because we won't need the anyhow! error below.
+            self.dir_mirror.serve(begin_dir_rx).await?;
+            Err(anyhow::anyhow!("dir mirror exited"))
+        });
+
+        let runtime = self.runtime.clone();
+        // Listen for new Tor streams
+        task_handles.spawn(
+            // TODO: Should we give all tasks a `start` method?
+            crate::stream::handle_incoming_streams(runtime, begin_dir_tx, self.circuit_stream_rx),
+        );
+
+        // Channel used to ask the descriptor publisher to rebuild and re-publish the descriptor.
+        let (desc_command_tx, desc_command_rx) = crate::tasks::descriptor::new_command_channel();
+        let (crypto_command_tx, crypto_command_rx) = crate::tasks::crypto::new_command_channel();
+
         // Start the crypto task.
         task_handles.spawn({
             let reactor = crate::tasks::crypto::Reactor::new(
@@ -370,12 +442,33 @@ impl<R: Runtime> TorRelay<R> {
                 self.create_request_handler.clone(),
                 self.keymgr,
                 self.client.dirmgr().clone(),
+                desc_command_tx,
+                crypto_command_rx,
             )?;
             async {
                 reactor
                     .run()
                     .await
                     .context("Failed to run key rotation task")
+            }
+        });
+
+        // Build and publish the relay's own descriptor.
+        task_handles.spawn({
+            let netdir = Arc::clone(self.client.dirmgr()) as Arc<_>;
+            let authorities = self.authorities;
+            async move {
+                crate::tasks::RelayDescriptorPublisherTask::new(
+                    &self.runtime,
+                    netdir,
+                    authorities,
+                    crypto_command_tx,
+                    desc_command_rx,
+                )
+                .context("Failed to create descriptor publisher task")?
+                .start()
+                .await
+                .context("Failed to run descriptor publisher task")
             }
         });
 

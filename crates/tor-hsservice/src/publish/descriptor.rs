@@ -4,6 +4,7 @@ use super::*;
 use crate::config::OnionServiceConfigPublisherView;
 use tor_cell::chancell::msg::HandshakeType;
 use tor_llcrypto::rng::EntropicRng;
+use tor_netdir::params::NetParameters;
 
 /// Build the descriptor.
 ///
@@ -21,6 +22,7 @@ pub(super) fn build_sign<
     keymgr: &Arc<KeyMgr>,
     pow_manager: &Arc<PowManager<R>>,
     config: &Arc<OnionServiceConfigPublisherView>,
+    netparams: &NetParameters,
     authorized_clients: Option<&RestrictedDiscoveryKeys>,
     ipt_set: &IptSet,
     period: TimePeriod,
@@ -33,6 +35,9 @@ pub(super) fn build_sign<
     // TODO: should this be configurable? If so, we should read it from the svc config.
     //
     /// The CREATE handshake type we support.
+    //
+    // NOTE: This list may be useless. See
+    // <https://gitlab.torproject.org/tpo/core/torspec/-/work_items/420>.
     const CREATE2_FORMATS: &[HandshakeType] = &[HandshakeType::NTOR];
 
     /// Lifetime of the intro_{auth, enc}_key_cert certificates in the descriptor.
@@ -138,6 +143,24 @@ pub(super) fn build_sign<
         .subcredential(subcredential)
         .auth_clients(auth_clients.as_deref())
         .max_generated_len(max_hsdesc_len);
+
+    #[cfg(feature = "negotiate-extensions")]
+    {
+        // We support negotiating protocol extensions, so we're going to advertise what we support.
+        use crate::caps;
+
+        // TODO #2594: In theory we should associate the sendme_inc with our intro points,
+        // and rotate them if the sendme_inc value changes.
+        //
+        // (In practice the lack of negotiation would cause temporary trouble in the future if
+        // the value changes between what we publish and what we use, but we are pretty sure
+        // that we won't actually change the value any time soon.
+        // See <https://gitlab.torproject.org/tpo/core/torspec/-/work_items/421> for
+        // discussion and possible solutions.)
+        desc = desc.flow_control(caps::declared_flowctrl(netparams));
+
+        desc = desc.supported_protocols(caps::declared_protocols());
+    }
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "hs-pow-full")] {

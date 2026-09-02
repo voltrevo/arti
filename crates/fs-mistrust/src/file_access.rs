@@ -277,6 +277,7 @@ impl<'a> FileAccess<'a> {
             .write_all(contents.as_ref())
             .map_err(|e| Error::io(e, &tmp_name, "write to file"))?;
         // Flush and close.
+        #[cfg_attr(target_arch = "wasm32", expect(clippy::drop_non_drop))]
         drop(tmp_file);
 
         // Replace the old file.
@@ -305,6 +306,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     #[cfg(unix)]

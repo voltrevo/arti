@@ -220,12 +220,17 @@ where
 
     type Listener = TcpR::Listener;
 
+    type ConnectOptions = TcpR::ConnectOptions;
     type ListenOptions = TcpR::ListenOptions;
 
     #[inline]
     #[instrument(skip_all, level = "trace")]
-    async fn connect(&self, addr: &net::SocketAddr) -> IoResult<Self::Stream> {
-        self.inner.tcp.connect(addr).await
+    async fn connect(
+        &self,
+        addr: &net::SocketAddr,
+        options: &Self::ConnectOptions,
+    ) -> IoResult<Self::Stream> {
+        self.inner.tcp.connect(addr, options).await
     }
 
     #[inline]
@@ -255,12 +260,17 @@ where
 
     type Listener = UnixR::Listener;
 
+    type ConnectOptions = UnixR::ConnectOptions;
     type ListenOptions = UnixR::ListenOptions;
 
     #[inline]
     #[instrument(skip_all, level = "trace")]
-    async fn connect(&self, addr: &unix::SocketAddr) -> IoResult<Self::Stream> {
-        self.inner.unix.connect(addr).await
+    async fn connect(
+        &self,
+        addr: &unix::SocketAddr,
+        options: &Self::ConnectOptions,
+    ) -> IoResult<Self::Stream> {
+        self.inner.unix.connect(addr, options).await
     }
 
     #[inline]
@@ -346,25 +356,8 @@ mod sealed {
 ///
 /// (If you need to do more complicated versions of this, you should likely construct
 /// CompoundRuntime directly.)
-pub trait RuntimeSubstExt: sealed::Sealed + Sized {
+pub trait RuntimeSubstExt: sealed::Sealed + Runtime + Sized {
     /// Return a new runtime wrapping this runtime, but replacing its TCP NetStreamProvider.
-    fn with_tcp_provider<T>(
-        &self,
-        new_tcp: T,
-    ) -> CompoundRuntime<Self, Self, Self, T, Self, Self, Self>;
-    /// Return a new runtime wrapping this runtime, but replacing its SleepProvider.
-    fn with_sleep_provider<T>(
-        &self,
-        new_sleep: T,
-    ) -> CompoundRuntime<Self, T, Self, Self, Self, Self, Self>;
-    /// Return a new runtime wrapping this runtime, but replacing its CoarseTimeProvider.
-    fn with_coarse_time_provider<T>(
-        &self,
-        new_coarse_time: T,
-    ) -> CompoundRuntime<Self, Self, T, Self, Self, Self, Self>;
-}
-impl<R: Runtime> sealed::Sealed for R {}
-impl<R: Runtime + Sized> RuntimeSubstExt for R {
     fn with_tcp_provider<T>(
         &self,
         new_tcp: T,
@@ -379,7 +372,7 @@ impl<R: Runtime + Sized> RuntimeSubstExt for R {
             self.clone(),
         )
     }
-
+    /// Return a new runtime wrapping this runtime, but replacing its SleepProvider.
     fn with_sleep_provider<T>(
         &self,
         new_sleep: T,
@@ -394,7 +387,7 @@ impl<R: Runtime + Sized> RuntimeSubstExt for R {
             self.clone(),
         )
     }
-
+    /// Return a new runtime wrapping this runtime, but replacing its CoarseTimeProvider.
     fn with_coarse_time_provider<T>(
         &self,
         new_coarse_time: T,
@@ -410,3 +403,5 @@ impl<R: Runtime + Sized> RuntimeSubstExt for R {
         )
     }
 }
+impl<R: Runtime> sealed::Sealed for R {}
+impl<R: Runtime + Sized> RuntimeSubstExt for R {}

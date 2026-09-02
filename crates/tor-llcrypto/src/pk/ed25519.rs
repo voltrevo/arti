@@ -12,6 +12,7 @@
 use base64ct::{Base64Unpadded, Encoding as _};
 use curve25519_dalek::Scalar;
 use derive_deftly::Deftly;
+use safelog::util::write_start_redacted;
 use std::fmt::{self, Debug, Display, Formatter};
 use subtle::{Choice, ConstantTimeEq};
 
@@ -372,11 +373,7 @@ impl safelog::Redactable for Ed25519Identity {
     /// Warning: This displays 12 bits of the ed25519 identity, which is
     /// enough to narrow down a public relay by a great deal.
     fn display_redacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}…",
-            &Base64Unpadded::encode_string(self.id.as_ref())[..2]
-        )
+        write_start_redacted(f, &Base64Unpadded::encode_string(self.id.as_ref()), 2, "…")
     }
 
     fn debug_redacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -546,6 +543,12 @@ impl Ed25519PublicKey for Keypair {
     }
 }
 
+impl Ed25519PublicKey for ExpandedKeypair {
+    fn public_key(&self) -> PublicKey {
+        self.public
+    }
+}
+
 /// An object that can generate Ed25519 signatures.
 pub trait Ed25519SigningKey {
     /// Sign a message with this key.
@@ -577,6 +580,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

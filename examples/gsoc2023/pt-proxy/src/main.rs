@@ -93,7 +93,7 @@ fn build_server_config(
     bind_addr: &str,
     forwarding_server_addr: &str,
 ) -> Result<(PtCommonParameters, PtServerParameters)> {
-    let bindaddr_formatted = format!("{}-{}", &protocol, bind_addr);
+    let bindaddr_formatted = format!("{}-{}", protocol, bind_addr);
     let orport = forwarding_server_addr.to_string();
     Ok((
         PtCommonParameters::builder()

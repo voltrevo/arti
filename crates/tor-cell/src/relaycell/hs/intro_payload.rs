@@ -5,7 +5,10 @@
 //! point, and how to handshake with the client there.)
 
 use super::pow::ProofOfWork;
-use crate::relaycell::{extend::CircRequestExt, extlist::ExtList};
+use crate::relaycell::{
+    extend::{CcRequest, CircRequestExt, SubprotocolRequest},
+    extlist::ExtList,
+};
 use caret::caret_int;
 use tor_bytes::{EncodeError, EncodeResult, Error, Readable, Reader, Result, Writeable, Writer};
 use tor_hscrypto::RendCookie;
@@ -173,12 +176,23 @@ impl IntroduceHandshakePayload {
         &self.link_specifiers[..]
     }
 
-    /// Return the proof-of-work extension for the specified rendezvous point.
+    /// Return the proof-of-work extension for this request.
     pub fn proof_of_work_extension(&self) -> Option<&ProofOfWork> {
-        // TODO: it would be nice to change ExtList to provide a nicer API for this...
-        self.extensions.extensions.iter().find_map(|x| match x {
-            CircRequestExt::ProofOfWork(x) => Some(x),
-            _ => None,
-        })
+        self.extensions.get_proof_of_work()
+    }
+
+    /// Return the cc request extension for this request.
+    pub fn cc_request_extension(&self) -> Option<&CcRequest> {
+        self.extensions.get_cc_request()
+    }
+
+    /// Return the subprotocol request extension for this request.
+    pub fn subprotocol_request_extension(&self) -> Option<&SubprotocolRequest> {
+        self.extensions.get_subprotocol_request()
+    }
+
+    /// Add a new extension `ext` to the list of extensions in this payload.
+    pub fn add_extension(&mut self, ext: CircRequestExt) {
+        self.extensions.push(ext);
     }
 }

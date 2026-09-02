@@ -685,7 +685,7 @@ impl<R: Runtime> Reactor<R> {
             // chance to notice.
             // We'll just try to reject the new circuit request and let the reactor shut down
             // normally, rather than return an error.
-            let destroy = Destroy::new(DestroyReason::CHANNEL_CLOSED);
+            let destroy = Destroy::new(DestroyReason::NONE);
             let destroy = AnyChanCell::new(Some(circid), destroy.into());
 
             debug!(
@@ -899,9 +899,9 @@ pub(crate) mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use crate::channel::{Canonicity, ChannelMode, ClosedUnexpectedly, UniqId};
+    use crate::circuit::test::fake_mpsc;
     use crate::client::circuit::CircParameters;
     use crate::client::circuit::padding::new_padding;
-    use crate::fake_mpsc;
     use crate::peer::{PeerAddr, PeerInfo};
     use crate::util::{DummyTimeoutEstimator, fake_mq};
     use futures::sink::SinkExt;

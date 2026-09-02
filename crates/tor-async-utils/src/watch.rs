@@ -1,4 +1,6 @@
 //! Extension trait for more efficient use of [`postage::watch`].
+
+use extend::ext;
 use std::ops::{Deref, DerefMut};
 use void::{ResultVoidExt as _, Void};
 
@@ -9,31 +11,12 @@ use void::{ResultVoidExt as _, Void};
 ///
 /// We provide this as an extension trait became the implementation is a bit fiddly.
 /// This lets us concentrate on the actual logic, when we use it.
-pub trait PostageWatchSenderExt<T> {
+#[ext(name = PostageWatchSenderExt)]
+pub impl<T> postage::watch::Sender<T> {
     /// Update, by calling a fallible function, sending only if necessary
     ///
     /// Calls `update` on the current value in the watch, to obtain a new value.
     /// If the new value doesn't compare equal, updates the watch, notifying receivers.
-    fn try_maybe_send<F, E>(&mut self, update: F) -> Result<(), E>
-    where
-        T: PartialEq,
-        F: FnOnce(&T) -> Result<T, E>;
-
-    /// Update, by calling a function, sending only if necessary
-    ///
-    /// Calls `update` on the current value in the watch, to obtain a new value.
-    /// If the new value doesn't compare equal, updates the watch, notifying receivers.
-    fn maybe_send<F>(&mut self, update: F)
-    where
-        T: PartialEq,
-        F: FnOnce(&T) -> T,
-    {
-        self.try_maybe_send(|t| Ok::<_, Void>(update(t)))
-            .void_unwrap();
-    }
-}
-
-impl<T> PostageWatchSenderExt<T> for postage::watch::Sender<T> {
     fn try_maybe_send<F, E>(&mut self, update: F) -> Result<(), E>
     where
         T: PartialEq,
@@ -50,6 +33,19 @@ impl<T> PostageWatchSenderExt<T> for postage::watch::Sender<T> {
             *self.borrow_mut() = new;
         }
         Ok(())
+    }
+
+    /// Update, by calling a function, sending only if necessary
+    ///
+    /// Calls `update` on the current value in the watch, to obtain a new value.
+    /// If the new value doesn't compare equal, updates the watch, notifying receivers.
+    fn maybe_send<F>(&mut self, update: F)
+    where
+        T: PartialEq,
+        F: FnOnce(&T) -> T,
+    {
+        self.try_maybe_send(|t| Ok::<_, Void>(update(t)))
+            .void_unwrap();
     }
 }
 
@@ -141,6 +137,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;

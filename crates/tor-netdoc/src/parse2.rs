@@ -21,7 +21,6 @@
 //!
 //! We don't always parse things into a sorted order.
 //! Sorting will be done when assembling documents, before outputting.
-// TODO we don't implement deriving output yet.
 //!
 //! # Types, and signature handling
 //!
@@ -29,7 +28,7 @@
 //! In this case there are three types:
 //!
 //!   * **`FooUnverified`**: a signed `Foo`, with its signatures, not yet verified.
-//!     Implements [`NetdocUnverified`],
+//!     Implements [`NetdocParseableUnverified`],
 //!     typically by invoking the
 //!     [`NetdocUParseablenverified` derive macro](crate::derive_deftly_template_NetdocParseableUnverified)
 //!     on `Foo`.
@@ -95,9 +94,6 @@ pub mod multiplicity;
 mod signatures;
 mod traits;
 
-#[cfg(feature = "incomplete")]
-pub mod poc;
-
 use internal_prelude::*;
 
 pub use error::{ArgumentError, ErrorProblem, ParseError, UnexpectedArgument, VerifyFailed};
@@ -106,10 +102,13 @@ pub use keyword::KeywordRef;
 pub use lex::{ArgumentStream, ItemStream, NoFurtherArguments, UnparsedItem, UnparsedObject};
 pub use lines::{Lines, Peeked, StrExt};
 pub use signatures::{
-    HasUnverifiedParsedBody, NetdocParseableSignatures, NetdocUnverified, SignatureHashInputs,
-    SignatureHashesAccumulator, SignatureItemParseable, SignaturesData, check_validity_time,
-    check_validity_time_tolerance, sig_hashes,
+    HasUnverifiedParsedBody, NetdocParseableSignatures, NetdocParseableUnverified,
+    SignatureHashInputs, SignatureHashesAccumulator, SignatureItemParseable, SignaturesData,
+    sig_hashes,
 };
+#[allow(deprecated)]
+#[deprecated]
+pub use signatures::{check_validity_time, check_validity_time_tolerance};
 pub use structural::{StopAt, StopPredicate};
 pub use traits::{
     IsStructural, ItemArgumentParseable, ItemObjectParseable, ItemValueParseable, NetdocParseable,
@@ -155,12 +154,18 @@ pub struct ParseOptions {
 }
 
 /// Input to a network document top-level parsing operation
+#[derive(Debug, Clone, amplify::Getters)]
 pub struct ParseInput<'s> {
     /// The actual document text
+    #[getter(as_copy)]
     input: &'s str,
+
     /// Filename (for error reporting)
+    #[getter(as_copy)]
     file: &'s str,
+
     /// Parsing options
+    #[getter(as_ref, as_mut)]
     options: ParseOptions,
 }
 
@@ -172,6 +177,16 @@ impl<'s> ParseInput<'s> {
             file,
             options: ParseOptions::default(),
         }
+    }
+
+    /// Enable retention of unknown values during parsing
+    ///
+    /// Convenience method to set
+    /// [`.options_mut().retain_unknown_values`](ParseOptions::retain_unknown_values)
+    /// to [`Unknown::Retained`].
+    #[cfg(feature = "retain-unknown")]
+    pub fn retain_unknown_values(&mut self) {
+        self.options_mut().retain_unknown_values = Unknown::Retained(());
     }
 }
 

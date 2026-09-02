@@ -42,6 +42,7 @@ pub(crate) use {
     derive_more::{Constructor, Deref, DerefMut},
     dyn_clone::DynClone,
     educe::Educe,
+    extend::ext,
     itertools::chain,
     paste::paste,
     pin_project::pin_project,

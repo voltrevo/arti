@@ -5,7 +5,7 @@ use crate::parse::tokenize::Item;
 use crate::types::misc::{B64, Iso8601TimeNoSp};
 use crate::{KeywordEncodable, NetdocErrorKind, Result};
 use std::time::SystemTime;
-use tor_checkable::timed::TimerangeBound;
+use tor_checkable::timed::TimeRangeBound;
 use tor_hscrypto::pow::v1::{Effort, Seed};
 
 /// The contents of a `pow-params v1` line
@@ -21,7 +21,7 @@ use tor_hscrypto::pow::v1::{Effort, Seed};
 pub struct PowParamsV1 {
     /// Time limited [`Seed`]
     #[getter(as_ref)]
-    seed: TimerangeBound<Seed>,
+    seed: TimeRangeBound<Seed>,
     /// Last known suggested [`Effort`]
     ///
     /// This can be [`Effort::zero()`] if the puzzle is available but the
@@ -42,7 +42,7 @@ impl PowParamsV1 {
         let suggested_effort = item.required_arg(2)?.parse::<u32>()?.into();
         let expires: SystemTime = item.required_arg(3)?.parse::<Iso8601TimeNoSp>()?.into();
         Ok(Self {
-            seed: TimerangeBound::new(seed, ..expires),
+            seed: TimeRangeBound::new(seed, ..expires),
             suggested_effort,
         })
     }

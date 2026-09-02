@@ -12,6 +12,7 @@
 #![allow(clippy::unchecked_time_subtraction)]
 #![allow(clippy::useless_vec)]
 #![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
 use std::future::Future;
@@ -37,10 +38,10 @@ const EXAMPLE_DESCRIPTOR: &str = include_str!("../../testdata/routerdesc1.txt");
 const EXAMPLE_PORT: u16 = 9001;
 
 fn example_validity() -> (SystemTime, SystemTime) {
-    let (_, (t, u)) = RouterDesc::parse(EXAMPLE_DESCRIPTOR)
+    let (t, u) = RouterDesc::parse(EXAMPLE_DESCRIPTOR)
         .unwrap()
         .dangerously_assume_wellsigned()
-        .dangerously_into_parts();
+        .bounds_start_end();
     let ret = |tb| match tb {
         Some(t) => t,
         None => panic!("Time range does not have a starting bound"),

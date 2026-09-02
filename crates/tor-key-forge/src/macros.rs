@@ -288,6 +288,15 @@ define_derive_deftly! {
             $PK_NAME(self.$KP_NAME.public.clone())
         }
 
+        /// The raw inner secret key.
+        ///
+        /// We return it directly without a wrapper type because it's expected that the secret key
+        /// will not be moved around,
+        /// and instead accessed only just before it's needed.
+        $tvis fn secret(&self) -> &$crate::macro_deps::curve25519::StaticSecret {
+            &self.$KP_NAME.secret
+        }
+
         /// Wrapper around the diffie_hellman() function of the underlying type. This is pretty fun
         /// because it accepts both the PK_NAME wrapper or the raw inner curve25519::PublicKey.
         $tvis fn diffie_hellman<T>(&self, pk: T) -> $crate::macro_deps::curve25519::SharedSecret

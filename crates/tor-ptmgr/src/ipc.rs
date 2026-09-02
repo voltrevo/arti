@@ -145,8 +145,11 @@ fn parse_one_value(from: &str) -> Result<(String, &str), &'static str> {
         (ret, chars.as_str())
     } else {
         // Simple: just find the space
-        let space = from.find(' ').unwrap_or(from.len());
-        (from[0..space].into(), &from[space..])
+        if let Some((start, rest)) = from.split_once(' ') {
+            (start.to_string(), rest)
+        } else {
+            (from.to_string(), "")
+        }
     })
 }
 
@@ -192,7 +195,6 @@ impl FromStr for PtMessage {
 
     // NOTE(eta): This, of course, implies that the PT IPC communications are valid UTF-8.
     //            This assumption might turn out to be false.
-    #[allow(clippy::cognitive_complexity)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO(eta): Maybe tolerate additional whitespace (using `split_whitespace`)?.
         //            This requires modified words.join() logic, though.
@@ -331,14 +333,13 @@ impl FromStr for PtMessage {
                 let message = words.join(" ");
                 let mut message = &message as &str;
                 while !message.is_empty() {
-                    let equals = message
-                        .find('=')
+                    let (k, rest) = message
+                        .split_once('=')
                         .ok_or_else(|| Cow::from(format!("failed to find = in '{}'", message)))?;
-                    let k = &message[..equals];
-                    if equals + 1 == message.len() {
+                    if rest.is_empty() {
                         return Err(Cow::from("key with no value"));
                     }
-                    let (v, rest) = parse_one_value(&message[(equals + 1)..]).map_err(Cow::from)?;
+                    let (v, rest) = parse_one_value(rest).map_err(Cow::from)?;
                     if ret.contains_key(k) {
                         // At least check our assumption that this is actually k/v
                         // and not Vec<(String, String)>.
@@ -346,8 +347,8 @@ impl FromStr for PtMessage {
                     }
                     ret.insert(k.to_owned(), v);
                     message = rest;
-                    if message.starts_with(' ') {
-                        message = &message[1..];
+                    if let Some(remainder) = message.strip_prefix(" ") {
+                        message = remainder;
                     }
                 }
                 Self::Status(PtStatus { data: ret })
@@ -389,7 +390,6 @@ pub(crate) mod sealed {
             // TODO RELAY #1649 We don't use a tor_memquota::mq_queue here yet
             let (mut tx, rx) = tor_async_utils::mpsc_channel_no_memquota(PT_STDIO_BUFFER);
             let ident = identifier.clone();
-            #[allow(clippy::cognitive_complexity)]
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 let _stdin = stdin;
@@ -435,6 +435,7 @@ pub(crate) mod sealed {
                 // Dropping stdin should tell the PT to exit, since we set the correct environment
                 // variable for that to happen.
                 trace!("Asking PT {} to exit, nicely.", ident);
+                #[cfg_attr(target_arch = "wasm32", expect(clippy::drop_non_drop))]
                 drop(_stdin);
                 // Give it some time to exit.
                 thread::sleep(GRACEFUL_EXIT_TIME);
@@ -463,7 +464,6 @@ pub(crate) mod sealed {
         /// Receive a message from the pluggable transport binary asynchronously.
         ///
         /// Note: This will convert `PtMessage::Log` into a tracing log call automatically.
-        #[allow(clippy::cognitive_complexity)] // due to tracing
         pub async fn recv(&mut self) -> err::Result<PtMessage> {
             loop {
                 match self.stdout.next().await {
@@ -1144,6 +1144,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use crate::ipc::{PtMessage, PtStatus};

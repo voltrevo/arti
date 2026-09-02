@@ -53,8 +53,12 @@ fn cli_tests() {
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "onion-service-cli-extra")] {
-            t.case("tests/testcases/keys/*.toml");
-            t.case("tests/testcases/keys/*.md");
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "onion-service-service")] {
+                    t.case("tests/testcases/keys/*.toml");
+                    t.case("tests/testcases/keys/*.md");
+                }
+            }
         } else {
             // This is not yet implemented, see #1487
             t.skip("tests/testcases/keys-feature-missing/*.toml");

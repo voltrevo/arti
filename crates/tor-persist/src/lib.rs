@@ -11,7 +11,7 @@
 #![deny(clippy::cargo_common_metadata)]
 #![deny(clippy::cast_lossless)]
 #![deny(clippy::checked_conversions)]
-#![warn(clippy::cognitive_complexity)]
+#![allow(clippy::cognitive_complexity)] // See arti#2556
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -44,11 +44,13 @@
 #![allow(mismatched_lifetime_syntaxes)] // temporary workaround for arti#2060
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
+#![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
 #![cfg_attr(not(all(feature = "experimental", feature = "full")), allow(unused))]
 
+mod custom;
 mod err;
 #[cfg(not(target_arch = "wasm32"))]
 mod fs;
@@ -67,8 +69,9 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
 /// Wrapper type for Results returned from this crate.
-type Result<T> = std::result::Result<T, crate::Error>;
+pub type Result<T> = std::result::Result<T, crate::Error>;
 
+pub use custom::{AnyStateMgr, KeyValueStore, StorageError};
 pub use err::{Error, ErrorSource};
 #[cfg(not(target_arch = "wasm32"))]
 pub use fs::FsStateMgr;

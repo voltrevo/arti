@@ -4,11 +4,11 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use rusqlite::{params, Transaction};
+use rusqlite::{Transaction, params};
 use weak_table::WeakValueHashMap;
 
 use crate::{
-    database::{sql, DocumentId},
+    database::{DocumentId, sql},
     err::DatabaseError,
 };
 
@@ -129,6 +129,7 @@ mod test {
     #![allow(clippy::unchecked_time_subtraction)]
     #![allow(clippy::useless_vec)]
     #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use crate::database;
 

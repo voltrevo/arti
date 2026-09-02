@@ -2,6 +2,7 @@
 
 use derive_deftly::define_derive_deftly;
 
+pub(crate) mod rangemap_ext;
 pub(crate) mod str;
 
 pub mod batching_split_before;

@@ -16,6 +16,69 @@ ns_use_this_variety! {
     pub use [crate::doc::netstatus::rs]::?::{RouterStatus};
 }
 
+/// Network status document - consensus, or vote
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html>
+///
+/// <https://spec.torproject.org/dir-spec/computing-consensus.html#flavors>
+#[derive(Clone, Debug, Deftly)]
+#[derive_deftly(Constructor, NetdocEncodable, NetdocParseableUnverified)]
+#[deftly(netdoc(doctype_for_error = NETSTATUS_DOCTYPE_FOR_ERROR))]
+#[allow(clippy::exhaustive_structs)]
+pub struct NetworkStatus {
+    /// The `network-status-version` intro item
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:network-status-version>
+    ///
+    /// In the "preamble" in the spec, but not in our `Preamble` type for Reasons.
+    pub network_status_version: NetworkStatusVersionItem,
+
+    /// `vote-status`
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:vote-status>
+    ///
+    /// In the "preamble" in the spec, but not in our `Preamble` type for Reasons.
+    #[deftly(netdoc(single_arg))]
+    pub vote_status: ns_type!(
+        VoteStatusConsensus,
+        VoteStatusConsensus,
+        VoteStatusVote,
+    ),
+
+    /// The rest of the preamble
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:preable>
+    #[deftly(constructor, netdoc(flatten))]
+    pub preamble: Preamble,
+
+    /// Authority section
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:authority>
+    #[deftly(constructor, netdoc(subdoc))]
+    pub authority: ns_type!(
+        ConsensusAuthoritySection,
+        ConsensusAuthoritySection,
+        VoteAuthoritySection,
+    ),
+
+    /// Router status entries
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:router-status>
+    #[deftly(netdoc(subdoc))]
+    pub routers: Vec<RouterStatus>,
+
+    /// Footer
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#section:footer>
+    #[deftly(netdoc(subdoc))]
+    #[deftly(constructor)]
+    pub footer: Footer,
+
+    #[doc(hidden)]
+    #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
+}
+
 /// `network-status-version` intro item in a consensus
 ///
 /// This is hard to parse because it's so irregular (even, ambiguous).
@@ -53,10 +116,6 @@ pub struct NetworkStatusVersionItem {
 /// instead, in `Consensus.flavor`, there's just the `ConsensusFlavor`.
 /// `parse2` doesn't (currently) support subdocuments which contain the parent's intro item
 /// (ie, `#[deftly(netdoc(flatten))]` is not supported on the first field.)
-//
-// TODO DIRAUTH this is missing some fields that need to be included in votes,
-// by dirauths, when voting.  They are not needed for calculating a consensus from votes.
-// there are individual TODO comments about each such defect.
 #[derive(Clone, Debug, Deftly)]
 #[derive_deftly(Constructor, NetdocEncodableFields, NetdocParseableFields)]
 #[allow(clippy::exhaustive_structs)]
@@ -90,21 +149,21 @@ pub struct Preamble {
     pub voting_delay: Option<(u32, u32)>,
 
     /// List of recommended Tor client versions.
-    #[deftly(constructor)]
-    #[deftly(netdoc(single_arg))]
-    pub client_versions: Vec<String>,
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:client-versions>
+    #[deftly(netdoc(default))]
+    pub client_versions: RecommendedTorVersions,
 
     /// List of recommended Tor relay versions.
-    #[deftly(constructor)]
-    #[deftly(netdoc(single_arg))]
-    pub server_versions: Vec<String>,
+    ///
+    /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:server-versions>
+    #[deftly(netdoc(default))]
+    pub server_versions: RecommendedTorVersions,
 
     /// Router flags which could be determined
     #[deftly(constructor)]
     #[deftly(netdoc(with = "relay_flags::ParserEncoder::<relay_flags::NoImplicitRepr>"))]
     pub known_flags: DocRelayFlags,
-
-    // TODO DIRAUTH torspec#404 missing field: flag-thresholds (in votes)
 
     /// Lists of recommended and required subprotocols.
     ///
@@ -122,9 +181,6 @@ pub struct Preamble {
     /// Global shared-random values
     #[deftly(netdoc(flatten))]
     pub shared_rand: ns_type!( SharedRandStatuses, SharedRandStatuses, NotPresent ),
-
-    // TODO DIRAUTH missing field: bandwidth-file-headers (in votes)
-    // TODO DIRAUTH missing field: bandwidth-file-digest (in votes)
 
     #[doc(hidden)]
     #[deftly(netdoc(skip))]
@@ -154,10 +210,21 @@ pub struct Footer {
 
 /// Signatures on a network status document
 #[derive(Deftly, Clone, Debug)]
-#[derive_deftly(NetdocParseableSignatures)]
+#[derive_deftly(NetdocEncodableFields, NetdocParseableSignatures)]
 #[deftly(netdoc(signatures(hashes_accu = "DirectorySignaturesHashesAccu")))]
 #[non_exhaustive]
 pub struct NetworkStatusSignatures {
     /// `directory-signature`s
     pub directory_signature: ns_type!(Vec<Signature>, Vec<Signature>, Signature),
+}
+
+impl Preamble {
+    /// Calculate the validity range (time interval) for this network status document
+    pub fn validity_time_range(&self) -> std::ops::Range<SystemTime> {
+        let lifetime = self.lifetime.clone();
+        let delay = self.voting_delay.unwrap_or((0, 0));
+        let dist_interval = time::Duration::from_secs(delay.1.into());
+        let starting_time = lifetime.valid_after.saturating_sub(dist_interval);
+        starting_time..*lifetime.valid_until
+    }
 }

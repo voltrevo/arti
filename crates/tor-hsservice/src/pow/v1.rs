@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tor_basic_utils::RngExt as _;
 use tor_cell::relaycell::hs::pow::{ProofOfWork, v1::ProofOfWorkV1};
-use tor_checkable::timed::TimerangeBound;
+use tor_checkable::timed::TimeRangeBound;
 use tor_error::warn_report;
 use tor_hscrypto::{
     pk::HsBlindIdKey,
@@ -499,7 +499,6 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> PowManagerGeneric<R, Q
     /// This also pokes the publisher when needed to cause rotated seeds to be published.
     ///
     /// Returns the next time this function should be called again.
-    #[allow(clippy::cognitive_complexity)]
     async fn rotate_seeds_if_expiring(&self) -> Option<SystemTime> {
         let mut expired_verifiers = vec![];
         let mut new_verifiers = vec![];
@@ -664,7 +663,7 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> PowManagerGeneric<R, Q
         };
 
         Ok(PowParams::V1(PowParamsV1::new(
-            TimerangeBound::new(seed, ..expiration),
+            TimeRangeBound::new(seed, ..expiration),
             suggested_effort,
         )))
     }
@@ -1038,7 +1037,6 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> RendRequestReceiver<R,
 
     /// Loop to accept message from the wrapped [`mpsc::Receiver`], validate PoW solves, and
     /// enqueue onto the priority queue.
-    #[allow(clippy::cognitive_complexity)]
     fn accept_loop<P: MockablePowManager>(
         self,
         runtime: &R,
@@ -1071,11 +1069,35 @@ impl<R: Runtime, Q: MockableRendRequest + Send + 'static> RendRequestReceiver<R,
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "metrics")] {
-                let counter_rendrequest_error_total = metrics::counter!("arti_hss_pow_rendrequest_error_total", "nickname" => nickname.clone());
-                let counter_rendrequest_verification_failure = metrics::counter!("arti_hss_pow_rendrequest_verification_failure_total", "nickname" => nickname.clone());
-                let counter_rend_queue_overflow = metrics::counter!("arti_hss_pow_rend_queue_overflow_total", "nickname" => nickname.clone());
-                let counter_rendrequest_enqueued = metrics::counter!("arti_hss_pow_rendrequest_enqueued_total", "nickname" => nickname.clone());
-                let histogram_rendrequest_effort = metrics::histogram!("arti_hss_pow_rendrequest_effort_hist", "nickname" => nickname.clone());
+                let counter_rendrequest_error_total = metrics::counter!(
+                    description: "Number of errors processing rendezvous requests in the PoW subsystem.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rendrequest_error_total",
+                    "nickname" => nickname.clone()
+                );
+                let counter_rendrequest_verification_failure = metrics::counter!(
+                    description: "Number of PoW verification failures.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rendrequest_verification_failure_total",
+                    "nickname" => nickname.clone()
+                );
+                let counter_rend_queue_overflow = metrics::counter!(
+                    description: "Number of times the PoW rendezvous request queue overflowed, leading to dropped requests.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rend_queue_overflow_total",
+                    "nickname" => nickname.clone()
+                );
+                let counter_rendrequest_enqueued = metrics::counter!(
+                    description: "Number of rendezvous requests enqueued in the PoW subsystem.",
+                    unit: metrics::Unit::Count,
+                    "arti_hss_pow_rendrequest_enqueued_total",
+                    "nickname" => nickname.clone()
+                );
+                let histogram_rendrequest_effort = metrics::histogram!(
+                    description: "Histogram of effort values seen for incoming PoW requests.",
+                    "arti_hss_pow_rendrequest_effort_hist",
+                    "nickname" => nickname.clone()
+                );
             }
         }
 
