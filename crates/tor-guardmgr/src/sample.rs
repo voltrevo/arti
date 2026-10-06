@@ -811,9 +811,10 @@ impl GuardSet {
         // _rather_ use are either down, or have had their circuit
         // attempts pending for too long.
 
-        let cutoff = now
-            .checked_sub(params.np_connect_timeout)
-            .expect("Can't subtract connect timeout from now.");
+        // `None` when `now` is less than `np_connect_timeout` after the clock's
+        // origin, which is routine on wasm32-unknown-unknown (the origin there is
+        // page/worker/process start). Every attempt then counts as recent.
+        let cutoff = now.checked_sub(params.np_connect_timeout);
 
         for (src, guard) in self.preference_order() {
             if guard.guard_id() == guard_id {

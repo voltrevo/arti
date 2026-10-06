@@ -695,11 +695,15 @@ impl Guard {
 
     /// Return true if this guard has an exploratory circuit pending and
     /// if the most recent attempt to connect to it is after `when`.
+    /// `None` means "since the clock's origin": any attempt qualifies.
     ///
     /// See [`Self::exploratory_circ_pending`].
-    pub(crate) fn exploratory_attempt_after(&self, when: Instant) -> bool {
+    pub(crate) fn exploratory_attempt_after(&self, when: Option<Instant>) -> bool {
         self.exploratory_circ_pending
-            && self.last_tried_to_connect_at.map(|t| t > when) == Some(true)
+            && self
+                .last_tried_to_connect_at
+                .map(|t| when.is_none_or(|w| t > w))
+                == Some(true)
     }
 
     /// Note that a guard has been used successfully.
@@ -1288,19 +1292,21 @@ mod test {
         let t2 = t1 + Duration::from_secs(100);
         let t3 = t1 + Duration::from_secs(200);
 
-        assert!(!g.exploratory_attempt_after(t1));
+        assert!(!g.exploratory_attempt_after(Some(t1)));
         assert!(!g.exploratory_circ_pending());
 
         g.note_exploratory_circ(true);
         g.record_attempt(t2);
         assert!(g.exploratory_circ_pending());
-        assert!(g.exploratory_attempt_after(t1));
-        assert!(!g.exploratory_attempt_after(t3));
+        assert!(g.exploratory_attempt_after(Some(t1)));
+        assert!(!g.exploratory_attempt_after(Some(t3)));
+        // No representable cutoff: any pending attempt counts as recent.
+        assert!(g.exploratory_attempt_after(None));
 
         g.note_exploratory_circ(false);
         assert!(!g.exploratory_circ_pending());
-        assert!(!g.exploratory_attempt_after(t1));
-        assert!(!g.exploratory_attempt_after(t3));
+        assert!(!g.exploratory_attempt_after(Some(t1)));
+        assert!(!g.exploratory_attempt_after(Some(t3)));
     }
 
     #[test]
