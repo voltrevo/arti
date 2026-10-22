@@ -69,7 +69,7 @@ tor-llcrypto = { path = "../tor-llcrypto", version = "0.45.0" }
 tor-netdoc = { path = "../tor-netdoc", version = "0.45.0" }
 tor-proto = { path = "../tor-proto", version = "0.45.0" }
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.45.0" }
-ruzstd = { version = "0.8", optional = true }
+ruzstd = { version = "0.9.1", optional = true }
 tracing = "0.1.36"
 web-time-compat = { path = "../web-time-compat", version = "0.2.0" }
 

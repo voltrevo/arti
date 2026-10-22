@@ -769,7 +769,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(feature = "zstd")]
+    #[cfg(any(feature = "zstd", feature = "zstd-wasm"))]
     #[async_test]
     async fn decomp_zstd() -> RequestResult<()> {
         let compressed = hex::decode("28b52ffd24250d0100c84f6e6520666973682054776f526564426c756520666973680a0200600c0e2509478352cb").unwrap();
