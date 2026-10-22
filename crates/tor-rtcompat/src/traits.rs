@@ -416,11 +416,19 @@ pub trait SpawnExt: Spawn {
         Fut: Future<Output = ()> + Send + 'static,
     {
         use tracing::Instrument as _;
-        self.spawn_obj(Box::new(future.in_current_span()).into())
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.spawn_obj(Box::new(future.in_current_span()).into())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            wasm_bindgen_futures::spawn_local(future.in_current_span());
+            Ok(())
+        }
     }
 
     /// Spawns a task that polls the given future to completion and returns a future that resolves
-    /// to the spawned future’s output.
+    /// to the spawned future's output.
     ///
     /// See [`futures::task::SpawnExt::spawn_with_handle`].
     #[track_caller]

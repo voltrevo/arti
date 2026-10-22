@@ -844,7 +844,7 @@ fn all_encodings() -> String {
     {
         encodings += ", x-tor-lzma";
     }
-    #[cfg(feature = "zstd")]
+    #[cfg(any(feature = "zstd", feature = "zstd-wasm"))]
     {
         encodings += ", x-zstd";
     }

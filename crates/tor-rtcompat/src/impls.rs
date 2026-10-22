@@ -2,19 +2,19 @@
 //!
 //! Currently only async_std, tokio and smol are provided.
 
-#[cfg(feature = "async-std")]
+#[cfg(all(feature = "async-std", not(target_arch = "wasm32")))]
 pub(crate) mod async_std;
 
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_arch = "wasm32")))]
 pub(crate) mod tokio;
 
-#[cfg(feature = "smol")]
+#[cfg(all(feature = "smol", not(target_arch = "wasm32")))]
 pub(crate) mod smol;
 
-#[cfg(feature = "rustls")]
+#[cfg(all(feature = "rustls", not(target_arch = "wasm32")))]
 pub(crate) mod rustls;
 
-#[cfg(feature = "native-tls")]
+#[cfg(all(feature = "native-tls", not(target_arch = "wasm32")))]
 pub(crate) mod native_tls;
 
 pub(crate) mod streamops;
@@ -89,6 +89,7 @@ use tor_error::warn_report;
 // for legitimate traffic, and illegitimate traffic would be better handled by the kernel with
 // something like SYN cookies. But it's easier for users to reduce the max using
 // `/proc/sys/net/core/somaxconn` than to increase this max by recompiling arti.
+#[cfg(not(target_arch = "wasm32"))]
 const LISTEN_BACKLOG: i32 = u16::MAX as i32;
 
 /// Open a listening TCP socket.
@@ -101,7 +102,7 @@ const LISTEN_BACKLOG: i32 = u16::MAX as i32;
 /// socket with the options we need and with consistent behaviour across all runtimes. For example
 /// if each runtime were using a different `listen()` backlog size, it might be difficult to debug
 /// related issues.
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn tcp_listen(
     addr: &std::net::SocketAddr,
     options: &TcpListenOptions,
@@ -333,7 +334,7 @@ pub(crate) async fn tcp_async_io_connect(
 }
 
 /// Helper: Implement an unreachable NetProvider<unix::SocketAddr> for a given runtime.
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(target_arch = "wasm32")))]
 macro_rules! impl_unix_non_provider {
     { $for_type:ty } => {
 
@@ -361,5 +362,5 @@ macro_rules! impl_unix_non_provider {
         }
     }
 }
-#[cfg(not(unix))]
+#[cfg(all(not(unix), not(target_arch = "wasm32")))]
 pub(crate) use impl_unix_non_provider;

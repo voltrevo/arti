@@ -88,6 +88,7 @@ use tor_netdir::params::NetParameters;
 use tor_netdir::{DirEvent, MdReceiver, NetDir, NetDirProvider};
 
 use async_trait::async_trait;
+pub use storage::BoxedDirStore;
 use futures::stream::BoxStream;
 use oneshot_fused_workaround as oneshot;
 use tor_netdoc::doc::netstatus::ProtoStatuses;
@@ -137,12 +138,26 @@ pub struct DirMgrStore<R: Runtime> {
 }
 
 impl<R: Runtime> DirMgrStore<R> {
-    /// Open the storage, according to the specified configuration
+    /// Open the storage, according to the specified configuration.
+    ///
+    /// Uses SQLite on native. For custom backends, use [`DirMgrStore::from_custom_store()`].
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(config: &DirMgrConfig, runtime: R, offline: bool) -> Result<Self> {
         let store = Arc::new(Mutex::new(config.open_store(offline)?));
         drop(runtime);
         let runtime = PhantomData;
         Ok(DirMgrStore { store, runtime })
+    }
+
+    /// Create a `DirMgrStore` from a custom storage implementation.
+    ///
+    /// This allows external code to provide custom storage backends
+    /// (e.g., IndexedDB on WASM, or any custom backend on native).
+    pub fn from_custom_store(store: storage::BoxedDirStore) -> Self {
+        DirMgrStore {
+            store: Arc::new(Mutex::new(Box::new(store))),
+            runtime: PhantomData,
+        }
     }
 }
 
@@ -372,6 +387,7 @@ impl<R: Runtime> DirMgr<R> {
     /// In general, you shouldn't use this function in a long-running
     /// program; it's only suitable for command-line or batch tools.
     // TODO: I wish this function didn't have to be async or take a runtime.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_once(runtime: R, config: DirMgrConfig) -> Result<Arc<NetDir>> {
         let store = DirMgrStore::new(&config, runtime.clone(), true)?;
         let dirmgr = Arc::new(Self::from_config(config, runtime, store, None, true)?);

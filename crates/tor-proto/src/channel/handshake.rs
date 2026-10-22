@@ -20,7 +20,7 @@ use tor_linkspec::{
 };
 use tor_llcrypto as ll;
 use tor_llcrypto::pk::{ValidatableSignature, ed25519::Ed25519Identity};
-use tor_rtcompat::{CoarseTimeProvider, Runtime, SleepProvider, StreamOps};
+use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, Runtime, SleepProvider, StreamOps};
 use web_time_compat::{SystemTime, SystemTimeExt};
 
 use crate::channel::handler::SlogDigest;
@@ -55,7 +55,7 @@ where
     async fn send_versions_cell<F>(
         &mut self,
         now_fn: F,
-    ) -> Result<(coarsetime::Instant, SystemTime)>
+    ) -> Result<(CoarseInstant, SystemTime)>
     where
         F: FnOnce() -> SystemTime,
     {
@@ -69,7 +69,7 @@ where
         );
         self.framed_tls().send(version_cell).await?;
         Ok((
-            coarsetime::Instant::now(), // Flushed at instant
+            CoarseInstant::now(), // Flushed at instant
             now_fn(),                   // Flushed at wallclock
         ))
     }
@@ -164,7 +164,7 @@ where
     ) -> Result<(
         msg::AuthChallenge,
         msg::Certs,
-        (msg::Netinfo, coarsetime::Instant),
+        (msg::Netinfo, CoarseInstant),
         Option<SlogDigest>,
     )> {
         // IMPORTANT: Protocol wise, we MUST only allow one single cell of each type for a valid
@@ -226,7 +226,7 @@ where
 
             break match read_msg(*self.unique_id(), self.framed_tls()).await? {
                 NetinfoMsg::Vpadding(_) => continue,
-                NetinfoMsg::Netinfo(msg) => (msg, coarsetime::Instant::now()),
+                NetinfoMsg::Netinfo(msg) => (msg, CoarseInstant::now()),
             };
         };
 
@@ -838,8 +838,8 @@ pub(crate) fn get_cert(certs: &msg::Certs, tp: CertType) -> Result<tor_cert::Key
 /// that you have authenticated the other party.
 pub(crate) fn unauthenticated_clock_skew(
     netinfo_cell: &msg::Netinfo,
-    netinfo_rcvd_at: coarsetime::Instant,
-    versions_flushed_at: coarsetime::Instant,
+    netinfo_rcvd_at: CoarseInstant,
+    versions_flushed_at: CoarseInstant,
     versions_flushed_wallclock: SystemTime,
 ) -> ClockSkew {
     // Try to compute our clock skew.  It won't be authenticated yet, since we haven't checked

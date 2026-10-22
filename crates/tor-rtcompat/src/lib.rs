@@ -69,7 +69,7 @@ mod traits;
 pub mod unimpl;
 pub mod unix;
 
-#[cfg(any(feature = "async-std", feature = "tokio", feature = "smol"))]
+#[cfg(all(any(feature = "async-std", feature = "tokio", feature = "smol"), not(target_arch = "wasm32")))]
 use std::io;
 pub use traits::{
     Blocking, CertifiedConn, CoarseTimeProvider, NetStreamListener, NetStreamProvider,
@@ -99,29 +99,32 @@ pub mod tls {
 
     #[cfg(all(
         feature = "native-tls",
-        any(feature = "tokio", feature = "async-std", feature = "smol")
+        any(feature = "tokio", feature = "async-std", feature = "smol"),
+        not(target_arch = "wasm32"),
     ))]
     pub use crate::impls::native_tls::NativeTlsProvider;
     #[cfg(all(
         feature = "rustls",
-        any(feature = "tokio", feature = "async-std", feature = "smol")
+        any(feature = "tokio", feature = "async-std", feature = "smol"),
+        not(target_arch = "wasm32"),
     ))]
     pub use crate::impls::rustls::RustlsProvider;
     #[cfg(all(
         feature = "rustls",
         feature = "tls-server",
-        any(feature = "tokio", feature = "async-std", feature = "smol")
+        any(feature = "tokio", feature = "async-std", feature = "smol"),
+        not(target_arch = "wasm32"),
     ))]
     pub use crate::impls::rustls::rustls_server::{RustlsAcceptor, RustlsServerStream};
 }
 
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio", not(target_arch = "wasm32")))]
 pub mod tokio;
 
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "async-std"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "async-std", not(target_arch = "wasm32")))]
 pub mod async_std;
 
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "smol"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "smol", not(target_arch = "wasm32")))]
 pub mod smol;
 
 pub use compound::{CompoundRuntime, RuntimeSubstExt};
@@ -129,10 +132,11 @@ pub use compound::{CompoundRuntime, RuntimeSubstExt};
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
     feature = "async-std",
-    not(feature = "tokio")
+    not(feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 use async_std as preferred_backend_mod;
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio", not(target_arch = "wasm32")))]
 use tokio as preferred_backend_mod;
 
 /// The runtime that we prefer to use, out of all the runtimes compiled into the
@@ -148,7 +152,8 @@ use tokio as preferred_backend_mod;
 /// after creating this or any other `Runtime`.
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 #[derive(Clone)]
 pub struct PreferredRuntime {
@@ -158,7 +163,8 @@ pub struct PreferredRuntime {
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 crate::opaque::implement_opaque_runtime! {
     PreferredRuntime { inner : preferred_backend_mod::PreferredRuntime }
@@ -166,7 +172,8 @@ crate::opaque::implement_opaque_runtime! {
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio"),
+    not(target_arch = "wasm32"),
 ))]
 impl PreferredRuntime {
     /// Obtain a [`PreferredRuntime`] from the currently running asynchronous runtime.

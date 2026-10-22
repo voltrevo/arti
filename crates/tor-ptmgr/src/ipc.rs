@@ -435,6 +435,7 @@ pub(crate) mod sealed {
                 // Dropping stdin should tell the PT to exit, since we set the correct environment
                 // variable for that to happen.
                 trace!("Asking PT {} to exit, nicely.", ident);
+                #[cfg_attr(target_arch = "wasm32", expect(clippy::drop_non_drop))]
                 drop(_stdin);
                 // Give it some time to exit.
                 thread::sleep(GRACEFUL_EXIT_TIME);

@@ -277,6 +277,7 @@ impl<'a> FileAccess<'a> {
             .write_all(contents.as_ref())
             .map_err(|e| Error::io(e, &tmp_name, "write to file"))?;
         // Flush and close.
+        #[cfg_attr(target_arch = "wasm32", expect(clippy::drop_non_drop))]
         drop(tmp_file);
 
         // Replace the old file.

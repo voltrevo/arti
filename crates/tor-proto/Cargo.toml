@@ -155,6 +155,9 @@ void = "1"
 web-time-compat = { path = "../web-time-compat", version = "0.3.0" }
 zeroize = "1"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+
 [dev-dependencies]
 assert_matches = "1.5.0"
 criterion = "0.8.0"

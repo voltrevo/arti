@@ -61,12 +61,14 @@ mod util;
 
 pub mod config;
 pub mod status;
+pub mod storage;
 
 pub use address::{DangerouslyIntoTorAddr, IntoTorAddr, TorAddr, TorAddrError};
 pub use builder::{MAX_LOCAL_RESOURCE_TIMEOUT, TorClientBuilder};
 pub use client::{BootstrapBehavior, DormantMode, InertTorClient, StreamPrefs, TorClient};
 pub use config::TorClientConfig;
 
+pub use storage::{KeyValueStore, StorageError};
 pub use tor_circmgr::IsolationToken;
 pub use tor_circmgr::isolation;
 pub use tor_error::{ErrorKind, HasKind};

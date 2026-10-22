@@ -1,0 +1,50 @@
+name: Deploy Showcase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assemble redirect site
+        run: |
+          mkdir -p _site
+          cat > _site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>Redirecting…</title>
+            <meta http-equiv="refresh" content="0; url=https://privacy-ethereum.github.io/tor-js/">
+            <link rel="canonical" href="https://privacy-ethereum.github.io/tor-js/">
+          </head>
+          <body>
+            <p>The showcase has moved to
+            <a href="https://privacy-ethereum.github.io/tor-js/">https://privacy-ethereum.github.io/tor-js/</a>.</p>
+          </body>
+          </html>
+          EOF
+
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

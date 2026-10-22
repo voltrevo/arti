@@ -12,7 +12,7 @@ use tor_cell::chancell::msg;
 use tor_cell::restrict::restricted_msg;
 use tor_error::internal;
 use tor_linkspec::{ChannelMethod, HasChanMethod, OwnedChanTarget};
-use tor_rtcompat::{CertifiedConn, CoarseTimeProvider, SleepProvider, StreamOps};
+use tor_rtcompat::{CertifiedConn, CoarseInstant, CoarseTimeProvider, SleepProvider, StreamOps};
 
 use crate::Result;
 use crate::channel::handshake::{
@@ -331,7 +331,7 @@ impl<
         &mut self,
     ) -> Result<(
         Option<(msg::Certs, msg::Authenticate, ClogDigest)>,
-        (msg::Netinfo, coarsetime::Instant),
+        (msg::Netinfo, CoarseInstant),
     )> {
         // IMPORTANT: Protocol wise, we MUST only allow one single cell of each type for a valid
         // handshake. Any duplicates lead to a failure.
@@ -358,7 +358,7 @@ impl<
                     CertsNetinfoMsg::Vpadding(_) => continue,
                     // If a NETINFO cell, the initiator did not authenticate and we can stop early.
                     CertsNetinfoMsg::Netinfo(msg) => {
-                        break 'outer (None, msg, coarsetime::Instant::now());
+                        break 'outer (None, msg, CoarseInstant::now());
                     }
                     // If a CERTS cell, the initiator is authenticating.
                     CertsNetinfoMsg::Certs(msg) => msg,
@@ -397,7 +397,7 @@ impl<
 
                 break match read_msg(*self.unique_id(), self.framed_tls()).await? {
                     NetinfoMsg::Vpadding(_) => continue,
-                    NetinfoMsg::Netinfo(msg) => (msg, coarsetime::Instant::now()),
+                    NetinfoMsg::Netinfo(msg) => (msg, CoarseInstant::now()),
                 };
             };
 

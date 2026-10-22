@@ -126,7 +126,10 @@ pub(crate) fn note_incoming_traffic() {
 ///
 /// Returns `None` if we never received "incoming traffic".
 pub fn time_since_last_incoming_traffic() -> Option<std::time::Duration> {
-    LAST_INCOMING_TRAFFIC.time_since_update().map(Into::into)
+    #[cfg(not(target_arch = "wasm32"))]
+    { LAST_INCOMING_TRAFFIC.time_since_update().map(Into::into) }
+    #[cfg(target_arch = "wasm32")]
+    { LAST_INCOMING_TRAFFIC.time_since_update() }
 }
 
 /// Make an MPSC queue, of any type, that participates in memquota, but a fake one for testing

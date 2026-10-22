@@ -52,7 +52,8 @@
     feature(time_systemtime_limits, time_saturating_systemtime)
 )]
 
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
+use web_time_compat::Instant;
 
 mod internal;
 

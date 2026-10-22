@@ -20,15 +20,22 @@ use crate::docmeta::{AuthCertMeta, ConsensusMeta};
 use crate::{Error, Result};
 use std::cell::RefCell;
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::Result as IoResult;
 use std::str::Utf8Error;
 use std::time::SystemTime;
 use time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod sqlite;
+pub(crate) mod custom;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use sqlite::SqliteStore;
+
+pub use custom::BoxedDirStore;
 
 /// Convenient Sized & dynamic [`Store`]
 pub(crate) type DynStore = Box<dyn Store>;
@@ -133,6 +140,7 @@ impl InputString {
     /// We'll try to memory-map the file if we can.  If that fails, or if we
     /// were built without the `mmap` feature, we'll fall back to reading the
     /// file into memory.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn load(file: File) -> IoResult<Self> {
         #[cfg(feature = "mmap")]
         {
@@ -192,6 +200,8 @@ pub(crate) struct ExpirationConfig {
     ///
     /// TODO(nickm): We may want a better approach in the future; see notes in
     /// `EXPIRATION_DEFAULTS`.
+    // Used by sqlite (non-WASM) unconditionally and by custom storage with routerdesc feature.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(super) router_descs: Duration,
     /// How long to keep unlisted microdescriptors.
     ///

@@ -1,5 +1,6 @@
 //! Helpers for implementing [`StreamOps`].
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::io;
 
 #[cfg(target_os = "linux")]
@@ -10,7 +11,7 @@ use {
 
 #[cfg_attr(not(target_os = "linux"), allow(unused))]
 use crate::StreamOps;
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 use crate::UnsupportedStreamOp;
 
 /// A wrapper over the file descriptor of a TCP socket.
@@ -72,7 +73,7 @@ pub(crate) fn set_tcp_notsent_lowat<S: AsRawFd>(sock: &S, notsent_lowat: u32) ->
 /// Helper for implementing [`set_tcp_notsent_lowat`](crate::StreamOps::set_tcp_notsent_lowat).
 ///
 /// Only implemented on Linux. Returns an error on all other platforms.
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 pub(crate) fn set_tcp_notsent_lowat<S>(_sock: &S, _notsent_lowat: u32) -> io::Result<()> {
     Err(UnsupportedStreamOp::new(
         "set_tcp_notsent_lowat",

@@ -90,7 +90,7 @@ use tor_cell::chancell::{AnyChanCell, CircId, msg::Netinfo, msg::PaddingNegotiat
 use tor_error::internal;
 use tor_linkspec::{HasRelayIds, OwnedChanTarget};
 use tor_memquota::mq_queue::{self, ChannelSpec as _, MpscSpec};
-use tor_rtcompat::{CoarseTimeProvider, DynTimeProvider, Runtime, SleepProvider};
+use tor_rtcompat::{CoarseInstant, CoarseTimeProvider, DynTimeProvider, Runtime, SleepProvider};
 
 #[cfg(feature = "circ-padding")]
 use tor_async_utils::counting_streams::{self, CountingSink, CountingStream};
@@ -305,7 +305,7 @@ pub struct Channel {
     /// created.
     clock_skew: ClockSkew,
     /// The time when this channel was successfully completed
-    opened_at: coarsetime::Instant,
+    opened_at: CoarseInstant,
     /// Mutable state used by the `Channel.
     mutable: Mutex<MutableDetails>,
     /// Information shared with the reactor
@@ -601,7 +601,7 @@ impl Channel {
             peer_id,
             peer: peer.map(Arc::new),
             clock_skew,
-            opened_at: coarsetime::Instant::now(),
+            opened_at: CoarseInstant::now(),
             mutable: Mutex::new(mutable),
             details: Arc::clone(&details),
             canonicity,
@@ -823,10 +823,11 @@ impl Channel {
     ///
     /// Return `None` if the channel is currently in use.
     pub fn duration_unused(&self) -> Option<std::time::Duration> {
-        self.details
-            .unused_since
-            .time_since_update()
-            .map(Into::into)
+        let duration = self.details.unused_since.time_since_update();
+        #[cfg(not(target_arch = "wasm32"))]
+        { duration.map(Into::into) }
+        #[cfg(target_arch = "wasm32")]
+        { duration }
     }
 
     /// Return a new [`ChannelSender`] to transmit cells on this channel.
@@ -1052,7 +1053,7 @@ impl Channel {
             peer_id,
             peer: MaybeSensitive::not_sensitive(Arc::new(PeerInfo::EMPTY)),
             clock_skew: ClockSkew::None,
-            opened_at: coarsetime::Instant::now(),
+            opened_at: CoarseInstant::now(),
             mutable: Default::default(),
             details,
             canonicity: Canonicity::new_canonical(),
@@ -1221,7 +1222,7 @@ mod test {
             peer_id,
             peer: MaybeSensitive::not_sensitive(Arc::new(PeerInfo::EMPTY)),
             clock_skew: ClockSkew::None,
-            opened_at: coarsetime::Instant::now(),
+            opened_at: CoarseInstant::now(),
             mutable: Default::default(),
             details: fake_channel_details(),
             canonicity: Canonicity::new_canonical(),

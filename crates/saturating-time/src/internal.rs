@@ -9,8 +9,9 @@
 use std::{
     cmp,
     sync::LazyLock,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
+use web_time_compat::Instant;
 
 /// The maximum value of [`SystemTime`] for this platform.
 static MAX_SYSTEM_TIME: LazyLock<SystemTime> = LazyLock::new(find_max);

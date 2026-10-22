@@ -30,6 +30,7 @@ use tor_netdir::{NetDirProvider, params::NetParameters};
 use tor_persist::StateMgr;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use tor_persist::TestingStateMgr;
+use tor_persist::AnyStateMgr;
 use tor_proto::client::stream::{DataStream, IpVersionPreference, StreamParameters};
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
@@ -142,8 +143,8 @@ struct ClientShared<R: Runtime> {
     /// to subsystems like `dirmgr`, `keymgr`, and `statemgr` during `TorClient` creation.
     #[cfg(feature = "onion-service-service")]
     state_directory: StateDirectory,
-    /// Location on disk where we store persistent data (cooked state manager).
-    statemgr: UsingStateMgr,
+    /// Stores persistent data (cooked state manager).
+    statemgr: AnyStateMgr,
 
     /// Directory manager persistent storage.
     dirmgr_store: DirMgrStore<R>,
@@ -315,6 +316,14 @@ impl InertTorClient {
     ///
     /// Returns `Ok(None)` if keystore use is disabled.
     fn create_keymgr(config: &TorClientConfig) -> StdResult<Option<Arc<KeyMgr>>, ErrorDetail> {
+        // On WASM, skip keystore creation entirely (no filesystem access)
+        #[cfg(target_arch = "wasm32")]
+        {
+            info!("Running without a keystore (WASM)");
+            return Ok(None);
+        }
+
+        #[allow(unreachable_code)]
         let keystore = config.storage.keystore();
         let permissions = config.storage.permissions();
         let primary_store: Box<dyn Keystore> = match keystore.primary_kind() {
@@ -1015,6 +1024,8 @@ impl<R: Runtime> TorClient<R> {
         autobootstrap: BootstrapBehavior,
         dirmgr_builder: Arc<dyn crate::builder::DirProviderBuilder<R>>,
         dirmgr_extensions: tor_dirmgr::config::DirMgrExtensions,
+        statemgr: AnyStateMgr,
+        dirstore: Option<tor_dirmgr::BoxedDirStore>,
     ) -> StdResult<Arc<Self>, ErrorDetail> {
         if crate::util::running_as_setuid() {
             return Err(tor_error::bad_api_usage!(
@@ -1027,14 +1038,13 @@ impl<R: Runtime> TorClient<R> {
 
         let path_resolver = Arc::new(config.path_resolver.clone());
 
+        #[cfg(not(target_arch = "wasm32"))]
         let (state_dir, mistrust) = config.state_dir()?;
         #[cfg(feature = "onion-service-service")]
         let state_directory =
             StateDirectory::new(&state_dir, mistrust).map_err(ErrorDetail::StateAccess)?;
 
         let dormant = DormantMode::Normal;
-
-        let statemgr = Self::statemgr_from_config(config)?;
 
         // Try to take state ownership early, so we'll know if we have it.
         // Note that this `try_lock()` may return `Ok` even if we can't acquire the lock.
@@ -1062,8 +1072,22 @@ impl<R: Runtime> TorClient<R> {
         let client_isolation = IsolationToken::new();
         let inert_client = InertTorClient::new(config)?;
 
-        let dirmgr_store = DirMgrStore::new(&config.dir_mgr_config()?, runtime.clone(), false)
-            .map_err(ErrorDetail::DirMgrSetup)?;
+        let dirmgr_store = match dirstore {
+            Some(store) => DirMgrStore::from_custom_store(store),
+            None => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    DirMgrStore::new(&config.dir_mgr_config()?, runtime.clone(), false)
+                        .map_err(ErrorDetail::DirMgrSetup)?
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    return Err(tor_error::bad_api_usage!(
+                        "On WASM, a directory store must be provided via TorClientBuilder::dir_store()"
+                    ).into());
+                }
+            }
+        };
 
         let inner = Box::new(NotConstructedInner {
             config: config.clone(),
@@ -1104,7 +1128,8 @@ impl<R: Runtime> TorClient<R> {
     }
 
     /// Construct a state manager from the client configuration.
-    fn statemgr_from_config(config: &TorClientConfig) -> Result<UsingStateMgr, ErrorDetail> {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn statemgr_from_config(config: &TorClientConfig) -> Result<UsingStateMgr, ErrorDetail> {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             use tor_persist::FsStateMgr;
@@ -2334,15 +2359,30 @@ impl<R: Runtime> TorClient<R> {
     /// Return a [`Future`] which resolves
     /// once this TorClient has stopped.
     #[cfg(feature = "experimental-api")]
+    #[cfg(not(target_arch = "wasm32"))]
     #[instrument(skip_all, level = "trace")]
     pub fn wait_for_stop(
         &self,
-    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<R> {
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<'_, R> {
         // We defer to the "wait for unlock" handle on our statemgr.
         //
         // The statemgr won't actually be unlocked until it is finally
         // dropped, which will happen when this TorClient is
         // dropped—which is what we want.
+        self.client.statemgr.wait_for_unlock()
+    }
+
+    /// Return a [`Future`] which resolves
+    /// once this TorClient has stopped.
+    ///
+    /// Defers to the custom storage backend's [`KeyValueStore::wait_for_unlock`].
+    ///
+    /// [`KeyValueStore::wait_for_unlock`]: tor_persist::KeyValueStore::wait_for_unlock
+    #[cfg(feature = "experimental-api")]
+    #[cfg(target_arch = "wasm32")]
+    pub fn wait_for_stop(
+        &self,
+    ) -> impl futures::Future<Output = ()> + Send + Sync + 'static + use<'_, R> {
         self.client.statemgr.wait_for_unlock()
     }
 
@@ -2550,8 +2590,12 @@ impl<R: Runtime> ClientShared<R> {
         // we can change this to comply with it.
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
-            if state_cfg != self.statemgr.path() {
-                how.cannot_change("storage.state_dir").map_err(wrap_err)?;
+            // `path()` is `None` for custom (non-filesystem) storage backends,
+            // for which `storage.state_dir` does not apply.
+            if let Some(cur_path) = self.statemgr.path() {
+                if state_cfg != cur_path {
+                    how.cannot_change("storage.state_dir").map_err(wrap_err)?;
+                }
             }
         }
 

@@ -341,7 +341,12 @@ impl OnionService {
             keymgr.clone(),
             pow_manager_storage_handle,
             netdir_provider.clone(),
-            status_tx.clone().into(),
+            // With hs-pow-full, PowManager::new expects PowManagerStatusSender (a newtype).
+            // Without it, the stub expects a plain StatusSender.
+            #[cfg(feature = "hs-pow-full")]
+            { status::PowManagerStatusSender::from(status_tx.clone()) },
+            #[cfg(not(feature = "hs-pow-full"))]
+            { status_tx.clone() },
             config_rx.clone(),
         )?;
 
