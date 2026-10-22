@@ -13,9 +13,9 @@ use crate::client::circuit::padding::{
     PaddingController, PaddingEvent, PaddingEventStream, SendPadding, StartBlocking,
 };
 use crate::util::err::ReactorError;
-use crate::util::oneshot_broadcast;
 use crate::{Error, HopNum, Result};
 use tor_async_utils::SinkPrepareExt as _;
+use tor_async_utils::oneshot_broadcast;
 use tor_cell::chancell::ChanMsg;
 use tor_cell::chancell::msg::{Destroy, DestroyReason, Padding, PaddingNegotiate};
 use tor_cell::chancell::{AnyChanCell, CircId, msg::AnyChanMsg};
@@ -633,10 +633,18 @@ impl<R: Runtime> Reactor<R> {
             return Err(Error::ChanProto("Relay cell without circuit ID".into()));
         };
 
-        let mut ent = self
-            .circs
-            .get_mut(circid)
-            .ok_or_else(|| Error::ChanProto("Relay cell on nonexistent circuit".into()))?;
+        let Some(mut ent) = self.circs.get_mut(circid) else {
+            trace!(channel_id = %self, "Relay cell for nonexistent circuit {}", circid);
+            // Silently drop the RELAY cell, as per the spec:
+            //
+            // > When a node receives a RELAY or RELAY_EARLY cell, it checks the cell’s circID and
+            // > determines whether it has a corresponding circuit along that connection.
+            // > If not, the node drops the cell.
+            //
+            // See https://spec.torproject.org/tor-spec/routing-relay-cells.html#circuit-id-checks
+            drop(msg);
+            return Ok(());
+        };
 
         match &mut *ent {
             CircEnt::OpenOrigin { cell_sender: s, .. } => {
@@ -663,7 +671,7 @@ impl<R: Runtime> Reactor<R> {
             CircEnt::Opening { .. } => Err(Error::ChanProto(
                 "Relay cell on pending circuit before CREATED* received".into(),
             )),
-            CircEnt::DestroySent(hs) => hs.receive_cell(),
+            CircEnt::DestroySent(hc) => hc.receive_cell(),
         }
     }
 
@@ -702,16 +710,19 @@ impl<R: Runtime> Reactor<R> {
         let circ_uniq_id = self.circ_unique_id_ctx.next(self.unique_id);
 
         // Build the relay circuit.
-        let create_result = create_request_handler.handler.handle_create(
-            &self.runtime,
-            &chan,
-            &create_request_handler.our_ed25519_id,
-            &create_request_handler.our_rsa_id,
-            circid,
-            &msg,
-            &self.details.memquota,
-            circ_uniq_id,
-        );
+        let create_result = create_request_handler
+            .handler
+            .handle_create(
+                &self.runtime,
+                &chan,
+                &create_request_handler.our_ed25519_id,
+                &create_request_handler.our_rsa_id,
+                circid,
+                &msg,
+                &self.details.memquota,
+                circ_uniq_id,
+            )
+            .await;
 
         // Add the circuit to the circuit map.
         let response = match create_result {
@@ -743,7 +754,17 @@ impl<R: Runtime> Reactor<R> {
             return Err(Error::ChanProto("'Created' cell without circuit ID".into()));
         };
 
-        let target = self.circs.advance_from_opening(circid)?;
+        let Some(target) = self.circs.advance_from_opening(circid) else {
+            trace!(channel_id = %self, "Unexpected CREATED* cell not on opening circuit {}", circid);
+            // Silently drop the cell: we can't easily distinguish cells with bogus CircIds
+            // from cells arriving on already-closed circuits,
+            // so we err on the side of keeping the channel open.
+            //
+            // See https://gitlab.torproject.org/tpo/core/arti/-/work_items/2655#note_3447841
+            drop(msg);
+            return Ok(());
+        };
+
         let created = msg.try_into()?;
         // TODO(nickm) I think that this one actually means the other side
         // is closed. See arti#269.
@@ -806,7 +827,13 @@ impl<R: Runtime> Reactor<R> {
             // Got a DESTROY cell for a circuit we don't have.
             None => {
                 trace!(channel_id = %self, "Destroy for nonexistent circuit {}", circid);
-                Err(Error::ChanProto("Destroy for nonexistent circuit".into()))
+                // Silently drop the cell: we can't easily distinguish cells with bogus CircIds
+                // from cells arriving on already-closed circuits,
+                // so we err on the side of keeping the channel open:
+                //
+                // See https://gitlab.torproject.org/tpo/core/arti/-/work_items/2655#note_3447841
+                drop(msg);
+                Ok(())
             }
         }
     }
@@ -819,7 +846,14 @@ impl<R: Runtime> Reactor<R> {
 
     /// Called when a circuit goes away: sends a DESTROY cell and removes
     /// the circuit.
+    ///
+    /// No-op if the circuit has already gone away,
+    /// (for example if we have already received DESTROY).
     async fn outbound_destroy_circ(&mut self, id: CircId) -> Result<()> {
+        if !self.circs.is_open(id) {
+            return Ok(());
+        }
+
         trace!(channel_id = %self, "Circuit {} is gone; sending DESTROY", id);
         // Remove the circuit's entry from the map: nothing more
         // can be done with it.
@@ -915,6 +949,7 @@ pub(crate) mod test {
 
     pub(crate) fn new_reactor<R: Runtime>(
         runtime: R,
+        mode: ChannelMode,
     ) -> (
         Arc<crate::channel::Channel>,
         Reactor<R>,
@@ -945,7 +980,7 @@ pub(crate) mod test {
         });
         let stream_ops = NoOpStreamOpsHandle::default();
         let (chan, reactor) = crate::channel::Channel::new(
-            ChannelMode::Client,
+            mode,
             link_protocol,
             Box::new(send1),
             Box::new(recv2),
@@ -966,7 +1001,7 @@ pub(crate) mod test {
     #[test]
     fn shutdown() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, mut reactor, _output, _input) = new_reactor(rt);
+            let (chan, mut reactor, _output, _input) = new_reactor(rt, ChannelMode::Client);
 
             chan.terminate();
             let r = reactor.run_once().await;
@@ -983,7 +1018,7 @@ pub(crate) mod test {
             use futures::future::FutureExt;
             use futures::join;
 
-            let (chan, reactor, _output, _input) = new_reactor(rt);
+            let (chan, reactor, _output, _input) = new_reactor(rt, ChannelMode::Client);
             // Let's get the reactor running...
             let run_reactor = reactor.run().map(|x| x.is_ok()).shared();
 
@@ -1005,7 +1040,8 @@ pub(crate) mod test {
     #[test]
     fn new_circ_closed() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, mut reactor, mut output, _input) = new_reactor(rt.clone());
+            let (chan, mut reactor, mut output, _input) =
+                new_reactor(rt.clone(), ChannelMode::Client);
             assert!(chan.duration_unused().is_some()); // unused yet
 
             let (ret, reac) = futures::join!(
@@ -1047,7 +1083,8 @@ pub(crate) mod test {
         use tor_rtcompat::SleepProvider;
 
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, mut reactor, mut output, mut input) = new_reactor(rt.clone());
+            let (chan, mut reactor, mut output, mut input) =
+                new_reactor(rt.clone(), ChannelMode::Client);
 
             let (ret, reac) = futures::join!(
                 chan.new_tunnel(Arc::new(DummyTimeoutEstimator)),
@@ -1098,32 +1135,24 @@ pub(crate) mod test {
     #[test]
     fn bad_cells() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (_chan, mut reactor, _output, mut input) = new_reactor(rt);
+            let (_chan, mut reactor, _output, mut input) = new_reactor(rt, ChannelMode::Client);
 
-            // shouldn't get created2 cells for nonexistent circuits
+            // Created2 cells for nonexistent circuits are dropped
             let created2_cell = msg::Created2::new(*b"hihi").into();
             input
                 .send(Ok(AnyChanCell::new(CircId::new(7), created2_cell)))
                 .await
                 .unwrap();
 
-            let e = reactor.run_once().await.unwrap_err().unwrap_err();
-            assert_eq!(
-                format!("{}", e),
-                "Channel protocol violation: Unexpected CREATED* cell not on opening circuit"
-            );
+            reactor.run_once().await.unwrap();
 
-            // Can't get a relay cell on a circuit we've never heard of.
+            // Relay cells on a circuit we've never heard of are dropped
             let relay_cell = msg::Relay::new(b"abc").into();
             input
                 .send(Ok(AnyChanCell::new(CircId::new(4), relay_cell)))
                 .await
                 .unwrap();
-            let e = reactor.run_once().await.unwrap_err().unwrap_err();
-            assert_eq!(
-                format!("{}", e),
-                "Channel protocol violation: Relay cell on nonexistent circuit"
-            );
+            reactor.run_once().await.unwrap();
 
             // There used to be tests here for other types, but now that we only
             // accept OpenClientChanCell, we know that the codec can't even try
@@ -1136,7 +1165,8 @@ pub(crate) mod test {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
             use oneshot_fused_workaround as oneshot;
 
-            let (_chan, mut reactor, _output, mut input) = new_reactor(rt.clone());
+            let (_chan, mut reactor, _output, mut input) =
+                new_reactor(rt.clone(), ChannelMode::Client);
 
             let (padding_ctrl, _padding_stream) = new_padding(DynTimeProvider::new(rt));
 
@@ -1190,16 +1220,12 @@ pub(crate) mod test {
                 "Channel protocol violation: Relay cell on pending circuit before CREATED* received"
             );
 
-            // If a relay cell is sent on a non-existent channel, that's an error.
+            // If a relay cell is sent on a non-existent circuit, it will be dropped.
             input
                 .send(Ok(AnyChanCell::new(CircId::new(101), relaycell.clone())))
                 .await
                 .unwrap();
-            let e = reactor.run_once().await.unwrap_err().unwrap_err();
-            assert_eq!(
-                format!("{}", e),
-                "Channel protocol violation: Relay cell on nonexistent circuit"
-            );
+            reactor.run_once().await.unwrap();
 
             // It's fine to get a relay cell on a DestroySent channel: that happens
             // when the other side hasn't noticed the Destroy yet.
@@ -1232,7 +1258,8 @@ pub(crate) mod test {
             use crate::circuit::celltypes::*;
             use oneshot_fused_workaround as oneshot;
 
-            let (_chan, mut reactor, _output, mut input) = new_reactor(rt.clone());
+            let (_chan, mut reactor, _output, mut input) =
+                new_reactor(rt.clone(), ChannelMode::Client);
 
             let (padding_ctrl, _padding_stream) = new_padding(DynTimeProvider::new(rt));
 
@@ -1290,23 +1317,19 @@ pub(crate) mod test {
                 .unwrap();
             reactor.run_once().await.unwrap();
 
-            // Destroying a nonexistent circuit is an error.
+            // Destroying a nonexistent circuit is not an error (the DESTROY is dropped).
             input
                 .send(Ok(AnyChanCell::new(CircId::new(101), destroycell.clone())))
                 .await
                 .unwrap();
-            let e = reactor.run_once().await.unwrap_err().unwrap_err();
-            assert_eq!(
-                format!("{}", e),
-                "Channel protocol violation: Destroy for nonexistent circuit"
-            );
+            reactor.run_once().await.unwrap();
         });
     }
 
     #[test]
     fn closing_if_reactor_dropped() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, reactor, _output, _input) = new_reactor(rt);
+            let (chan, reactor, _output, _input) = new_reactor(rt, ChannelMode::Client);
 
             assert!(!chan.is_closing());
             drop(reactor);
@@ -1322,7 +1345,7 @@ pub(crate) mod test {
     #[test]
     fn closing_if_reactor_shutdown() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, reactor, _output, _input) = new_reactor(rt);
+            let (chan, reactor, _output, _input) = new_reactor(rt, ChannelMode::Client);
 
             assert!(!chan.is_closing());
             chan.terminate();
@@ -1339,12 +1362,12 @@ pub(crate) mod test {
     #[test]
     fn reactor_error_wait_for_close() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, reactor, _output, mut input) = new_reactor(rt);
+            let (chan, reactor, _output, mut input) = new_reactor(rt, ChannelMode::Client);
 
-            // force an error by sending created2 cell for nonexistent circuit
+            // force an error by sending created2 cell without a CircId
             let created2_cell = msg::Created2::new(*b"hihi").into();
             input
-                .send(Ok(AnyChanCell::new(CircId::new(7), created2_cell)))
+                .send(Ok(AnyChanCell::new(None, created2_cell)))
                 .await
                 .unwrap();
 

@@ -21,7 +21,8 @@ use arti_client::TorClientConfig;
 #[cfg(feature = "onion-service-service")]
 use tor_config::define_list_builder_accessors;
 use tor_config::derive::prelude::*;
-pub(crate) use tor_config::{ConfigBuildError, Listen, MetricsConfig, MetricsConfigBuilder};
+pub(crate) use tor_config::{ConfigBuildError, Listen};
+pub(crate) use tor_config_shared::metrics::{MetricsConfig, MetricsConfigBuilder};
 
 use crate::{LoggingConfig, LoggingConfigBuilder};
 
@@ -80,7 +81,7 @@ type OnionServiceProxyConfigMap = ();
 #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
 #[derive_deftly(TorConfig)]
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
+#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = pub)))]
 pub(crate) struct ApplicationConfig {
     /// If true, we should watch our configuration files for changes, and reload
     /// our configuration when they change.
@@ -124,16 +125,16 @@ pub(crate) struct ApplicationConfig {
 #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
 #[derive_deftly(TorConfig)]
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
+#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = pub)))]
 pub(crate) struct ProxyConfig {
     /// Addresses to listen on for incoming SOCKS connections.
     //
     // TODO: Once http-connect is non-experimental, we should rename this option in a backward-compatible way.
-    #[deftly(tor_config(default = "Listen::new_localhost(9150)"))]
+    #[deftly(tor_config(default = Listen::new_localhost(9150)))]
     pub(crate) socks_listen: Listen,
 
     /// Addresses to listen on for incoming DNS connections.
-    #[deftly(tor_config(default = "Listen::new_none()"))]
+    #[deftly(tor_config(default = Listen::new_none()))]
     pub(crate) dns_listen: Listen,
 
     /// If true, and the `http-connect` feature is enabled,
@@ -145,15 +146,15 @@ pub(crate) struct ProxyConfig {
         cfg = r#" feature="http-connect" "#,
         cfg_desc = "with HTTP CONNECT support"
     ))]
-    #[deftly(tor_config(default = "true"))]
+    #[deftly(tor_config(default = true))]
     pub(crate) enable_http_connect: bool,
 
     /// The send buffer size (`SO_SNDBUF`) of proxy sockets.
-    #[deftly(tor_config(default = "ByteQty(DEFAULT_SEND_BUF_SIZE)"))]
+    #[deftly(tor_config(default = ByteQty(DEFAULT_SEND_BUF_SIZE)))]
     pub(crate) socket_send_buf_size: ByteQty,
 
     /// The receive buffer size (`SO_RCVBUF`) of proxy sockets.
-    #[deftly(tor_config(default = "ByteQty(DEFAULT_RECV_BUF_SIZE)"))]
+    #[deftly(tor_config(default = ByteQty(DEFAULT_RECV_BUF_SIZE)))]
     pub(crate) socket_recv_buf_size: ByteQty,
 }
 
@@ -176,10 +177,10 @@ impl ProxyConfig {
 #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
 #[derive_deftly(TorConfig)]
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
+#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = pub)))]
 pub(crate) struct ArtiStorageConfig {
     /// A file in which to write information about the ports we're listening on.
-    #[deftly(tor_config(setter(into), default = "default_port_info_file()"))]
+    #[deftly(tor_config(setter(into), default = default_port_info_file()))]
     pub(crate) port_info_file: CfgPath,
 }
 
@@ -204,11 +205,11 @@ fn default_port_info_file() -> CfgPath {
 #[derive(Debug, Clone, Deftly, Eq, PartialEq)]
 #[derive_deftly(TorConfig)]
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
+#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = pub)))]
 #[non_exhaustive]
 pub(crate) struct SystemConfig {
     /// Maximum number of file descriptors we should launch with
-    #[deftly(tor_config(setter(into), default = "default_max_files()"))]
+    #[deftly(tor_config(setter(into), default = default_max_files()))]
     pub(crate) max_files: u64,
 }
 
@@ -233,9 +234,9 @@ fn default_max_files() -> u64 {
 /// stability here.
 #[derive(Debug, Deftly, Clone, Eq, PartialEq)]
 #[derive_deftly(TorConfig)]
-#[deftly(tor_config(post_build = "Self::post_build"))]
+#[deftly(tor_config(post_build = Self::post_build))]
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = "pub")))]
+#[cfg_attr(feature = "experimental-api", deftly(tor_config(vis = pub)))]
 pub(crate) struct ArtiConfig {
     /// Configuration for application behavior.
     #[deftly(tor_config(sub_builder))]
@@ -570,6 +571,7 @@ mod test {
                 "proxy.socket_send_buf_size",
                 "proxy.socket_recv_buf_size",
                 "application.defer_bootstrap",
+                "address_filter.allow_resolving_local_addrs",
             ],
         );
 
@@ -769,7 +771,7 @@ mod test {
         let empty_config = tor_config::ConfigurationSources::new_empty()
             .load()
             .unwrap();
-        let empty_config: ArtiCombinedConfig = tor_config::resolve(empty_config).unwrap();
+        let empty_config: ArtiCombinedConfig = tor_config::resolve(&empty_config).unwrap();
 
         let default = (ArtiConfig::default(), TorClientConfig::default());
         let exceptions = declared_config_exceptions();
@@ -840,7 +842,7 @@ mod test {
 
             // This tests that the example settings do not *contradict* the defaults.
             let results: ResolutionResults<ArtiCombinedConfig> =
-                tor_config::resolve_return_results(cfg, &Default::default()).unwrap();
+                tor_config::resolve_return_results(&cfg, &Default::default()).unwrap();
 
             assert_eq!(&results.value, &default, "{which:?} {uncommented:?}");
             assert_eq!(&results.value, &empty_config, "{which:?} {uncommented:?}");
@@ -1650,13 +1652,13 @@ example config file {which:?}, uncommented={uncommented:?}
         }
 
         fn resolve<R: tor_config::load::Resolvable>(&self) -> Result<R, ConfigResolveError> {
-            tor_config::load::resolve(self.parse())
+            tor_config::load::resolve(&self.parse())
         }
 
         fn resolve_return_results<R: tor_config::load::Resolvable>(
             &self,
         ) -> Result<ResolutionResults<R>, ConfigResolveError> {
-            tor_config::load::resolve_return_results(self.parse(), &Default::default())
+            tor_config::load::resolve_return_results(&self.parse(), &Default::default())
         }
     }
 

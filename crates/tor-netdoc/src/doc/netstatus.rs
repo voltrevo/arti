@@ -92,6 +92,7 @@ use void::ResultVoidExt as _;
 
 use derive_deftly::{Deftly, define_derive_deftly};
 use digest::Digest;
+use educe::Educe;
 use itertools::Itertools;
 use saturating_time::SaturatingTime as _;
 use std::sync::LazyLock;
@@ -178,7 +179,7 @@ pub struct IgnoredPublicationTimeSp;
 /// consensus.
 ///
 /// Aggregate of three netdoc preamble fields.
-#[derive(Clone, Debug, Deftly)]
+#[derive(Clone, Debug, PartialEq, Eq, Deftly)]
 #[derive_deftly(Constructor, NetdocEncodableFields, NetdocParseableFields)]
 #[derive_deftly(Lifetime)]
 #[allow(clippy::exhaustive_structs)]
@@ -353,7 +354,8 @@ pub mod consensus_methods_comma_separated {
 //  - Encoding throws `Bug` if the resulting document will be clearly garbage,
 //    forbidding `=`, whitespace, and controls.  If the supplied keywords are bizarre,
 //    it may generate surprising documents (eg, containing exciting Unicode).
-#[derive(Debug, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Educe, Eq, PartialEq)]
+#[educe(Default)]
 pub struct NetParams<T> {
     /// Map from keys to values.
     params: HashMap<String, T>,
@@ -890,7 +892,7 @@ pub struct SignatureGroup {
 /// Can be converted to a `VerifyFailed`,
 /// giving [`InsufficientTrustedSigners`](VerifyFailed::InsufficientTrustedSigners).
 #[derive(Clone, Debug, thiserror::Error)]
-#[non_exhaustive]
+#[allow(clippy::exhaustive_enums)]
 pub enum ConsensusVerifiabilityError {
     /// Insufficient trusted signers
     #[error("consensus not signed by enough authorities")]
@@ -1016,7 +1018,7 @@ pub struct SharedRandStatuses {
     pub __non_exhaustive: (),
 }
 
-/// Relay weight information - `w` item in routerstatus
+/// Relay weight information - `w` item in routerstatus in consensuses
 ///
 /// This is a combination of two representations of (subsets of) the same information,
 /// from an optional `w` in the document.
@@ -1079,6 +1081,15 @@ pub struct RelayWeightsItem {
 
     /// The complete parameter set, if available and `w` was present.
     params: Unknown<Option<NetParams<u32>>>,
+}
+
+/// Relay weight information - `w` item in routerstatus in votes
+#[derive(Debug, Clone, Deftly)]
+#[derive_deftly(NetdocEncodableFields, NetdocParseableFields)]
+#[allow(clippy::exhaustive_structs)] // this is always just this single item
+pub struct VoteRelayWeightsItem {
+    /// The parameters, uninterpreted.
+    pub w: Option<NetParams<u32>>,
 }
 
 /// Recognized weight fields on a single relay in a consensus
@@ -2957,19 +2968,19 @@ mod test {
         {
             let mut doc = doc.clone();
             doc.sigs.sigs.directory_signature.signature.fill(0xff);
-            assert_matches! {
+            assert_matches!(
                 doc.verify(&trusted),
                 Err(VVF::InvalidSignature(VF::VerifyFailed))
-            }
+            );
         }
 
         // wrong authority
         {
             let doc = doc.clone();
-            assert_matches! {
+            assert_matches!(
                 doc.verify(&[[0x55; _].into()]),
                 Err(VVF::InvalidSignature(VF::InsufficientTrustedSigners))
-            }
+            );
         }
 
         // authcert is for a different authority
@@ -2977,19 +2988,21 @@ mod test {
             let doc = edit_body(&|body| {
                 body.authority.authority.dir_source.identity.0 = [0x55; _].into();
             });
-            assert_matches! {
+            assert_matches!(
+                //
                 doc.verify(&trusted),
                 Err(VVF::AuthCertWrongAuthority)
-            }
+            );
         }
 
         // authcert is from a different time
         let with_mutated_lifetime = |f: &dyn Fn(&mut Lifetime)| {
             let doc = edit_body(&|body| f(&mut body.preamble.lifetime));
-            assert_matches! {
+            assert_matches!(
+                //
                 doc.verify(&trusted),
                 Err(VVF::AuthCertWrongValidity(_))
-            }
+            );
         };
         let t_past = parse_rfc3339("1990-01-01T00:02:25Z")?;
         let t_future = parse_rfc3339("2010-01-01T00:02:25Z")?;
@@ -3003,10 +3016,11 @@ mod test {
             regsub(&mut text, "^dir-key-expires ", "dir-key-expires-SABOTAGED ");
             let input = ParseInput::new(&text, file);
             let doc: UV = parse_netdoc(&input)?;
-            assert_matches! {
+            assert_matches!(
+                //
                 doc.verify(&trusted),
                 Err(VVF::AuthCertParseError(..))
-            }
+            );
         }
 
         Ok(())

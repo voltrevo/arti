@@ -27,6 +27,8 @@ you might want to check out these links:
 
    * [Compatibility guide](./doc/Compatibility.md)
 
+   * [Supported third-party integrations](./doc/Integrations.md)
+
    * [Frequently Asked Questions](./doc/FAQ.md)
 
 ## Why rewrite Tor in Rust?
@@ -56,17 +58,14 @@ needlessly hard to understand and improve.
 
 ## <a name="status"></a>Current status
 
-Arti can connect to the Tor network, bootstrap a
-view of the Tor directory, and make anonymized connections over the network.
-Now that Arti has reached version 1.0.0, we believe it is suitable for
-actual use to anonymize connections.
+Arti is a full-featured Tor client,
+with support for all the relevant security features.
+It can run and connect to onion services.
+We believe that Arti is suitable for general client usage.
 
-There are a number of areas (especially at the lower layers) where APIs
-(especially internal APIs) are not stable,
-and we are likely to change them.
-Right now that includes the command line interface to the `arti` program.
-
-And of course it's still very new so there are likely to be bugs.
+Currently (as of August 2026) we're working on
+support for running Arti as a relay or directory authority.
+(See [README_relay.md](./README_relay.md) for more information.)
 
 ## Building and using Arti
 
@@ -116,7 +115,7 @@ for details.
 
 ## Using Arti as a library
 
-The `arti` command line utility is built on top of the 
+The `arti` command line utility is built on top of the
 [`arti_client`](https://tpo.pages.torproject.net/core/doc/rust/arti_client/index.html)
 library (and its dependencies).
 
@@ -137,7 +136,7 @@ for more details.
 
 ## Minimum supported Rust Version
 
-Our current Minimum Supported Rust Version (MSRV) is 1.91.
+Our current Minimum Supported Rust Version (MSRV) is 1.92.
 
 We may increase this MSRV as new Rust versions become available from the
 upstream Rust project. We allow upgrades of our MSRV to Rust X.Y.Z if Rust X.Y.0

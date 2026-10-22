@@ -1,5 +1,6 @@
 //! Code to watch configuration files for any changes.
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -7,15 +8,26 @@ use anyhow::Context;
 use arti_client::TorClient;
 use arti_client::config::Reconfigure;
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use futures::{FutureExt as _, Stream, select_biased};
-use tor_config::file_watcher::{self, FileEventSender, FileWatcher, FileWatcherBuilder};
+use tor_basic_utils::error_sources::ErrorSources;
+use tor_config::ReconfigureError;
+use tor_config::file_watcher::{
+    self, FileEventReceiver, FileEventSender, FileWatcher, FileWatcherBuilder,
+};
+use tor_config::load::{ConfigResolveOptions, DisfavouredKey};
+use tor_config::{ConfigGetValueError, ConfigurationTree};
 use tor_config::{ConfigurationSource, ConfigurationSources, sources::FoundConfigFiles};
+use tor_error::warn_report;
+use tor_error::{HasKind, into_internal};
 use tor_rtcompat::Runtime;
 use tor_rtcompat::SpawnExt;
 use tracing::{debug, error, info, instrument, warn};
 
 #[cfg(target_family = "unix")]
 use crate::process::sighup_stream;
+#[cfg(feature = "rpc")]
+use crate::rpc;
 
 #[cfg(not(target_family = "unix"))]
 use futures::stream;
@@ -36,88 +48,371 @@ const DEBOUNCE_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) trait ReconfigurableModule: Send + Sync {
     /// Try to reconfigure this module according to a newly loaded configuration.
     ///
-    /// By convention, this should only return fatal errors; any such error
-    /// should cause the program to exit.  For other cases, we should just warn.
-    //
-    // TODO: This should probably take "how: Reconfigure" as an argument, and
-    // pass it down as appropriate. See issue #1156.
-    fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()>;
+    /// See [`Reconfigure`] for a description of error-handling behavior.
+    fn reconfigure(
+        &self,
+        new: &ArtiCombinedConfig,
+        how: Reconfigure,
+    ) -> Result<(), ReconfigureError>;
 }
 
-/// Launch a thread to reload our configuration files.
-///
-/// If current configuration requires it, watch for changes in `sources`
-/// and try to reload our configuration. On unix platforms, also watch
-/// for SIGHUP and reload configuration then.
-///
-/// The modules are `Weak` references to prevent this background task
-/// from keeping them alive.
-///
-/// See the [`FileWatcher`](FileWatcher#Limitations) docs for limitations.
+/// Structure to reload configuration as necessary.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
-#[instrument(level = "trace", skip_all)]
-pub(crate) fn watch_for_config_changes<R: Runtime>(
-    runtime: &R,
-    sources: ConfigurationSources,
-    config: &ArtiConfig,
-    modules: Vec<Weak<dyn ReconfigurableModule>>,
-) -> anyhow::Result<()> {
-    let watch_file = config.application().watch_configuration;
+pub(crate) struct CfgMgr<R> {
+    /// A runtime that we use when constructing [`FileWatcher`]s.
+    runtime: R,
 
-    cfg_if::cfg_if! {
-        if #[cfg(target_family = "unix")] {
-            let sighup_stream = sighup_stream()?;
-        } else {
-            let sighup_stream = stream::pending();
+    /// The sources from which we read our configuration.
+    sources: ConfigurationSources,
+
+    /// A sender to use when constructing new [`FileWatcher`]s.
+    tx: FileEventSender,
+
+    /// Mutable state.
+    inner: Mutex<CfgMgrInner>,
+}
+
+/// Mutable part of a CfgMgr.
+///
+/// ## RPC Dataflow
+///
+/// We keep a fair amount of state for our configuration,
+/// especially when we are supporting RPC.  A few important pieces are,
+/// in dataflow order:
+///
+/// 1. `sources`: A set of [`ConfigurationSources`] telling us where to load
+///    our configuration from.
+/// 2. `loaded_cfg`: A [`ConfigurationTree`] that we have loaded from our
+///    `sources`.  This is the most recent tree that we were able to successfully
+///    decode and apply. (RPC only)
+/// 3. `additional_cfg`: A set of [`rpc::ConfigSettings`] provided by an RPC superuser app,
+///    to override options in `loaded_cfg`. (RPC only)
+/// 4. `normalized_cfg`: A [`ConfigurationTree`] produced by combining
+///    loaded_cfg` and `additional_cfg`, and filling any missing defaults.
+///
+/// When we are reloading our configuration from disk, we use `sources` to
+/// load and parse a new [`ConfigurationTree`], then we apply `additional_cfg` to it,
+/// and then we see whether that configuration can successfully be resolved
+/// and used to reconfigure the modules in Arti.
+/// On success, we replace `loaded_cfg` and `normalized_cfg`,
+///
+/// When we are changing our configuration via RPC, we try to change `additional_cfg`,
+/// apply it to `loaded_cfg`,
+/// and then we see whether that configuration can successfully be resolved
+/// and used to reconfigure the modules in Arti.
+/// On success, we replace `normalized_cfg` and `additional_cfg`.
+#[derive(Default)]
+struct CfgMgrInner {
+    /// A list of modules to alert whenever the configuration has changed.
+    modules: Vec<Weak<dyn ReconfigurableModule>>,
+
+    /// If present, a [`FileWatcher`] that is currently watching for changes
+    /// in the configuration files and directories.
+    watcher: Option<FileWatcher>,
+
+    /// RPC only: The most recent configuration tree _as loaded_.  We use this to apply
+    /// additional_cfg repeatedly without reloading all the files every time RPC tells us
+    /// to change something.
+    #[cfg(feature = "rpc")]
+    loaded_cfg: ConfigurationTree,
+
+    /// RPC only: A set of RPC-provided options to apply to the configuration before decoding it.
+    #[cfg(feature = "rpc")]
+    additional_cfg: rpc::ConfigSettings,
+
+    /// RPC only: a fully populated, normalized configuration tree, based on the most recent time
+    /// that we called [`CfgMgr::reload_configuration`].
+    #[cfg(feature = "rpc")]
+    normalized_cfg: ConfigurationTree,
+
+    /// RPC only: a set of unrecognized options from the configuration.
+    #[cfg(feature = "rpc")]
+    unrecognized_keys: HashSet<DisfavouredKey>,
+
+    /// RPC only: a set of deprecated options from the configuration
+    #[cfg(feature = "rpc")]
+    deprecated_keys: HashSet<DisfavouredKey>,
+}
+
+/// A watcher process that we have not yet launched.
+#[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[must_use = "UnlaunchedWatcher does nothing unless you launch it."]
+pub(crate) struct UnlaunchedWatcher<R> {
+    /// The related [`CfgMgr`] that we should tell about reconfiguration events.
+    weak_mgr: Weak<CfgMgr<R>>,
+
+    /// A stream on which we will get alerts about SIGHUP events.
+    sighup_stream: BoxStream<'static, ()>,
+
+    /// A stream that will tell us when our files are changed.
+    watcher_rx: FileEventReceiver,
+
+    /// An interval that we wait to debounce events from watcher_rx or sighup_stream.
+    debounce_interval: Option<Duration>,
+
+    /// If true, we start watching for file changes immediately at launch.
+    watch_files_at_start: bool,
+}
+
+impl<R: Runtime> CfgMgr<R> {
+    /// Construct a new CfgMgr, and launch a task to watch for any events
+    /// that mean we have to reload our configuration.
+    ///
+    /// If the provided configuration requires it, watch for changes in `sources`
+    /// and try to reload our configuration. On unix platforms, also watch
+    /// for SIGHUP and reload configuration then.
+    ///
+    /// The modules are `Weak` references to prevent this background task
+    /// from keeping them alive.
+    ///
+    /// See the [`FileWatcher`](FileWatcher#Limitations) docs for limitations.
+    #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) fn new(
+        runtime: R,
+        sources: ConfigurationSources,
+        #[cfg(feature = "rpc")] loaded_cfg: ConfigurationTree,
+        config: &ArtiConfig,
+        modules: Vec<Weak<dyn ReconfigurableModule>>,
+    ) -> anyhow::Result<(Arc<Self>, UnlaunchedWatcher<R>)> {
+        let (tx, rx) = file_watcher::channel();
+        let mgr = Arc::new(CfgMgr {
+            runtime,
+            sources,
+            tx,
+            inner: Mutex::new(CfgMgrInner {
+                modules,
+                #[cfg(feature = "rpc")]
+                loaded_cfg,
+                ..Default::default()
+            }),
+        });
+
+        cfg_if::cfg_if! {
+            if #[cfg(target_family = "unix")] {
+                let sighup_stream = sighup_stream()?;
+            } else {
+                let sighup_stream = stream::pending();
+            }
         }
+        let sighup_stream = sighup_stream.boxed();
+
+        let watcher = UnlaunchedWatcher {
+            weak_mgr: Arc::downgrade(&mgr),
+            sighup_stream,
+            watcher_rx: rx,
+            debounce_interval: Some(DEBOUNCE_INTERVAL),
+            watch_files_at_start: config.application().watch_configuration,
+        };
+
+        Ok((mgr, watcher))
     }
 
-    let rt = runtime.clone();
-    let () = runtime
-        .clone()
-        .spawn(async move {
-            let res: anyhow::Result<()> = run_watcher(
-                rt,
-                sources,
-                modules,
-                watch_file,
-                sighup_stream,
-                Some(DEBOUNCE_INTERVAL),
-            )
-            .await;
+    /// Create a new [`FileWatcher`] for the files in this configuration.
+    ///
+    /// Return it, along with the set of files we found.
+    ///
+    /// The caller is responsible for storing the `FileWatcher`; when it is dropped,
+    /// it stops watching.
+    fn launch_file_watcher(&self) -> anyhow::Result<(FileWatcher, FoundConfigFiles<'_>)> {
+        let mut watcher = FileWatcher::builder(self.runtime.clone());
+        let found_files = prepare(&mut watcher, &self.sources)?;
+        let watcher = watcher.start_watching(self.tx.clone())?;
+        Ok((watcher, found_files))
+    }
 
-            match res {
-                Ok(()) => debug!("Config watcher task exiting"),
-                // TODO: warn_report does not work on anyhow::Error.
-                Err(e) => error!("Config watcher task exiting: {}", tor_error::Report(e)),
+    /// Reload the configuration.
+    #[instrument(level = "trace", skip_all)]
+    #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+    pub(crate) fn reload_configuration(&self, how: Reconfigure) -> anyhow::Result<()> {
+        let mut inner = self.inner.lock().expect("Lock poisoned");
+
+        // Question: I do not understand why we are making a new file watcher unconditionally
+        // at this point. -nm
+        let (found_files, new_watcher) = if inner.watcher.is_some() {
+            let (watcher, files) = self
+                .launch_file_watcher()
+                .context("Failed to re-scan config")?;
+            (files, Some(watcher))
+        } else {
+            let files = self
+                .sources
+                .scan()
+                .context("FS watch: failed to rescan config")?;
+            (files, None)
+        };
+
+        let mut config = found_files.load()?;
+        #[cfg(feature = "rpc")]
+        let loaded_cfg = config.clone();
+        #[cfg(feature = "rpc")]
+        config.merge_from(&inner.additional_cfg)?;
+
+        match reconfigure(&config, &mut inner, how) {
+            Ok(watch) => {
+                info!("Successfully reloaded configuration.");
+                if how != Reconfigure::CheckAllOrNothing {
+                    #[cfg(feature = "rpc")]
+                    {
+                        inner.loaded_cfg = loaded_cfg;
+                    }
+                    if watch && inner.watcher.is_none() {
+                        info!("Starting watching over configuration.");
+                        let (watcher, _files) = self
+                            .launch_file_watcher()
+                            .context("Starting to watch over config")?;
+                        inner.watcher = Some(watcher);
+                    } else if !watch && inner.watcher.is_some() {
+                        info!("Stopped watching over configuration.");
+                        inner.watcher = None;
+                    } else {
+                        inner.watcher = new_watcher;
+                    }
+                }
             }
-        })
-        .context("failed to spawn task")?;
+            Err(e) => warn_report!(e, "Couldn't reload configuration"),
+        }
 
-    Ok(())
+        Ok(())
+    }
+
+    /// Try to change the set of RPC configuration options.
+    ///
+    /// On success, the configuration is changed, and the changes are applied.
+    ///
+    /// On failure, the configuration is not changed, and the changes are not applied.
+    #[cfg(feature = "rpc")]
+    #[instrument(level = "trace", skip_all)]
+    #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+    pub(crate) fn try_modify_cfg<F>(
+        &self,
+        func: F,
+        how: Reconfigure,
+    ) -> Result<(), ChangeConfigurationError>
+    where
+        F: FnOnce(&mut rpc::ConfigSettings) -> Result<(), ChangeConfigurationError>,
+    {
+        let mut inner = self.inner.lock().expect("Lock poisoned");
+
+        let mut new_additional = inner.additional_cfg.clone();
+        func(&mut new_additional)?;
+        let mut new_cfg = inner.loaded_cfg.clone();
+        new_cfg.merge_from(&new_additional)?;
+
+        let watch = reconfigure(&new_cfg, &mut inner, how)?;
+
+        if how != Reconfigure::CheckAllOrNothing {
+            // If we reached here, we were successful. Remember new_additional...
+            inner.additional_cfg = new_additional;
+
+            // And adjust the file watcher.
+            if !watch && inner.watcher.is_some() {
+                inner.watcher = None;
+            } else if watch && inner.watcher.is_none() {
+                match self.launch_file_watcher() {
+                    Ok((watcher, _)) => inner.watcher = Some(watcher),
+                    Err(e) => warn_report!(e, "Unable to launch file watcher"),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Return the configuration value for a given key, if any is set.
+    #[cfg(feature = "rpc")]
+    pub(crate) fn get_cfg_setting(
+        &self,
+        key: &str,
+    ) -> Result<Option<rpc::ConfigValue>, ConfigGetValueError> {
+        let settings: Option<rpc::ConfigValue> = self
+            .inner
+            .lock()
+            .expect("Lock poisoned")
+            .normalized_cfg
+            .get_serde_value(key)?;
+
+        Ok(settings)
+    }
+}
+
+impl<R: Runtime> UnlaunchedWatcher<R> {
+    /// Begin running the file watcher task for a given configuration manager.
+    #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+    #[instrument(level = "trace", skip_all)]
+    pub(crate) fn launch(self) -> anyhow::Result<()> {
+        let UnlaunchedWatcher {
+            weak_mgr,
+            sighup_stream,
+            watcher_rx,
+            debounce_interval,
+            watch_files_at_start,
+        } = self;
+        let Some(mgr) = weak_mgr.upgrade() else {
+            return Err(anyhow::anyhow!(
+                "CfgMgr disappeared before we could launch the monitor task"
+            ));
+        };
+
+        let rt = mgr.runtime.clone();
+        let weak_mgr = Arc::downgrade(&mgr);
+        mgr.runtime
+            .spawn(async move {
+                let res: anyhow::Result<()> =
+                    run_watcher(rt, watcher_rx, sighup_stream, weak_mgr, debounce_interval).await;
+                match res {
+                    Ok(()) => debug!("Config watcher task exiting"),
+                    // TODO: warn_report does not work on anyhow::Error.
+                    Err(e) => error!("Config watcher task exiting: {}", tor_error::Report(e)),
+                }
+            })
+            .context("failed to spawn task")?;
+
+        if watch_files_at_start {
+            // Note: You might think that there was a race condition here, where launching the
+            // watcher _now_ would fail to catch any file changes that had happened between
+            // reading the configuration initially and now.
+            //
+            // You'd be right, except that the [`FileWatcher`] code starts every new FileWatcher
+            // with a pending `rescan` event.
+            let (watcher, _files) = mgr.launch_file_watcher()?;
+            mgr.inner.lock().expect("lock poisoned").watcher = Some(watcher);
+        }
+
+        Ok(())
+    }
+
+    /// Add `module` to the set of modules that need to be reconfigured when the configuration changes.
+    ///
+    /// This method is on the [`UnlaunchedWatcher`] because is not (yet) meant to be called after
+    /// the watcher task is launched.
+    #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+    pub(crate) fn add_module(&self, module: &Arc<dyn ReconfigurableModule>) -> anyhow::Result<()> {
+        let weak_module = Arc::downgrade(module);
+
+        let Some(mgr) = self.weak_mgr.upgrade() else {
+            return Err(anyhow::anyhow!(
+                "CfgMgr disappeared before launching watcher task."
+            ));
+        };
+
+        let mut inner = mgr.inner.lock().expect("poisoned lock");
+        inner.modules.push(weak_module);
+        Ok(())
+    }
 }
 
 /// Start watching for configuration changes.
 ///
-/// Spawned from `watch_for_config_changes`.
+/// Spawned from [`UnlaunchedWatcher::launch`].
 #[instrument(level = "trace", skip_all)]
 async fn run_watcher<R: Runtime>(
     runtime: R,
-    sources: ConfigurationSources,
-    modules: Vec<Weak<dyn ReconfigurableModule>>,
-    watch_file: bool,
+    mut rx: FileEventReceiver,
     mut sighup_stream: impl Stream<Item = ()> + Unpin,
+    weak_mgr: Weak<CfgMgr<R>>,
     debounce_interval: Option<Duration>,
 ) -> anyhow::Result<()> {
-    let (tx, mut rx) = file_watcher::channel();
-    let mut watcher = if watch_file {
-        let mut watcher = FileWatcher::builder(runtime.clone());
-        prepare(&mut watcher, &sources)?;
-        Some(watcher.start_watching(tx.clone())?)
-    } else {
-        None
-    };
-
     debug!("Entering FS event loop");
 
     loop {
@@ -146,60 +441,16 @@ async fn run_watcher<R: Runtime>(
             },
         }
 
-        watcher =
-            reload_configuration(runtime.clone(), watcher, &sources, &modules, tx.clone()).await?;
+        if let Some(mgr) = weak_mgr.upgrade() {
+            mgr.reload_configuration(Reconfigure::WarnOnFailures)?;
+            drop(mgr);
+        } else {
+            debug!("Configuration mgr disappeared; exiting loop");
+            break;
+        }
     }
 
     Ok(())
-}
-
-/// Reload the configuration.
-#[instrument(level = "trace", skip_all)]
-async fn reload_configuration<R: Runtime>(
-    runtime: R,
-    mut watcher: Option<FileWatcher>,
-    sources: &ConfigurationSources,
-    modules: &[Weak<dyn ReconfigurableModule>],
-    tx: FileEventSender,
-) -> anyhow::Result<Option<FileWatcher>> {
-    // TODO RPC: Take 'how' as an argument.
-    let found_files = if watcher.is_some() {
-        let mut new_watcher = FileWatcher::builder(runtime.clone());
-        let found_files = prepare(&mut new_watcher, sources)
-            .context("FS watch: failed to rescan config and re-establish watch")?;
-        let new_watcher = new_watcher
-            .start_watching(tx.clone())
-            .context("FS watch: failed to start watching config")?;
-        watcher = Some(new_watcher);
-        found_files
-    } else {
-        sources
-            .scan()
-            .context("FS watch: failed to rescan config")?
-    };
-
-    match reconfigure(found_files, modules) {
-        Ok(watch) => {
-            info!("Successfully reloaded configuration.");
-            if watch && watcher.is_none() {
-                info!("Starting watching over configuration.");
-                let mut new_watcher = FileWatcher::builder(runtime.clone());
-                let _found_files = prepare(&mut new_watcher, sources)
-                    .context("FS watch: failed to rescan config and re-establish watch: {}")?;
-                let new_watcher = new_watcher
-                    .start_watching(tx.clone())
-                    .context("FS watch: failed to rescan config and re-establish watch: {}")?;
-                watcher = Some(new_watcher);
-            } else if !watch && watcher.is_some() {
-                info!("Stopped watching over configuration.");
-                watcher = None;
-            }
-        }
-        // TODO: warn_report does not work on anyhow::Error.
-        Err(e) => warn!("Couldn't reload configuration: {}", tor_error::Report(e)),
-    }
-
-    Ok(watcher)
 }
 
 /// A TorClient that we may or may not have told to start bootstrapping.
@@ -216,19 +467,43 @@ pub(crate) struct LaunchableTorClient<R: Runtime> {
 
 impl<R: Runtime> ReconfigurableModule for LaunchableTorClient<R> {
     #[instrument(level = "trace", skip_all)]
-    fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()> {
-        // TODO RPC: Take 'how' as an argument.
+    fn reconfigure(
+        &self,
+        new: &ArtiCombinedConfig,
+        how: Reconfigure,
+    ) -> Result<(), ReconfigureError> {
+        if how == Reconfigure::AllOrNothing {
+            // If we're in all-or-nothing mode, we check it first.
+            self.reconfigure(new, Reconfigure::CheckAllOrNothing)?;
+        }
+        let dry_run = how == Reconfigure::CheckAllOrNothing;
 
         if new.0.application().defer_bootstrap && !self.orig_defer_bootstrap {
-            warn!("Cannot enable defer_bootstrap while arti is running.");
+            how.cannot_change_specific("defer_bootstrap", "from off to on")?;
         }
-        if !new.0.application().defer_bootstrap {
-            self.ensure_bootstrap_launched()?;
+        if !dry_run && !new.0.application().defer_bootstrap {
+            self.ensure_bootstrap_launched()
+                .map_err(into_internal!("Unable to launch client bootstrap"))?;
         }
 
-        TorClient::reconfigure(&self.client, &new.1, Reconfigure::WarnOnFailures)?;
+        TorClient::reconfigure(&self.client, &new.1, how).map_err(extract_reconfigure_error)?;
         Ok(())
     }
+}
+
+/// If possible, extract the ReconfigureError from `err`.  Otherwise,
+/// return `err` as an internal ReconfigureError.
+//
+// (We could get rid of this function if arti_client::Error were not opaque,
+// or if arti_client::reconfigure were to return a ReconfigureError.
+// But  now is not the time to revisit those decisions.)
+fn extract_reconfigure_error(err: arti_client::Error) -> ReconfigureError {
+    for e in ErrorSources::new(&err) {
+        if let Some(reconfig_error) = e.downcast_ref::<ReconfigureError>() {
+            return reconfig_error.clone();
+        };
+    }
+    (into_internal!("Failure while reconfiguring")(err)).into()
 }
 
 impl<R: Runtime> LaunchableTorClient<R> {
@@ -244,7 +519,7 @@ impl<R: Runtime> LaunchableTorClient<R> {
     }
 
     /// If we have not already told this LaunchableTorClient to bootstrap itself, do so.
-    fn ensure_bootstrap_launched(&self) -> anyhow::Result<()> {
+    fn ensure_bootstrap_launched(&self) -> Result<(), futures::task::SpawnError> {
         let mut have_launched = self.have_launched.lock().expect("lock poisoned");
 
         if *have_launched {
@@ -254,12 +529,9 @@ impl<R: Runtime> LaunchableTorClient<R> {
         let client = Arc::clone(&self.client);
         // We spawn this as a new task since `bootstrap` is very much async,
         // but this needs to be called from `reconfigure`, which is not.
-        self.client
-            .runtime()
-            .spawn(async move {
-                let _outcome = client.bootstrap().await;
-            })
-            .context("Launching bootstrap")?;
+        self.client.runtime().spawn(async move {
+            let _outcome = client.bootstrap().await;
+        })?;
 
         *have_launched = true;
         Ok(())
@@ -294,30 +566,39 @@ impl Application {
 }
 
 impl ReconfigurableModule for Application {
-    // TODO: This should probably take "how: Reconfigure" as an argument, and
-    // pass it down as appropriate. See issue #1156.
     #[instrument(level = "trace", skip_all)]
-    fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()> {
+    fn reconfigure(
+        &self,
+        new: &ArtiCombinedConfig,
+        how: Reconfigure,
+    ) -> Result<(), ReconfigureError> {
+        if how == Reconfigure::AllOrNothing {
+            // If we're in all-or-nothing mode, we check it first.
+            self.reconfigure(new, Reconfigure::CheckAllOrNothing)?;
+        }
+        let dry_run = how == Reconfigure::CheckAllOrNothing;
+
         let original = &self.original_config;
         let config = &new.0;
 
         if config.proxy() != original.proxy() {
-            warn!("Can't (yet) reconfigure proxy settings while arti is running.");
+            how.cannot_change("proxy settings")?;
         }
         if config.logging() != original.logging() {
-            warn!("Can't (yet) reconfigure logging settings while arti is running.");
+            how.cannot_change("logging")?;
         }
         #[cfg(feature = "rpc")]
         if config.rpc != original.rpc {
-            warn!("Can't (yet) change RPC settings while arti is running.");
+            how.cannot_change("RPC settings")?;
         }
         if config.application().permit_debugging && !original.application().permit_debugging {
-            warn!("Cannot disable application hardening when it has already been enabled.");
+            how.cannot_change_specific("application hardening", "from on to off")?;
         }
         // Note that this is the only config transition we actually perform so far.
-        if !config.application().permit_debugging {
+        if !dry_run && !config.application().permit_debugging {
             #[cfg(feature = "harden")]
-            crate::process::enable_process_hardening()?;
+            crate::process::enable_process_hardening()
+                .map_err(into_internal!("can't disable debugging"))?;
         }
 
         Ok(())
@@ -344,29 +625,82 @@ fn prepare<'a, R: Runtime>(
 /// reconfigure the client as much as we can.
 ///
 /// Return true if we should be watching for configuration changes.
-//
-// TODO: This should probably take "how: Reconfigure" as an argument, and
-// pass it down as appropriate. See issue #1156.
 #[instrument(level = "trace", skip_all)]
 fn reconfigure(
-    found_files: FoundConfigFiles<'_>,
-    reconfigurable: &[Weak<dyn ReconfigurableModule>],
-) -> anyhow::Result<bool> {
-    let _ = reconfigurable;
-    let config = found_files.load()?;
-    let config = tor_config::resolve::<ArtiCombinedConfig>(config)?;
+    config: &ConfigurationTree,
+    mgr_inner: &mut CfgMgrInner,
+    how: Reconfigure,
+) -> Result<bool, ChangeConfigurationError> {
+    #[allow(unused_mut)]
+    let mut resolve_options = ConfigResolveOptions::default();
+    #[cfg(feature = "rpc")]
+    {
+        resolve_options.want_output_tree = true;
+    }
+
+    let rs = tor_config::resolve_return_results::<ArtiCombinedConfig>(config, &resolve_options)?;
+    let config = rs.value;
 
     // Filter out the modules that have been dropped
-    let reconfigurable = reconfigurable.iter().flat_map(Weak::upgrade);
-    // If there are no more modules, we should exit.
-    let mut has_modules = false;
+    let reconfigurable: Vec<_> = mgr_inner.modules.iter().flat_map(Weak::upgrade).collect();
+    let has_modules = !reconfigurable.is_empty();
 
-    for module in reconfigurable {
-        has_modules = true;
-        module.reconfigure(&config)?;
+    if how == Reconfigure::AllOrNothing {
+        for module in &reconfigurable {
+            module.reconfigure(&config, Reconfigure::CheckAllOrNothing)?;
+        }
+    }
+    for module in &reconfigurable {
+        module.reconfigure(&config, how)?;
+    }
+
+    #[cfg(feature = "rpc")]
+    if how != Reconfigure::CheckAllOrNothing {
+        mgr_inner.normalized_cfg = rs
+            .output_tree
+            .expect("normalized cfg not exposed as expected!?");
+        mgr_inner.deprecated_keys = rs.deprecated.into_iter().collect();
+        mgr_inner.unrecognized_keys = rs.unrecognized.into_iter().collect();
     }
 
     Ok(has_modules && config.0.application().watch_configuration)
+}
+
+/// An error that occurred while trying to reload and/or replace our configuration
+#[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[non_exhaustive]
+#[derive(thiserror::Error, Clone, Debug)]
+pub(crate) enum ChangeConfigurationError {
+    /// When we tried to make an application-level request in the configuration tree, we
+    /// were unable to do so.
+    #[error("Unable to modify configuration tree: {0}")]
+    Apply(String),
+
+    /// When we tried to merge the RPC tree into the loaded configuration, we weren't able
+    /// to do so.
+    #[error("Internal: RPC configuration tree did not apply cleanly.")]
+    Merge(#[from] tor_config::ConfigError),
+
+    /// We couldn't turn the configuration tree into the appropriate set of data structures.
+    #[error("Invalid configuration")]
+    Resolve(#[from] tor_config::load::ConfigResolveError),
+
+    /// One of the transitions we tried to make was not allowed, or failed as we tried to apply it.
+    #[error("Configuration transition failed")]
+    Transition(#[from] ReconfigureError),
+}
+
+impl HasKind for ChangeConfigurationError {
+    fn kind(&self) -> tor_error::ErrorKind {
+        use ChangeConfigurationError as E;
+        use tor_error::ErrorKind as EK;
+        match self {
+            E::Apply(_) => EK::InvalidConfig,
+            E::Merge(_) => EK::InvalidConfig,
+            E::Resolve(_) => EK::InvalidConfig,
+            E::Transition(e) => e.kind(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -411,7 +745,11 @@ mod test {
     }
 
     impl ReconfigurableModule for TestModule {
-        fn reconfigure(&self, new: &ArtiCombinedConfig) -> anyhow::Result<()> {
+        fn reconfigure(
+            &self,
+            new: &ArtiCombinedConfig,
+            _how: Reconfigure,
+        ) -> Result<(), ReconfigureError> {
             let config = new.clone();
             self.tx.lock().unwrap().maybe_send(|_| config);
 
@@ -471,22 +809,30 @@ mod test {
             config_builder.logging().log_sensitive_information(true);
             let _: PathBuf = write_config(&temp_dir, CONFIG_NAME1, &config_builder);
 
+            let (fw_tx, fw_rx) = file_watcher::channel();
+            let mgr = Arc::new(CfgMgr {
+                runtime: rt.clone(),
+                sources: cfg_sources,
+                tx: fw_tx,
+                inner: Mutex::new(CfgMgrInner {
+                    modules: vec![Arc::downgrade(&module)],
+                    ..Default::default()
+                }),
+            });
+
+            let (watcher, _) = mgr.launch_file_watcher().unwrap();
+            mgr.inner.lock().unwrap().watcher = Some(watcher);
+            let weak_mgr = Arc::downgrade(&mgr);
+
             // Use a fake sighup stream to wait until run_watcher()'s select_biased!
             // loop is entered
             let (mut sighup_tx, sighup_rx) = mpsc::unbounded();
             let runtime = rt.clone();
             let () = rt
                 .spawn(async move {
-                    run_watcher(
-                        runtime,
-                        cfg_sources,
-                        vec![Arc::downgrade(&module)],
-                        true,
-                        sighup_rx,
-                        None,
-                    )
-                    .await
-                    .unwrap();
+                    run_watcher(runtime.clone(), fw_rx, sighup_rx, weak_mgr, None)
+                        .await
+                        .unwrap();
                 })
                 .unwrap();
 
@@ -494,7 +840,6 @@ mod test {
 
             // The reconfigurable modules should've been reloaded in response to sighup
             let config = rx.next().await.unwrap();
-
             assert_eq!(config.0, config_builder.build().unwrap());
 
             // Overwrite the config
@@ -523,22 +868,31 @@ mod test {
             );
 
             let (module, mut rx) = create_module().await;
+
+            let (fw_tx, fw_rx) = file_watcher::channel();
+            let mgr = Arc::new(CfgMgr {
+                runtime: rt.clone(),
+                sources: cfg_sources,
+                tx: fw_tx,
+                inner: Mutex::new(CfgMgrInner {
+                    modules: vec![Arc::downgrade(&module)],
+                    ..Default::default()
+                }),
+            });
+
+            let (watcher, _) = mgr.launch_file_watcher().unwrap();
+            mgr.inner.lock().unwrap().watcher = Some(watcher);
+            let weak_mgr = Arc::downgrade(&mgr);
+
             // Use a fake sighup stream to wait until run_watcher()'s select_biased!
             // loop is entered
             let (mut sighup_tx, sighup_rx) = mpsc::unbounded();
             let runtime = rt.clone();
             let () = rt
                 .spawn(async move {
-                    run_watcher(
-                        runtime,
-                        cfg_sources,
-                        vec![Arc::downgrade(&module)],
-                        true,
-                        sighup_rx,
-                        None,
-                    )
-                    .await
-                    .unwrap();
+                    run_watcher(runtime.clone(), fw_rx, sighup_rx, weak_mgr, None)
+                        .await
+                        .unwrap();
                 })
                 .unwrap();
 

@@ -1,9 +1,9 @@
 [package]
 name = "tor-dirserver"
-version = "0.45.0"
+version = "0.47.0"
 authors = ["The Tor Project, Inc.", "Clara Engler <cve@torproject.org>"]
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.92"
 license = "MIT OR Apache-2.0"
 homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
 description = "Implements dirserver functionality"
@@ -23,46 +23,50 @@ full = [
     "tor-rtcompat/full",
     "tor-llcrypto/full",
     "tor-checkable/full",
+    "saturating-time/full",
 ]
+experimental = ["dir-plugin-backend"]
+dir-plugin-backend = ["__is_experimental"]
+__is_experimental = []
 
 [dependencies]
 bytes = "1.10.1"
 digest = "0.10.7"
+educe = "0.4.22"
 flate2 = "1.1.5"
 futures = "0.3.31"
-getset = "0.1.6"
 hex = "0.4.3"
 http = "1.3.1"
 http-body = "1.0.1"
+http-body-util = "0.1.3"
 hyper = { version = "1.7.0", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1.16", features = ["full"] }
 lzma-rs = "0.3.0"
 r2d2 = "0.8.10"
 # NOTE: See the note for `rusqlite` in `../tor-dirmgr/Cargo.toml`.
-r2d2_sqlite = ">=0.29.0, <0.34.0"
+r2d2_sqlite = ">=0.29.0, <0.36.0"
 rand = "0.10.1"
-retry-error = { version = "0.13.0", path = "../retry-error" }
+retry-error = { version = "0.14.0", path = "../retry-error" }
 # NOTE: See the note for `rusqlite` in `../tor-dirmgr/Cargo.toml`.
-rusqlite = ">=0.36.0, <0.40.0"
-saturating-time = "0.4.0"
+rusqlite = ">=0.36.0, <0.41.0"
+saturating-time = { path = "../saturating-time", version = "0.5.0" }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["full", "test-util"] }
 tokio-util = { version = "0.7.16", features = ["compat"] }
-tor-basic-utils = { version = "0.45.0", path = "../tor-basic-utils" }
-tor-checkable = { path = "../tor-checkable", version = "0.45.0" }
-tor-dirclient = { version = "0.45.0", path = "../tor-dirclient" }
-tor-dircommon = { version = "0.45.0", path = "../tor-dircommon" }
-tor-error = { version = "0.45.0", path = "../tor-error" }
-tor-llcrypto = { version = "0.45.0", path = "../tor-llcrypto" }
-tor-netdoc = { version = "0.45.0", path = "../tor-netdoc", features = ["full", "experimental"] }
-tor-rtcompat = { version = "0.45.0", path = "../tor-rtcompat", features = [ "tokio", "native-tls", "rustls" ] }
+tor-basic-utils = { version = "0.47.0", path = "../tor-basic-utils" }
+tor-checkable = { path = "../tor-checkable", version = "0.47.0" }
+tor-dirclient = { version = "0.47.0", path = "../tor-dirclient" }
+tor-dircommon = { version = "0.47.0", path = "../tor-dircommon", features = ["experimental"] }
+tor-error = { version = "0.47.0", path = "../tor-error" }
+tor-llcrypto = { version = "0.47.0", path = "../tor-llcrypto" }
+tor-netdoc = { version = "0.47.0", path = "../tor-netdoc", features = ["full", "experimental"] }
+tor-rtcompat = { version = "0.47.0", path = "../tor-rtcompat", features = [ "tokio", "native-tls", "rustls" ] }
 tracing = "0.1.41"
-weak-table = "0.3.2"
+weak-table = "0.4.0"
 zstd = "0.13.3"
 
 [dev-dependencies]
-http-body-util = "0.1.3"
 lazy_static = "1.5.0"
 tempfile = "3.23.0"
 tokio-stream = { version = "0.1.17", features = ["full"] }

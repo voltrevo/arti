@@ -55,12 +55,19 @@ impl BdpEstimator {
             // higher than the current cwnd, it will underestimate it.
             //
             // To clarify this is equivalent to: cwnd * min_rtt / ewma_rtt.
-            let min_rtt_usec = rtt.min_rtt_usec().unwrap_or(u32::MAX);
-            let ewma_rtt_usec = rtt.ewma_rtt_usec().unwrap_or(u32::MAX);
+            let min_rtt_usec = rtt
+                .min_rtt()
+                .and_then(|x| u32::try_from(x.as_micros()).ok())
+                .unwrap_or(u32::MAX);
+            let ewma_rtt_usec = rtt
+                .ewma_rtt()
+                .and_then(|x| u32::try_from(x.as_micros()).ok())
+                .unwrap_or(u32::MAX);
             self.bdp = cwnd
                 .get()
                 .saturating_mul(min_rtt_usec)
-                .saturating_div(ewma_rtt_usec);
+                // Careful here to ensure we avoid divide-by-zero panic.
+                .saturating_div(ewma_rtt_usec.max(1));
         }
     }
 }
@@ -158,17 +165,18 @@ impl CongestionControlAlgorithm for Vegas {
         signals: CongestionSignals,
         clock_stall: ClockStall,
     ) -> Result<()> {
-        // Do not update anything if we detected a clock stall or jump, as per [CLOCK_HEURISTICS].
+        // Update the countdown until we need to update the congestion window.
+        self.num_sendme_until_cwnd_update = self.num_sendme_until_cwnd_update.saturating_sub(1);
+        // We just got a SENDME so decrement the amount of expected SENDMEs for a cwnd.
+        self.num_sendme_per_cwnd = self.num_sendme_per_cwnd.saturating_sub(1);
+
+        // Do not update anything (other than `next_cc_event` and `next_cwnd_event` counters above)
+        // if we detected a clock stall or jump, as per [CLOCK_HEURISTICS].
         if clock_stall == ClockStall::Detected {
             // Update the inflight now that we have a SENDME and return early.
             self.num_inflight = self.num_inflight.saturating_sub(self.cwnd.sendme_inc());
             return Ok(());
         }
-
-        // Update the countdown until we need to update the congestion window.
-        self.num_sendme_until_cwnd_update = self.num_sendme_until_cwnd_update.saturating_sub(1);
-        // We just got a SENDME so decrement the amount of expected SENDMEs for a cwnd.
-        self.num_sendme_per_cwnd = self.num_sendme_per_cwnd.saturating_sub(1);
 
         // From here, C-tor proceeds to update the RTT and BDP (circuit estimates). The RTT is
         // updated before this is called and so the "rtt" object is up to date with the latest. As
@@ -387,8 +395,8 @@ pub(crate) mod test {
         or_conn_blocked_in: bool,
         inflight_in: u32,
         // Expected outbound parameters.
-        ewma_rtt_usec_out: u32,
-        min_rtt_usec_out: u32,
+        ewma_rtt_out: Duration,
+        min_rtt_out: Duration,
         cwnd_out: u32,
         in_slow_start_out: bool,
         cwnd_full_out: bool,
@@ -402,8 +410,8 @@ pub(crate) mod test {
                 got_sendme_usec_in: u64::from(arr[1]),
                 or_conn_blocked_in: arr[2] == 1,
                 inflight_in: arr[3],
-                ewma_rtt_usec_out: arr[4],
-                min_rtt_usec_out: arr[5],
+                ewma_rtt_out: Duration::from_micros(arr[4].into()),
+                min_rtt_out: Duration::from_micros(arr[5].into()),
                 cwnd_out: arr[6],
                 in_slow_start_out: arr[7] == 1,
                 cwnd_full_out: arr[8] == 1,
@@ -457,8 +465,8 @@ pub(crate) mod test {
                     .sendme_received(&mut self.state, &mut self.rtt, signals, clock_stall);
             assert!(ret.is_ok());
 
-            assert_eq!(self.rtt.ewma_rtt_usec().unwrap(), p.ewma_rtt_usec_out);
-            assert_eq!(self.rtt.min_rtt_usec().unwrap(), p.min_rtt_usec_out);
+            assert_eq!(self.rtt.ewma_rtt().unwrap(), p.ewma_rtt_out);
+            assert_eq!(self.rtt.min_rtt().unwrap(), p.min_rtt_out);
             assert_eq!(self.vegas.cwnd().expect("No CWND").get(), p.cwnd_out);
             assert_eq!(
                 self.vegas.cwnd().expect("No CWND").is_full(),

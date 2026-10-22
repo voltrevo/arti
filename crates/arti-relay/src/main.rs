@@ -57,6 +57,19 @@
 #![deny(clippy::string_slice)] // See arti#2571
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
+#![allow(clippy::redundant_field_names)] // TODO beta clippy bug, rust-clippy/issues/17525
+
+/// Dummy module
+///
+/// TODO MSRV 1.100, change this to `[lints.cargo]` in `Cargo.toml`.
+/// See <https://github.com/rust-lang/cargo/issues/17461>.
+#[allow(unused, clippy::single_component_path_imports)]
+mod _suppress_unused_crate_warnings {
+    // TODO RELAY drop these suppressions (deleting the dep from Cargo.toml too if not needed)
+    #[cfg(feature = "opentelemetry")]
+    use {opentelemetry_appender_tracing, otlp_file_exporter, tracing_opentelemetry};
+}
+
 mod cli;
 mod client;
 mod config;
@@ -181,7 +194,7 @@ fn start_relay(_args: cli::RunArgs, global_args: cli::GlobalArgs) -> anyhow::Res
         .load()
         .context("Failed to load configuration sources")?;
     let config =
-        tor_config::resolve::<TorRelayConfig>(cfg).context("Failed to resolve configuration")?;
+        tor_config::resolve::<TorRelayConfig>(&cfg).context("Failed to resolve configuration")?;
 
     // TODO: Configure a proper logger, not just a simple stderr logger.
     // TODO: We may want this to be the global logger, but if we use arti's `setup_logging` in the

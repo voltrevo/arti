@@ -10,7 +10,6 @@ use tor_cell::relaycell::{RelayMsg, UnparsedRelayMsg};
 use super::params::FlowCtrlParameters;
 use super::window::state::{HalfStreamWindowFlowCtrl, WindowFlowCtrl};
 use super::xon_xoff::reader::DrainRateRequest;
-#[cfg(feature = "flowctl-cc")]
 use super::xon_xoff::state::{HalfStreamXonXoffFlowCtrl, XonXoffFlowCtrl};
 
 use crate::Result;
@@ -24,7 +23,6 @@ enum StreamFlowCtrlInner {
     /// "legacy" sendme-window-based flow control.
     Window(WindowFlowCtrl),
     /// XON/XOFF flow control.
-    #[cfg(feature = "flowctl-cc")]
     XonXoff(XonXoffFlowCtrl),
 }
 
@@ -49,17 +47,16 @@ impl StreamFlowCtrl {
     }
 
     /// Returns a new xon/xoff-based [`StreamFlowCtrl`].
-    #[cfg(feature = "flowctl-cc")]
     pub(crate) fn new_xon_xoff(
         params: Arc<FlowCtrlParameters>,
-        use_sidechannel_mitigations: bool,
+        with_sidechannel_mitigations: WithSidechannelMitigations,
         rate_limit_updater: watch::Sender<StreamRateLimit>,
         drain_rate_requester: NotifySender<DrainRateRequest>,
     ) -> Self {
         Self {
             inner: StreamFlowCtrlInner::XonXoff(XonXoffFlowCtrl::new(
                 params,
-                use_sidechannel_mitigations,
+                with_sidechannel_mitigations,
                 rate_limit_updater,
                 drain_rate_requester,
             )),
@@ -75,7 +72,6 @@ impl StreamFlowCtrl {
             StreamFlowCtrlInner::Window(x) => {
                 HalfStreamFlowCtrlInner::Window(HalfStreamWindowFlowCtrl::new(x))
             }
-            #[cfg(feature = "flowctl-cc")]
             StreamFlowCtrlInner::XonXoff(x) => {
                 HalfStreamFlowCtrlInner::XonXoff(HalfStreamXonXoffFlowCtrl::new(x))
             }
@@ -196,7 +192,6 @@ enum HalfStreamFlowCtrlInner {
     /// "legacy" sendme-window-based flow control.
     Window(HalfStreamWindowFlowCtrl),
     /// XON/XOFF flow control.
-    #[cfg(feature = "flowctl-cc")]
     XonXoff(HalfStreamXonXoffFlowCtrl),
 }
 
@@ -259,6 +254,19 @@ impl StreamRateLimit {
     pub(crate) const fn bytes_per_sec(&self) -> u64 {
         self.rate
     }
+}
+
+/// Whether sidechannel mitigations are enabled or not for flow control.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum WithSidechannelMitigations {
+    /// Flow control sidechannel mitigations are *enabled*.
+    ///
+    /// Should be enabled for clients (including onion services).
+    Enabled,
+    /// Flow control sidechannel mitigations are *disabled*.
+    ///
+    /// Should be disabled for exits.
+    Disabled,
 }
 
 impl std::fmt::Display for StreamRateLimit {

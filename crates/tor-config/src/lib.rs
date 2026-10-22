@@ -58,7 +58,6 @@ pub mod list_builder;
 mod listen;
 pub mod load;
 pub mod map_builder;
-pub mod metrics;
 mod misc;
 pub mod mistrust;
 mod mut_cfg;
@@ -84,7 +83,6 @@ pub use flatten::{Flatten, Flattenable};
 pub use list_builder::{MultilineListBuilder, MultilineListBuilderError};
 pub use listen::*;
 pub use load::{resolve, resolve_ignore_warnings, resolve_return_results};
-pub use metrics::*;
 pub use misc::*;
 pub use mut_cfg::MutCfg;
 use serde::de::DeserializeOwned;
@@ -184,6 +182,33 @@ impl Reconfigure {
             }
             Reconfigure::WarnOnFailures => {
                 tracing::warn!("Cannot change {} on a running client.", field.as_ref());
+                Ok(())
+            }
+        }
+    }
+
+    /// As `cannot_change`, but return a [`ReconfigureError::CannotChangeToValue`] variant.
+    ///
+    /// `manner` should be an adverbial preprositional phrase,
+    /// like "from on to off" or "while arti is running".
+    pub fn cannot_change_specific<S, T>(self, field: S, manner: T) -> Result<(), ReconfigureError>
+    where
+        S: AsRef<str>,
+        T: AsRef<str>,
+    {
+        match self {
+            Reconfigure::AllOrNothing | Reconfigure::CheckAllOrNothing => {
+                Err(ReconfigureError::CannotChangeToValue {
+                    field: field.as_ref().to_owned(),
+                    manner: manner.as_ref().to_owned(),
+                })
+            }
+            Reconfigure::WarnOnFailures => {
+                tracing::warn!(
+                    "Cannot change {} {} on a running client.",
+                    field.as_ref(),
+                    manner.as_ref()
+                );
                 Ok(())
             }
         }

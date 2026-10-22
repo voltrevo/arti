@@ -12,6 +12,7 @@ use crate::{Error, Result};
 use crate::{HopLocation, congestion};
 use oneshot_fused_workaround as oneshot;
 use std::borrow::Borrow;
+use tor_basic_utils::onionperf_types::{OnionperfCircuitStatus, OnionperfEvent};
 use tor_cell::chancell::CircId;
 use tor_cell::chancell::msg::HandshakeType;
 use tor_cell::relaycell::msg::{Extend2, Extended2};
@@ -176,6 +177,13 @@ where
             "Handshake complete; circuit extended."
         );
 
+        trace!(
+            onionperf = true,
+            circ_uniq_id = %self.unique_id,
+            forward_circ_id = %self.circ_id,
+            event = ?OnionperfEvent::Circuit(OnionperfCircuitStatus::Extended),
+        );
+
         // If we get here, it succeeded.  Add a new hop to the circuit.
         circ.add_hop(
             path::HopDetail::Relay(self.peer_id.clone()),
@@ -246,41 +254,34 @@ impl HandshakeAuxDataHandler for NtorV3Client {
         settings: &mut HopSettings,
         data: &Vec<CircResponseExt>,
     ) -> Result<()> {
+        // Did we get a `CcResponse` extension?
+        let mut cc_response = false;
+
         // Process all extensions.
-        // If "flowctl-cc" is not enabled, this loop will always return an error, so tell clippy
-        // that it's okay.
-        #[cfg_attr(not(feature = "flowctl-cc"), allow(clippy::never_loop))]
         for ext in data {
             match ext {
                 CircResponseExt::CcResponse(ack_ext) => {
-                    cfg_if::cfg_if! {
-                        if #[cfg(feature = "flowctl-cc")] {
-                            // Unexpected ACK extension as in if CC is disabled on our side, we would never have
-                            // requested it. Reject and circuit must be closed.
-                            if !settings.ccontrol.is_enabled() {
-                                return Err(Error::HandshakeProto(
-                                    "Received unexpected ntorv3 CC ack extension".into(),
-                                ));
-                            }
-                            let sendme_inc = ack_ext.sendme_inc();
-                            // Invalid increment, reject and circuit must be closed.
-                            if !congestion::params::is_sendme_inc_valid(sendme_inc, &settings.ccontrol) {
-                                return Err(Error::HandshakeProto(
-                                    "Received invalid sendme increment in CC ntorv3 extension".into(),
-                                ));
-                            }
-                            // Excellent, we have a negotiated sendme increment. Set it for this circuit.
-                            settings
-                                .ccontrol
-                                .cwnd_params_mut()
-                                .set_sendme_inc(sendme_inc);
-                        } else {
-                            let _ = ack_ext;
-                            return Err(Error::HandshakeProto(
-                                "Received unexpected `AckCongestionControl` ntorv3 extension".into(),
-                            ));
-                        }
+                    cc_response = true;
+
+                    // Unexpected ACK extension as in if CC is disabled on our side, we would never have
+                    // requested it. Reject and circuit must be closed.
+                    if !settings.ccontrol.is_enabled() {
+                        return Err(Error::HandshakeProto(
+                            "Received unexpected ntorv3 CC ack extension".into(),
+                        ));
                     }
+                    let sendme_inc = ack_ext.sendme_inc();
+                    // Invalid increment, reject and circuit must be closed.
+                    if !congestion::params::is_sendme_inc_valid(sendme_inc, &settings.ccontrol) {
+                        return Err(Error::HandshakeProto(
+                            "Received invalid sendme increment in CC ntorv3 extension".into(),
+                        ));
+                    }
+                    // Excellent, we have a negotiated sendme increment. Set it for this circuit.
+                    settings
+                        .ccontrol
+                        .cwnd_params_mut()
+                        .set_sendme_inc(sendme_inc);
                 }
                 // Any other extensions is not expected. Reject and circuit must be closed.
                 _ => {
@@ -290,6 +291,20 @@ impl HandshakeAuxDataHandler for NtorV3Client {
                 }
             }
         }
+
+        // If we requested congestion control but did not receive a congestion control response.
+        if settings.ccontrol.is_enabled() && !cc_response {
+            // The exact behaviour here isn't yet decided:
+            // https://gitlab.torproject.org/tpo/core/arti/-/work_items/2670
+            //
+            // But regardless we need to do something since the client and relay are not in
+            // agreement about the circuit options, and the circuit will not work properly.
+            // So for now we just close the circuit.
+            return Err(Error::HandshakeProto(
+                "Requested congestion control but did not receive an ntor-v3 cc response".into(),
+            ));
+        }
+
         Ok(())
     }
 }

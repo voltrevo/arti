@@ -18,7 +18,7 @@ use tor_chanmgr::ChanMgrConfig;
 use tor_circmgr::ClientDataTunnel;
 use tor_circmgr::isolation::{Isolation, StreamIsolation};
 use tor_circmgr::{IsolationToken, TargetPort, isolation::StreamIsolationBuilder};
-use tor_config::MutCfg;
+use tor_config::{BoolOrAuto, MutCfg};
 #[cfg(feature = "bridge-client")]
 use tor_dirmgr::bridgedesc::BridgeDescMgr;
 use tor_dirmgr::{DirMgrStore, Timeliness};
@@ -30,8 +30,6 @@ use tor_netdir::{NetDirProvider, params::NetParameters};
 use tor_persist::StateMgr;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use tor_persist::TestingStateMgr;
-#[cfg(feature = "onion-service-service")]
-use tor_persist::state_dir::StateDirectory;
 use tor_persist::AnyStateMgr;
 use tor_proto::client::stream::{DataStream, IpVersionPreference, StreamParameters};
 #[cfg(all(
@@ -42,11 +40,13 @@ use tor_rtcompat::PreferredRuntime;
 use tor_rtcompat::{Runtime, SleepProviderExt};
 #[cfg(feature = "onion-service-client")]
 use {
-    tor_config::BoolOrAuto,
     tor_hsclient::{HsClientConnector, HsClientDescEncKeypairSpecifier, HsClientSecretKeysBuilder},
     tor_hscrypto::pk::{HsClientDescEncKey, HsClientDescEncKeypair, HsClientDescEncSecretKey},
+    tor_keymgr::CTorClientKeystore,
     tor_netdir::DirEvent,
 };
+#[cfg(feature = "onion-service-service")]
+use {tor_keymgr::CTorServiceKeystore, tor_persist::state_dir::StateDirectory};
 
 #[cfg(all(feature = "onion-service-service", feature = "experimental-api"))]
 use tor_hsservice::HsIdKeypairSpecifier;
@@ -57,9 +57,6 @@ use tor_keymgr::{ArtiNativeKeystore, KeyMgr, KeyMgrBuilder, config::ArtiKeystore
 
 #[cfg(feature = "ephemeral-keystore")]
 use tor_keymgr::ArtiEphemeralKeystore;
-
-#[cfg(feature = "ctor-keystore")]
-use tor_keymgr::{CTorClientKeystore, CTorServiceKeystore};
 
 use futures::StreamExt as _;
 use futures::lock::Mutex as AsyncMutex;
@@ -358,7 +355,7 @@ impl InertTorClient {
 
         let mut builder = KeyMgrBuilder::default().primary_store(primary_store);
 
-        #[cfg(feature = "ctor-keystore")]
+        #[cfg(feature = "onion-service-service")]
         for config in config.storage.keystore().ctor_svc_stores() {
             let store: Box<dyn Keystore> = Box::new(CTorServiceKeystore::from_path_and_mistrust(
                 config.path(),
@@ -372,7 +369,7 @@ impl InertTorClient {
             builder.secondary_stores().push(store);
         }
 
-        #[cfg(feature = "ctor-keystore")]
+        #[cfg(feature = "onion-service-client")]
         for config in config.storage.keystore().ctor_client_stores() {
             let store: Box<dyn Keystore> = Box::new(CTorClientKeystore::from_path_and_mistrust(
                 config.path(),
@@ -678,6 +675,14 @@ pub struct StreamPrefs {
     /// `Auto` means to use the client configuration.
     #[cfg(feature = "onion-service-client")]
     pub(crate) connect_to_onion_services: BoolOrAuto,
+    /// Whether to try to make connections to local addresses.
+    ///
+    /// `Auto` means to use the client configuration.
+    pub(crate) connect_to_local_addrs: BoolOrAuto,
+    /// Whether to accept and return local addresses in anonymously retrieved DNS answers.
+    ///
+    /// `Auto` means to use the client configuration.
+    pub(crate) resolve_local_addrs: BoolOrAuto,
 }
 
 /// Record of how we are isolating connections
@@ -818,6 +823,36 @@ impl StreamPrefs {
         self.connect_to_onion_services = connect_to_onion_services;
         self
     }
+
+    /// Indicate whether connection to a local address should be allowed
+    ///
+    /// If `Explicit(false)`, attempts to connect to local addresses will be forced to fail with
+    /// an error of kind [`InvalidStreamTarget`](crate::ErrorKind::InvalidStreamTarget).
+    ///
+    /// If `Explicit(true)`, connections to local addresses are allowed.
+    ///
+    /// If `Auto`, the behaviour depends on the `address_filter.allow_local_addrs`
+    /// configuration option, which is in turn disabled by default.
+    pub fn connect_to_local_addrs(&mut self, connect_to_local_addrs: BoolOrAuto) -> &mut Self {
+        self.connect_to_local_addrs = connect_to_local_addrs;
+        self
+    }
+
+    /// Indicate whether to accept and return local addresses in anonymously retrieved DNS answers.
+    ///
+    /// If `Explicit(false)`, we will filter out the local addresses
+    /// from anonymously retrieved DNS answers.
+    ///
+    /// If `Explicit(true)`, we will not filter out the local addresses
+    /// from anonymously retrieved DNS answers.
+    ///
+    /// If `Auto`, the behaviour depends on the `address_filter.allow_resolving_local_addrs`
+    /// configuration option, which is in turn disabled by default.
+    pub fn resolve_local_addrs(&mut self, resolve_local_addrs: BoolOrAuto) -> &mut Self {
+        self.resolve_local_addrs = resolve_local_addrs;
+        self
+    }
+
     /// Return a TargetPort to describe what kind of exit policy our
     /// target circuit needs to support.
     fn wrap_target_port(&self, port: u16) -> TargetPort {
@@ -1721,13 +1756,13 @@ impl<R: Runtime> TorClient<R> {
         // should be a method on `Host`, not `TorAddr`.  -Diziet.
         let addr = (hostname, 1).into_tor_addr().map_err(wrap_err)?;
 
-        match addr.into_resolve_instructions(&self.client.addrcfg.get(), prefs)? {
+        let addrcfg = self.client.addrcfg.get();
+        let mut addrs = match addr.into_resolve_instructions(&addrcfg, prefs)? {
             ResolveInstructions::Exit(hostname) => {
                 let circ = self.get_or_launch_exit_tunnel(&[], prefs).await?;
 
                 let resolve_future = circ.resolve(&hostname);
-                let addrs = self
-                    .client
+                self.client
                     .runtime
                     .timeout(self.client.timeoutcfg.get().resolve_timeout, resolve_future)
                     .await
@@ -1735,12 +1770,34 @@ impl<R: Runtime> TorClient<R> {
                     .map_err(|cause| ErrorDetail::StreamFailed {
                         cause,
                         kind: "DNS lookup",
-                    })?;
-
-                Ok(addrs)
+                    })?
             }
-            ResolveInstructions::Return(addrs) => Ok(addrs),
+            ResolveInstructions::Return(addrs) => addrs,
+        };
+
+        let allow_resolving_local_addrs = prefs
+            .resolve_local_addrs
+            .as_bool()
+            .unwrap_or(addrcfg.allow_resolving_local_addrs);
+
+        if !allow_resolving_local_addrs {
+            addrs.retain(|addr| {
+                let keep = crate::address::is_globally_reachable_unicast(*addr);
+
+                if !keep {
+                    debug!("Dropping non-routable address {addr} from RESOLVED answer");
+                }
+
+                keep
+            });
+
+            if addrs.is_empty() {
+                debug!("Got RESOLVED containing only non-routable addresses");
+                return Err(ErrorDetail::NoRoutableAddress.into());
+            }
         }
+
+        Ok(addrs)
     }
 
     /// Perform a remote DNS reverse lookup with the provided IP address.
@@ -1760,6 +1817,20 @@ impl<R: Runtime> TorClient<R> {
         addr: IpAddr,
         prefs: &StreamPrefs,
     ) -> crate::Result<Vec<String>> {
+        let addrcfg = self.client.addrcfg.get();
+        let allow_resolving_local_addrs = prefs
+            .resolve_local_addrs
+            .as_bool()
+            .unwrap_or(addrcfg.allow_resolving_local_addrs);
+
+        if !allow_resolving_local_addrs && !crate::address::is_globally_reachable_unicast(addr) {
+            debug!("Rejecting reverse lookup request for non-routable address {addr}");
+
+            // Note: this is not 100% accurate, but I'm not sure if it makes sense
+            // to introuce another ErrorDetail just for this
+            return Err(ErrorDetail::NoRoutableAddress.into());
+        }
+
         let circ = self.get_or_launch_exit_tunnel(&[], prefs).await?;
 
         let resolve_ptr_future = circ.resolve_ptr(addr);

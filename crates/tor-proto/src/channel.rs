@@ -72,7 +72,6 @@ use crate::client::circuit::padding::{PaddingController, QueuedCellPaddingInfo};
 use crate::memquota::{ChannelAccount, CircuitAccount, SpecificAccount as _};
 use crate::peer::PeerInfo;
 use crate::util::err::ChannelClosed;
-use crate::util::oneshot_broadcast;
 use crate::util::timeout::TimeoutEstimator;
 use crate::util::ts::AtomicOptTimestamp;
 use crate::{ClockSkew, client};
@@ -85,6 +84,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+use tor_async_utils::oneshot_broadcast;
 use tor_cell::chancell::ChanMsg;
 use tor_cell::chancell::{AnyChanCell, CircId, msg::Netinfo, msg::PaddingNegotiate};
 use tor_error::internal;
@@ -114,7 +114,7 @@ mod testing_exports {
 #[cfg(feature = "testing")]
 pub use testing_exports::*;
 #[cfg(not(feature = "testing"))]
-use testing_exports::*;
+pub(crate) use testing_exports::*;
 
 use asynchronous_codec;
 use futures::channel::mpsc;
@@ -705,6 +705,7 @@ impl Channel {
 
     /// Send a control message
     #[instrument(level = "trace", skip_all)]
+    #[cfg_attr(test, visibility::make(pub(crate)))]
     fn send_control(&self, msg: CtrlMsg) -> StdResult<(), ChannelClosed> {
         self.control
             .unbounded_send(msg)
@@ -1189,18 +1190,17 @@ pub(crate) fn fake_mpsc() -> (CellTx, CellRx) {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+mod test {
     // Most of this module is tested via tests that also check on the
     // reactor code; there are just a few more cases to examine here.
     #![allow(clippy::unwrap_used)]
     use super::*;
-    pub(crate) use crate::channel::reactor::test::{CodecResult, new_reactor};
     use tor_cell::chancell::msg::HandshakeType;
     use tor_cell::chancell::{AnyChanCell, msg};
     use tor_rtcompat::test_with_one_runtime;
 
     /// Make a new fake reactor-less channel.  For testing only, obviously.
-    pub(crate) fn fake_channel(
+    fn fake_channel(
         rt: impl SleepProvider + CoarseTimeProvider,
         _channel_type: ChannelType,
     ) -> Channel {

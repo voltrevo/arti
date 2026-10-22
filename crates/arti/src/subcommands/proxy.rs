@@ -36,6 +36,7 @@ pub(crate) fn run<R: ToplevelRuntime>(
     runtime: R,
     proxy_matches: &ArgMatches,
     cfg_sources: ConfigurationSources,
+    loaded_cfg: tor_config::ConfigurationTree,
     config: ArtiConfig,
     client_config: TorClientConfig,
 ) -> Result<()> {
@@ -98,6 +99,7 @@ pub(crate) fn run<R: ToplevelRuntime>(
         dns_listen,
         config.proxy().protocols(),
         cfg_sources,
+        loaded_cfg,
         config,
         client_config,
     ))?;
@@ -113,12 +115,16 @@ pub(crate) fn run<R: ToplevelRuntime>(
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 #[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 #[instrument(skip_all, level = "trace")]
+#[expect(clippy::too_many_arguments)]
 async fn run_proxy<R: ToplevelRuntime>(
     runtime: R,
     socks_listen: Listen,
     dns_listen: Listen,
     protocols: ListenProtocols,
+    // TODO RPC Config: We are passing numerous types here in order to construct a CfgMgr.
+    // Can we instead construct one earlier?  Or at least put them in a struct?
     config_sources: ConfigurationSources,
+    loaded_cfg: tor_config::ConfigurationTree,
     arti_config: ArtiConfig,
     client_config: TorClientConfig,
 ) -> Result<()> {
@@ -137,6 +143,15 @@ async fn run_proxy<R: ToplevelRuntime>(
         true => BootstrapBehavior::Manual,
         false => BootstrapBehavior::OnDemand,
     };
+
+    let (cfg_mgr, cfg_watcher_task) = reload_cfg::CfgMgr::new(
+        runtime.clone(),
+        config_sources,
+        #[cfg(feature = "rpc")]
+        loaded_cfg,
+        &arti_config,
+        vec![],
+    )?;
 
     let client_builder = TorClient::with_runtime(runtime.clone())
         .config(client_config)
@@ -172,18 +187,17 @@ async fn run_proxy<R: ToplevelRuntime>(
         }
     };
 
-    // We weak references here to prevent the thread spawned by watch_for_config_changes from
+    // The add_module function will use references here
+    // to prevent the task spawned by watch_for_config_changes from
     // keeping these modules alive after this function exits.
     //
     // NOTE: reconfigurable_modules stores the only strong references to these modules,
-    // so we must keep the variable alive until the end of the function
-    let weak_modules = reconfigurable_modules.iter().map(Arc::downgrade).collect();
-    reload_cfg::watch_for_config_changes(
-        client.runtime(),
-        config_sources,
-        &arti_config,
-        weak_modules,
-    )?;
+    // so we must keep that variable alive until the end of the function
+    reconfigurable_modules
+        .iter()
+        .try_for_each(|m| cfg_watcher_task.add_module(m))?;
+
+    cfg_watcher_task.launch()?;
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "rpc")] {
@@ -194,6 +208,7 @@ async fn run_proxy<R: ToplevelRuntime>(
                 &fs_mistrust,
                 client.clone(),
                 launchable_client.clone(),
+                cfg_mgr.clone(),
             )
             .await?;
             let (rpc_mgr, mut rpc_state_sender) = rpc_data
@@ -322,8 +337,11 @@ async fn run_proxy<R: ToplevelRuntime>(
             => r.context("bootstrap"),
     )?;
 
-    // The modules can be dropped now, because we are exiting.
+    // The modules and CfgMgr can be dropped now, because we are exiting.
+    // (We drop them explicitly to make sure that they were not dropped
+    // accidentally before.)
     drop(reconfigurable_modules);
+    drop(cfg_mgr);
 
     Ok(())
 }

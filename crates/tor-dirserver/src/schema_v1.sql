@@ -1,3 +1,7 @@
+-- TODO DIRMIRROR: Optimize the schema by using rowid and indices more.
+-- This required the operation to be more or less complete as we will only then
+-- have a working schema we can use and optimize.
+
 -- Meta table to store the current schema version.
 CREATE TABLE arti_dirserver_schema_version(
     version TEXT NOT NULL -- currently, always `1`
@@ -35,11 +39,12 @@ CREATE TABLE consensus(
 CREATE TABLE consensus_diff(
     rowid                   INTEGER PRIMARY KEY AUTOINCREMENT,
     docid                   TEXT NOT NULL UNIQUE,
-    old_consensus_rowid     INTEGER NOT NULL,
-    new_consensus_rowid     INTEGER NOT NULL,
+    base_consensus_docid    TEXT NOT NULL,
+    target_consensus_docid  TEXT NOT NULL,
+    UNIQUE(base_consensus_docid, target_consensus_docid),
     FOREIGN KEY(docid) REFERENCES store(docid),
-    FOREIGN KEY(old_consensus_rowid) REFERENCES consensus(rowid),
-    FOREIGN KEY(new_consensus_rowid) REFERENCES consensus(rowid)
+    FOREIGN KEY(base_consensus_docid) REFERENCES consensus(docid),
+    FOREIGN KEY(target_consensus_docid) REFERENCES consensus(docid)
 ) STRICT;
 
 -- Stores the router descriptors.
@@ -156,16 +161,16 @@ CREATE TABLE consensus_router_descriptor_member(
 
 -- Stores which authority key signed which consensuses.
 --
--- Required to implement the consensus retrieval by authority fingerprints as
--- well as the garbage collection of authority key certificates.
+-- Required to implement the consensus retrieval by authority fingerprints.
 --
 -- http://<hostname>/tor/status-vote/current/consensus-<FLAVOR>/<F1>+<F2>+<F3>
 CREATE TABLE consensus_authority_voter(
-    consensus_docid TEXT,
-    authority_docid TEXT,
-    PRIMARY KEY(consensus_docid, authority_docid),
+    consensus_docid     TEXT,
+    kp_auth_id_rsa_sha1 TEXT,
+    PRIMARY KEY(consensus_docid, kp_auth_id_rsa_sha1),
     FOREIGN KEY(consensus_docid) REFERENCES consensus(docid),
-    FOREIGN KEY(authority_docid) REFERENCES authority_key_certificate(docid)
+    CHECK(GLOB('*[^0-9A-F]*', kp_auth_id_rsa_sha1) == 0),
+    CHECK(LENGTH(kp_auth_id_rsa_sha1) == 40)
 ) STRICT;
 
 INSERT INTO arti_dirserver_schema_version VALUES ('1');

@@ -74,7 +74,6 @@ use futures::FutureExt;
 use futures::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
 };
-use memchr::memchr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, instrument};
@@ -299,8 +298,9 @@ where
     let mut buffered = BufReader::new(stream);
 
     // Handle the response
-    // TODO: should there be a separate timeout here?
-    let header = read_headers(&mut buffered).await.map_err(wrap_err)?;
+    let header = read_headers(runtime, &mut buffered)
+        .await
+        .map_err(wrap_err)?;
     if header.status != Some(200) {
         return Ok(DirResponse::new(
             method,
@@ -345,17 +345,39 @@ where
 const MAX_HEADERS_LEN: usize = 16384;
 
 /// Read and parse HTTP/1 headers from `stream`.
-async fn read_headers<S>(stream: &mut S) -> RequestResult<HeaderStatus>
+///
+/// Wraps around [`read_headers_internal()`] with a timeout.
+async fn read_headers<S, SP>(runtime: &SP, stream: &mut S) -> RequestResult<HeaderStatus>
+where
+    S: AsyncBufRead + Unpin,
+    SP: SleepProvider,
+{
+    // Just like with the other timeouts in this code, this should probably be
+    // configurable and may even be too much.
+    let read_timeout = Duration::from_secs(10);
+    runtime
+        .timeout(read_timeout, read_headers_internal(stream))
+        .await
+        .map_err(|_| RequestError::DirTimeout)
+        .flatten()
+}
+
+/// Internal version of [`read_headers()`] without a timeout.
+async fn read_headers_internal<S>(stream: &mut S) -> RequestResult<HeaderStatus>
 where
     S: AsyncBufRead + Unpin,
 {
     let mut buf = Vec::with_capacity(1024);
 
+    // Note: Using `take` here will ensure that we will get an EOF if the header length
+    // would exceed the maximum.  No extra bytes will actually be extracted.
+    let mut limited_stream = stream.take(MAX_HEADERS_LEN as u64);
+
     loop {
         // TODO: it's inefficient to do this a line at a time; it would
         // probably be better to read until the CRLF CRLF ending of the
         // response.  But this should be fast enough.
-        let n = read_until_limited(stream, b'\n', 2048, &mut buf).await?;
+        let n = limited_stream.read_until(b'\n', &mut buf).await?;
 
         // TODO(nickm): Better maximum and/or let this expand.
         let mut headers = [httparse::EMPTY_HEADER; 32];
@@ -508,44 +530,30 @@ where
     circ_mgr.retire_circ(id);
 }
 
-/// As AsyncBufReadExt::read_until, but stops after reading `max` bytes.
+/// Memory limit of the LZMA dictionary we are willing to allocate.
 ///
-/// Note that this function might not actually read any byte of value
-/// `byte`, since EOF might occur, or we might fill the buffer.
+/// Without it, it may lead to an allocation of 4GiB, which is a bit overkill.
 ///
-/// A return value of 0 indicates an end-of-file.
-async fn read_until_limited<S>(
-    stream: &mut S,
-    byte: u8,
-    max: usize,
-    buf: &mut Vec<u8>,
-) -> std::io::Result<usize>
-where
-    S: AsyncBufRead + Unpin,
-{
-    let mut n_added = 0;
-    loop {
-        let data = stream.fill_buf().await?;
-        if data.is_empty() {
-            // End-of-file has been reached.
-            return Ok(n_added);
-        }
-        debug_assert!(n_added < max);
-        let remaining_space = max - n_added;
-        let (available, found_byte) = match memchr(byte, data) {
-            Some(idx) => (idx + 1, true),
-            None => (data.len(), false),
-        };
-        debug_assert!(available >= 1);
-        let n_to_copy = std::cmp::min(remaining_space, available);
-        buf.extend(&data[..n_to_copy]);
-        stream.consume_unpin(n_to_copy);
-        n_added += n_to_copy;
-        if found_byte || n_added == max {
-            return Ok(n_added);
-        }
-    }
-}
+/// Right now, we use 16 MiB, as the spec limits the compression quality to
+/// "6", meaning 9 MiB of decompression memory, which rounds up to 16 MiB in
+/// terms of base 2.
+///
+/// From the xz(1) manual page:
+/// ```text
+/// Preset   DictSize   CompCPU   CompMem   DecMem
+///  -0e     256 KiB       8        4 MiB    1 MiB
+///  -1e       1 MiB       8       13 MiB    2 MiB
+///  -2e       2 MiB       8       25 MiB    3 MiB
+///  -3e       4 MiB       7       48 MiB    5 MiB
+///  -4e       4 MiB       8       48 MiB    5 MiB
+///  -5e       8 MiB       7       94 MiB    9 MiB
+///  -6e       8 MiB       8       94 MiB    9 MiB
+///  -7e      16 MiB       8      186 MiB   17 MiB
+///  -8e      32 MiB       8      370 MiB   33 MiB
+///  -9e      64 MiB       8      674 MiB   65 MiB
+/// ```
+#[cfg(feature = "xz")]
+const LZMA_DICT_MEM_LIMIT: u64 = 1 << 24; // 16 MiB
 
 /// Pure-Rust zstd decoder for WASM targets where C zstd-sys is unavailable.
 ///
@@ -626,6 +634,11 @@ impl<S: AsyncRead + Unpin> AsyncRead for RuzstdDecoder<S> {
 
 /// Helper: Return a boxed decoder object that wraps the stream  $s.
 macro_rules! decoder {
+    (XzDecoder, $s:expr) => {{
+        let mut decoder = XzDecoder::with_mem_limit($s, LZMA_DICT_MEM_LIMIT);
+        decoder.multiple_members(true);
+        Ok(Box::new(decoder))
+    }};
     ($dec:ident, $s:expr) => {{
         let mut decoder = $dec::new($s);
         decoder.multiple_members(true);
@@ -680,34 +693,6 @@ mod test {
     use web_time_compat::{SystemTime, SystemTimeExt};
 
     use futures_await_test::async_test;
-
-    #[async_test]
-    async fn test_read_until_limited() -> RequestResult<()> {
-        let mut out = Vec::new();
-        let bytes = b"This line eventually ends\nthen comes another\n";
-
-        // Case 1: find a whole line.
-        let mut s = &bytes[..];
-        let res = read_until_limited(&mut s, b'\n', 100, &mut out).await;
-        assert_eq!(res?, 26);
-        assert_eq!(&out[..], b"This line eventually ends\n");
-
-        // Case 2: reach the limit.
-        let mut s = &bytes[..];
-        out.clear();
-        let res = read_until_limited(&mut s, b'\n', 10, &mut out).await;
-        assert_eq!(res?, 10);
-        assert_eq!(&out[..], b"This line ");
-
-        // Case 3: reach EOF.
-        let mut s = &bytes[..];
-        out.clear();
-        let res = read_until_limited(&mut s, b'Z', 100, &mut out).await;
-        assert_eq!(res?, 45);
-        assert_eq!(&out[..], &bytes[..]);
-
-        Ok(())
-    }
 
     // Basic decompression wrapper.
     async fn decomp_basic(
@@ -783,13 +768,25 @@ mod test {
 
     #[cfg(feature = "xz")]
     #[async_test]
-    async fn decomp_xz2() -> RequestResult<()> {
-        // Not so good at tiny files...
-        let compressed = hex::decode("fd377a585a000004e6d6b446020021011c00000010cf58cce00024001d5d00279b88a202ca8612cfb3c19c87c34248a570451e4851d3323d34ab8000000000000901af64854c91f600013925d6ec06651fb6f37d010000000004595a").unwrap();
-        let limit = 10 << 20;
+    async fn decomp_xz() -> RequestResult<()> {
+        // echo "One fish Two fish Red fish Blue fish" | xz -6 | xxd -p
+        let compressed = hex::decode("fd377a585a000004e6d6b44604c02525210116000000000000000000bfdbca33e00024001d5d00279b88a202ca8612cfb3c19c87c34248a570451e4851d3323d34ab8000000000000901af64854c91f600014125281fe0821fb6f37d010000000004595a").unwrap();
+        let limit = LZMA_DICT_MEM_LIMIT as usize;
         let (s, r) = decomp_basic(Some("x-tor-lzma"), &compressed, limit).await;
         s?;
         assert_eq!(r, b"One fish Two fish Red fish Blue fish\n");
+
+        Ok(())
+    }
+
+    #[cfg(feature = "xz")]
+    #[async_test]
+    async fn decomp_xz_bad() -> RequestResult<()> {
+        // Not so good at tiny files...
+        let compressed = hex::decode("fd377a585a000004e6d6b446020021011c00000010cf58cce00024001d5d00279b88a202ca8612cfb3c19c87c34248a570451e4851d3323d34ab8000000000000901af64854c91f600013925d6ec06651fb6f37d010000000004595a").unwrap();
+        let limit = 10 << 20;
+        let (s, _) = decomp_basic(Some("x-tor-lzma"), &compressed, limit).await;
+        assert!(matches!(s, Err(RequestError::IoError(_))));
 
         Ok(())
     }
@@ -813,25 +810,25 @@ mod test {
         assert!(matches!(s, Err(RequestError::IoError(_))));
     }
 
-    #[async_test]
-    async fn headers_ok() -> RequestResult<()> {
+    #[test]
+    fn headers_ok() -> RequestResult<()> {
         let text = b"HTTP/1.0 200 OK\r\nDate: ignored\r\nContent-Encoding: Waffles\r\n\r\n";
 
         let mut s = &text[..];
-        let h = read_headers(&mut s).await?;
+        let h = tor_rtcompat::test_with_one_runtime!(async |rt| read_headers(&rt, &mut s).await)?;
 
         assert_eq!(h.status, Some(200));
         assert_eq!(h.encoding.as_deref(), Some("Waffles"));
 
         // now try truncated
         let mut s = &text[..15];
-        let h = read_headers(&mut s).await;
+        let h = tor_rtcompat::test_with_one_runtime!(async |rt| read_headers(&rt, &mut s).await);
         assert!(matches!(h, Err(RequestError::TruncatedHeaders)));
 
         // now try with no encoding.
         let text = b"HTTP/1.0 404 Not found\r\n\r\n";
         let mut s = &text[..];
-        let h = read_headers(&mut s).await?;
+        let h = tor_rtcompat::test_with_one_runtime!(async |rt| read_headers(&rt, &mut s).await)?;
 
         assert_eq!(h.status, Some(404));
         assert!(h.encoding.is_none());
@@ -839,15 +836,14 @@ mod test {
         Ok(())
     }
 
-    #[async_test]
-    async fn headers_bogus() -> Result<()> {
+    #[test]
+    fn headers_bogus() {
         let text = b"HTTP/999.0 WHAT EVEN\r\n\r\n";
         let mut s = &text[..];
-        let h = read_headers(&mut s).await;
+        let h = tor_rtcompat::test_with_one_runtime!(async |rt| read_headers(&rt, &mut s).await);
 
         assert!(h.is_err());
         assert!(matches!(h, Err(RequestError::HttparseError(_))));
-        Ok(())
     }
 
     /// Run a trivial download example with a response provided as a binary
@@ -1025,5 +1021,22 @@ mod test {
         ));
     }
 
-    // TODO: test with bad utf-8
+    #[test]
+    fn test_bad_utf8() {
+        let req: request::MicrodescRequest = vec![[9; 32]].into_iter().collect();
+        let faulty_utf8 = vec![0, 159, 146, 150];
+
+        let mut response_text: Vec<u8> = b"HTTP/1.0 200 OK\r\n\r\n".into();
+        response_text.extend(faulty_utf8);
+
+        let (response, _request) = run_download_test(req, &response_text);
+
+        assert!(matches!(
+            response.unwrap().into_output_string().unwrap_err(),
+            RequestFailedError {
+                error: RequestError::Utf8Encoding(_),
+                ..
+            }
+        ));
+    }
 }

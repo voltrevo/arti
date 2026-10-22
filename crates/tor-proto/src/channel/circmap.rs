@@ -269,6 +269,24 @@ impl CircMap {
         })
     }
 
+    /// Returns `true` if the circuit with the specified `id`
+    /// is open or opening.
+    ///
+    /// Returns `false` if the circuit is not in the circuit map,
+    /// or if we have already sent a DESTROY on it.
+    pub(super) fn is_open(&self, id: CircId) -> bool {
+        let Some(entry) = self.m.get(&id) else {
+            return false;
+        };
+
+        match entry {
+            CircEnt::Opening { .. } | CircEnt::OpenOrigin { .. } => true,
+            #[cfg(feature = "relay")]
+            CircEnt::OpenRelay { .. } => true,
+            CircEnt::DestroySent(..) => false,
+        }
+    }
+
     /// Inform the relevant circuit's padding subsystem that a given cell has been flushed.
     pub(super) fn note_cell_flushed(&mut self, id: CircId, info: QueuedCellPaddingInfo) {
         let padding_ctrl = match self.m.get(&id) {
@@ -283,10 +301,13 @@ impl CircMap {
 
     /// See whether 'id' is an opening circuit.  If so, mark it "open" and
     /// return a oneshot::Sender that is waiting for its create cell.
+    ///
+    /// Returns `None` if `id` is not in our circuit map,
+    /// or if it is not an opening circuit.
     pub(super) fn advance_from_opening(
         &mut self,
         id: CircId,
-    ) -> Result<oneshot::Sender<CreateResponse>> {
+    ) -> Option<oneshot::Sender<CreateResponse>> {
         // TODO: there should be a better way to do
         // this. hash_map::Entry seems like it could be better, but
         // there seems to be no way to replace the object in-place as
@@ -306,22 +327,20 @@ impl CircMap {
                         padding_ctrl,
                     },
                 );
-                Ok(oneshot)
+                Some(oneshot)
             } else {
                 panic!("internal error: inconsistent circuit state");
             }
         } else {
-            Err(Error::ChanProto(
-                "Unexpected CREATED* cell not on opening circuit".into(),
-            ))
+            None
         }
     }
 
     /// Called when we have sent a DESTROY on a circuit.  Configures
     /// a "HalfCirc" object to track how many cells we get on this
     /// circuit, and to prevent us from reusing it immediately.
-    pub(super) fn destroy_sent(&mut self, id: CircId, hs: HalfCirc) {
-        if let Some(replaced) = self.m.insert(id, CircEnt::DestroySent(hs)) {
+    pub(super) fn destroy_sent(&mut self, id: CircId, hc: HalfCirc) {
+        if let Some(replaced) = self.m.insert(id, CircEnt::DestroySent(hc)) {
             if !matches!(replaced, CircEnt::DestroySent(_)) {
                 // replaced an Open/Opening entry with DestroySent
                 self.open_count = self.open_count.saturating_sub(1);
@@ -343,9 +362,6 @@ impl CircMap {
     pub(super) fn open_ent_count(&self) -> usize {
         self.open_count
     }
-
-    // TODO: Eventually if we want relay support, we'll need to support
-    // circuit IDs chosen by somebody else. But for now, we don't need those.
 }
 
 #[cfg(test)]
@@ -431,7 +447,7 @@ mod test {
                 CircEnt::Opening { .. }
             ));
             let adv = map_high.advance_from_opening(ids_high[0]);
-            assert!(adv.is_ok());
+            assert!(adv.is_some());
             assert!(matches!(
                 *map_high.get_mut(ids_high[0]).unwrap(),
                 CircEnt::OpenOrigin { .. }
@@ -439,13 +455,13 @@ mod test {
 
             // Can't double-advance.
             let adv = map_high.advance_from_opening(ids_high[0]);
-            assert!(adv.is_err());
+            assert!(adv.is_none());
 
             // Can't advance an entry that is not there.  We know "77"
             // can't be in map_high, since we only added high circids to
             // it.
             let adv = map_high.advance_from_opening(CircId::new(77).unwrap());
-            assert!(adv.is_err());
+            assert!(adv.is_none());
         });
     }
 }

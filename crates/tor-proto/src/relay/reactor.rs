@@ -2,38 +2,42 @@
 //!
 //! See [`reactor`](crate::circuit::reactor) for a description of the overall architecture.
 //!
-//! #### `ForwardReactor`
+//! All cells moving in the forward direction (i.e. away from the client)
+//! are handled by the forward reactor, which deals with
 //!
-//! It handles
-//!
-//!  * unrecognized RELAY cells, by moving them in the forward direction (towards the exit)
-//!  * recognized RELAY cells, by splitting each cell into messages, and handling
+//!  * unrecognized RELAY* cells, by moving them in the forward direction (towards the exit)
+//!  * recognized RELAY* cells, by splitting each cell into messages, and handling
 //!    each message individually as described in the table below
 //!    (Note: since prop340 is not yet implemented, in practice there is only 1 message per cell).
-//!  * RELAY_EARLY cells (**not yet implemented**)
-//!  * DESTROY cells (**not yet implemented**)
+//!  * DESTROY cells, by tearing down the circuit, and causing a DESTROY to be sent forward,
+//!    to the next hop, if there is one
 //!  * PADDING_NEGOTIATE cells (**not yet implemented**)
 //!
 //! ```text
 //!
 //! Legend: `F` = "forward reactor", `B` = "backward reactor", `S` = "stream reactor"
+//! `FH` = `ForwardHandler`
 //!
-//! | RELAY cmd         | Received in | Handled in | Description                            |
-//! |-------------------|-------------|------------|----------------------------------------|
-//! | DROP              | F           | F          | Passed to PaddingController for        |
-//! |                   |             |            | validation                             |
-//! |-------------------|-------------|------------|----------------------------------------|
-//! | EXTEND2           | F           |            | Handled by instructing the channel     |
-//! |                   |             |            | provider to launch a new channel, and  |
-//! |                   |             |            | waiting for the new channel on its     |
-//! |                   |             |            | outgoing_chan_rx receiver              |
-//! |                   |             |            | (**not yet implemented**)              |
-//! |-------------------|-------------|------------|----------------------------------------|
-//! | TRUNCATE          | F           | F          | (**not yet implemented**)              |
-//! |                   |             |            |                                        |
-//! |-------------------|-------------|------------|----------------------------------------|
-//! | TODO              |             |            |                                        |
-//! |                   |             |            |                                        |
+//! | RELAY cmd  | Received in | Handled in            | Description                            |
+//! |------------|-------------|-----------------------|----------------------------------------|
+//! | DROP       | F           | FH::handle_meta_msg() | Passed to PaddingController for        |
+//! |            |             |                       | validation                             |
+//! |------------|-------------|-----------------------|----------------------------------------|
+//! | EXTEND2    | F           | FH::handle_meta_msg() | Handled by the ExtendRequestHandler    |
+//! |            |             |                       | See [forward::extend_handler].         |
+//! |------------|-------------|-----------------------|----------------------------------------|
+//! | TRUNCATE   | F           | FH::handle_meta_msg() | Not supported: TRUNCATE is considered  |
+//! |            |             |                       | a protocol violation, because none of  |
+//! |            |             |                       | of our implementations send it.        |
+//! |------------|-------------|-----------------------|----------------------------------------|
+//! | SENDME     | F           | B                     | Sent to BackwardReactor for handling.  |
+//! | (sid = 0)  |             |                       | See the [crate::circuit::reactor] docs |
+//! |------------|-------------|-----------------------|----------------------------------------|
+//! | Other      | F           | FH::handle_meta_msg() | Rejected as unrecognized               |
+//! | (sid = 0)  |             |                       |                                        |
+//! |------------|-------------|-----------------------|----------------------------------------|
+//! | Other      | F           | S                     | Handled in the `StreamReactor`         |
+//! | (sid != 0) |             |                       |                                        |
 //! ```
 
 pub(crate) mod backward;
@@ -65,6 +69,7 @@ use crate::relay::RelayCirc;
 use crate::relay::channel_provider::ChannelProvider;
 use crate::relay::reactor::backward::Backward;
 use crate::relay::reactor::forward::Forward;
+use crate::stream::flow_ctrl::state::WithSidechannelMitigations;
 use crate::stream::flow_ctrl::xon_xoff::reader::XonXoffReaderCtrl;
 use crate::stream::incoming::{
     IncomingCmdChecker, IncomingStream, IncomingStreamRequestFilter, IncomingStreamRequestHandler,
@@ -80,7 +85,6 @@ use crate::client::circuit::padding::{PaddingController, PaddingEventStream};
 type RelayBaseReactor<R> = BaseReactor<R, Forward, Backward>;
 
 /// The entry point of the circuit reactor subsystem.
-#[allow(unused)] // TODO(relay)
 #[must_use = "If you don't call run() on a reactor, the circuit won't work."]
 pub(crate) struct Reactor<R: Runtime>(RelayBaseReactor<R>);
 
@@ -102,15 +106,18 @@ impl stream::StreamHandler for StreamHandler {
             .lock()
             .expect("poisoned lock")
             .rtt()
-            .max_rtt_usec()
-            .map(|rtt| Duration::from_millis(u64::from(rtt)))
+            .max_rtt()
             // TODO(relay): we should fallback to a non-zero default here
             // if we don't have any RTT measurements yet
             .unwrap_or_default()
     }
+
+    fn flowctrl_sidechannel_mitigations(&self) -> WithSidechannelMitigations {
+        // We're a relay, so we don't want sidechannel mitigations for flow control.
+        WithSidechannelMitigations::Disabled
+    }
 }
 
-#[allow(unused)] // TODO(relay)
 impl<R: Runtime> Reactor<R> {
     /// Create a new circuit reactor.
     ///
@@ -321,7 +328,7 @@ impl<R: Runtime> Reactor<R> {
     ///
     /// Once this method returns, the circuit is dead and cannot be
     /// used again.
-    pub(crate) async fn run(mut self) -> crate::Result<()> {
+    pub(crate) async fn run(self) -> crate::Result<()> {
         self.0.run().await
     }
 }
@@ -344,24 +351,39 @@ pub(crate) mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
+    use crate::channel::ChannelMode;
+    use crate::channel::CtrlMsg;
+    use crate::channel::circmap::CircIdRange;
+    use crate::channel::test_utils::DummyChan;
+    use crate::circuit::CircParameters;
+    use crate::circuit::circ_sender;
     use crate::circuit::reactor::test::{AllowAllStreamsFilter, rmsg_to_ccmsg};
-    use crate::circuit::test::fake_mpsc;
-    use crate::circuit::{CircParameters, CircuitRxSender};
+    use crate::circuit::test::new_circ_net_params;
     use crate::client::circuit::padding::new_padding;
     use crate::congestion::test_utils::params::build_cc_vegas_params;
     use crate::crypto::cell::RelayCellBody;
     use crate::crypto::cell::{InboundRelayLayer, OutboundRelayLayer};
-    use crate::relay::channel::test::{DummyChan, DummyChanProvider, working_dummy_channel};
+    use crate::relay::CreateRequestHandler;
+    use crate::relay::channel::test::DummyChanProvider;
     use crate::stream::flow_ctrl::params::FlowCtrlParameters;
-    use crate::stream::incoming::{IncomingStream, IncomingStreamRequest};
+    use crate::stream::incoming::{IncomingStream, IncomingStreamRequest, NoOpRequestFilter};
 
     use futures::AsyncReadExt as _;
+    use futures::SinkExt as _;
+    use oneshot_fused_workaround as oneshot;
     use tracing_test::traced_test;
 
+    use tor_basic_utils::test_rng::{TestingRng, testing_rng};
     use tor_cell::chancell::{ChanCell, ChanCmd, msg as chanmsg};
     use tor_cell::relaycell::{AnyRelayMsgOuter, RelayCellFormat, StreamId, msg as relaymsg};
+    use tor_key_forge::Keygen;
     use tor_linkspec::{EncodedLinkSpec, HasRelayIds, LinkSpec};
+    use tor_llcrypto::pk::curve25519::StaticKeypair;
+    use tor_llcrypto::pk::ed25519::Ed25519Identity;
+    use tor_llcrypto::pk::rsa::RsaIdentity;
+    use tor_llcrypto::rng::FakeEntropicRng;
     use tor_protover::{Protocols, named};
+    use tor_relay_crypto::pk::RelayNtorKeys;
     use tor_rtcompat::SpawnExt;
     use tor_rtcompat::{DynTimeProvider, Runtime};
     use tor_rtmock::MockRuntime;
@@ -370,7 +392,7 @@ pub(crate) mod test {
     use relaymsg::SendmeTag;
 
     use std::net::IpAddr;
-    use std::sync::{Arc, Mutex, mpsc};
+    use std::sync::{Arc, Mutex, Weak, mpsc};
     use std::task::{Context, Poll, Waker};
 
     // An inbound encryption layer that doesn't do any crypto.
@@ -411,18 +433,38 @@ pub(crate) mod test {
         }
     }
 
+    /// A circuit reactor handle, for building circuits of the form
+    /// A -> B, and A -> B -> C, where the circuit reactor under test
+    /// "thinks" it is B.
+    ///
+    /// [`ReactorTestCtrl::new`] builds and spawns:
+    ///
+    ///   * a channel reactor for the A - B "Tor Channel"
+    ///   * a circuit reactor for B's view of the circuit
+    ///
+    /// Some of the tests in this module extend the circuit by another dummy hop,
+    /// to obtain an A -> B -> C circuit. This involves sending an EXTEND2
+    /// cell over the A -> B channel, and calling [`ReactorTestCtrl::do_create2_handshake`]
+    /// to finalize the handshake.
     struct ReactorTestCtrl {
         /// The relay circuit handle.
         relay_circ: Arc<RelayCirc>,
-        /// Mock channel -> circuit reactor MPSC channel.
-        circmsg_send: CircuitRxSender,
+        /// The circuit id on our `inbound_chan`.
+        circid: CircId,
         /// The inbound channel ("towards the client").
+        ///
+        /// This is the "Tor channel" between A and B in
+        /// a circuit of the form A -> B or A -> B -> C.
         inbound_chan: DummyChan,
         /// The outbound channel ("away from the client"), if any.
         ///
         /// Shared with the DummyChanProvider, which initializes this
         /// when the relay reactor launches a channel to the next hop
         /// via `get_or_launch()`.
+        ///
+        /// This is the "Tor channel" between B and C,
+        /// if our test circuit is of the form A -> B -> C
+        /// (i.e. if we have extended the "base" circuit by another mock hop, to C).
         outbound_chan: Arc<Mutex<Option<DummyChan>>>,
         /// MPSC channel for telling the DummyOutboundCrypto that the next
         /// cell we're about to send to the reactor should be "recognized".
@@ -438,18 +480,164 @@ pub(crate) mod test {
         No,
     }
 
+    /// The direction we expect the reactor to have sent a DESTROY in
+    #[allow(dead_code)] // we don't use all of these yet
+    enum DestroyDirection {
+        /// Forward ("towards the exit")
+        Forward,
+        /// Backward ("towards the client")
+        Backward,
+        /// Both forward and backward
+        Both,
+    }
+
+    /// Decode a cell, extracting the underlying message of type `expect_msg`
+    macro_rules! decode_relay_cell {
+        ($cell:expr, $expect_msg:tt) => {{
+            let rmsg = match $cell.msg() {
+                chanmsg::AnyChanMsg::Relay(r) => AnyRelayMsgOuter::decode_singleton(
+                    RelayCellFormat::V0,
+                    r.clone().into_relay_body(),
+                )
+                .unwrap(),
+                msg => panic!("unexpected forwarded {msg:?}"),
+            };
+
+            let msg = match rmsg.msg() {
+                relaymsg::AnyRelayMsg::$expect_msg(inner) => inner.clone(),
+                _ => panic!("unexpected relay message {rmsg:?}"),
+            };
+
+            (rmsg.stream_id(), msg)
+        }};
+    }
+
+    const DUMMY_ED25519_KEY: [u8; 32] = *b"32 bytes pretending to be a key!";
+    const DUMMY_RSA_KEY: [u8; 20] = *b"not really an RSA ky";
+
+    /// Helper for building a [`ChannelMode::Relay`] for our test reactor
+    fn build_channel_mode<R: Runtime>(
+        chan_provider: Arc<DummyChanProvider<R>>,
+        allowed_stream_cmds: &[RelayCmd],
+    ) -> ChannelMode {
+        let our_ed25519_id = Ed25519Identity::from_bytes(&DUMMY_ED25519_KEY).unwrap();
+        let our_rsa_id = RsaIdentity::from_bytes(&DUMMY_RSA_KEY).unwrap();
+
+        let mut rng = FakeEntropicRng::<TestingRng>(testing_rng());
+        let relay_ntor_keys = StaticKeypair::generate(&mut rng).unwrap();
+
+        // A handler that will process CREATE* requests on channels
+        //
+        // Note: in practice, this won't actually be used at all,
+        // because for the purposes of these tests, the circuit reactor is spawned manually,
+        // by ReactorTestCtrl::new(), which also hackily initializes the channel's circuit map
+        // with a circuit entry for it.
+        //
+        // This should be fine for now, but we might want to rethink it in the future
+        // (i.e. we might want to let the channel reactor spawn the circuit reactor under test,
+        // in response to CREATE*).
+        let (create_request_handler, _circuit_stream_rx) = CreateRequestHandler::new(
+            Arc::downgrade(&chan_provider) as Weak<_>,
+            new_circ_net_params(),
+            RelayNtorKeys::new(relay_ntor_keys.into()),
+            // Don't filter any stream requests.
+            Box::new(|| Box::new(NoOpRequestFilter) as Box<_>),
+            allowed_stream_cmds,
+        );
+        let create_request_handler = Arc::new(create_request_handler);
+
+        ChannelMode::Relay {
+            create_request_handler,
+            our_ed25519_id,
+            our_rsa_id,
+            // This doesn't actually matter for these tests
+            circ_id_range: CircIdRange::Low,
+        }
+    }
+
+    /// Prepare our "inbound" channel,
+    ///
+    /// > Note: the concept of an "inbound" channel only really makes sense
+    /// > if you think about it from a circuit perspective:
+    /// > these tests essentially simulate circuits of the form A -> B
+    /// > and A -> B -> C. The relay circuit reactor under test "thinks" it's relay B,
+    /// > and its "inbound" and "outbound" channels are the A -> B and B -> C channels,
+    /// > respectively.
+    ///
+    /// This spawns a channel reactor and creates a fake circuit entry in it,
+    /// which is wired up to the circuit Reactor under test by [`ReactorTestCtrl::new`].
+    async fn prepare_inbound_chan<R: Runtime>(
+        rt: &R,
+        mode: ChannelMode,
+    ) -> (CircId, CircuitRxReceiver, DummyChan) {
+        let mut inbound_chan = DummyChan::run(rt, mode);
+
+        let memquota = CircuitAccount::new_noop();
+        let time_provider = DynTimeProvider::new(rt.clone());
+
+        let (sender, receiver) = MpscSpec::new(128)
+            .new_mq(time_provider, memquota.as_raw_account())
+            .unwrap();
+        let (sender, receiver) = circ_sender::channel(sender, receiver);
+        let (created_sender, created_receiver) = oneshot::channel();
+
+        let (tx, rx) = oneshot::channel();
+
+        // Note: we need to make sure the circuit is in the channel reactor's
+        // circuit map, because otherwise we can't test the DESTROY behavior,
+        // (the channel reactor conditionally sends DESTROY based on whether
+        // the circuit entry is still in the circmap or not;
+        // the presence of a circuit in the circmap is a proxy for
+        // whether we have sent a DESTROY ourselves or not).
+        inbound_chan
+            .channel
+            .send_control(CtrlMsg::AllocateCircuit {
+                created_sender,
+                sender,
+                tx,
+            })
+            .unwrap();
+        let (circid, _circ_unique_id, _padding_ctrl, _padding_stream) = rx.await.unwrap().unwrap();
+
+        // Hack: AllocateCircuit puts the circuit in the "Opening" state,
+        // but in order to actually be able to send anything on this channel,
+        // we need to advance it to "Open". We do that by sending a CREATED2 cell on the channel,
+        // which is nonsensical from the perspective of the relay-specific test setup
+        // (it would make sense if this was a client channel, however).
+        // Alas, it is the only way we can advance the circuit's state to "Open"
+        // in the channel's circmap without introducing a test-only CtrlMsg for this,
+        // or without surrendering the circuit Reactor setup to the channel impl
+        // (the latter might not be so bad actually, because it would be closer to what
+        // happens in reality).
+        let handshake = vec![];
+        let created2 = chanmsg::Created2::new(handshake.clone());
+        let cell = ChanCell::new(Some(circid), created2.into());
+        inbound_chan.tx.try_send(Ok(cell)).unwrap();
+
+        // We **have** to read the CREATED2 (otherwise the channel reactor shuts down with an error)
+        let _ = created_receiver.await;
+
+        (circid, receiver, inbound_chan)
+    }
+
     impl ReactorTestCtrl {
         /// Spawn a relay circuit reactor, returning a `ReactorTestCtrl` for
         /// controlling it.
-        fn spawn_reactor<R: Runtime>(
+        async fn spawn_reactor<R: Runtime>(
             rt: &R,
             allowed_stream_cmds: &[RelayCmd],
         ) -> (Self, impl futures::Stream<Item = IncomingStream>) {
-            let inbound_chan = working_dummy_channel(rt);
-            let circid = CircId::new(1337).unwrap();
+            let outbound_chan = Arc::new(Mutex::new(None));
+            let chan_provider = Arc::new(DummyChanProvider::new(
+                rt.clone(),
+                Arc::clone(&outbound_chan),
+            ));
+
+            let mode = build_channel_mode(Arc::clone(&chan_provider), allowed_stream_cmds);
+            let (circid, receiver, inbound_chan) = prepare_inbound_chan(rt, mode).await;
+
             let unique_id = UniqId::new(8, 17);
             let (padding_ctrl, padding_stream) = new_padding(DynTimeProvider::new(rt.clone()));
-            let (circmsg_send, circmsg_recv) = fake_mpsc(64);
             let params = CircParameters::new(
                 true,
                 build_cc_vegas_params(),
@@ -462,19 +650,13 @@ pub(crate) mod test {
             )
             .unwrap();
 
-            let outbound_chan = Arc::new(Mutex::new(None));
             let (recognized_tx, recognized_rx) = mpsc::channel();
-            let chan_provider = Arc::new(DummyChanProvider::new(
-                rt.clone(),
-                Arc::clone(&outbound_chan),
-            ));
-
             let (reactor, relay_circ, incoming_streams) = Reactor::new(
                 rt.clone(),
                 &Arc::clone(&inbound_chan.channel),
                 circid,
                 unique_id,
-                circmsg_recv,
+                receiver,
                 Box::new(DummyInboundCrypto {}),
                 Box::new(DummyOutboundCrypto { recognized_rx }),
                 &settings,
@@ -494,7 +676,7 @@ pub(crate) mod test {
 
             let ctrl = Self {
                 relay_circ,
-                circmsg_send,
+                circid,
                 recognized_tx,
                 inbound_chan,
                 outbound_chan,
@@ -516,15 +698,13 @@ pub(crate) mod test {
             // specifying whether the cell should be treated as recognized
             // or unrecognized
             self.recognized_tx.send(recognized).unwrap();
-            self.circmsg_send
-                .send(rmsg_to_ccmsg(id, msg, early))
-                .await
-                .unwrap();
+            self.send_fwd_cmsg(rmsg_to_ccmsg(id, msg, early)).await;
         }
 
         /// Simulate the sending of a forward channel message through our relay.
         async fn send_fwd_cmsg(&mut self, msg: chanmsg::AnyChanMsg) {
-            self.circmsg_send.send(msg).await.unwrap();
+            let cell = ChanCell::new(Some(self.circid), msg);
+            self.inbound_chan.tx.send(Ok(cell)).await.unwrap();
         }
 
         /// Whether the reactor opened an outbound channel
@@ -558,21 +738,9 @@ pub(crate) mod test {
 
             // Make sure we actually did send an EXTENDED2 towards the client
             let msg = self.read_inbound();
-            let rmsg = match msg.msg() {
-                chanmsg::AnyChanMsg::Relay(r) => AnyRelayMsgOuter::decode_singleton(
-                    RelayCellFormat::V0,
-                    r.clone().into_relay_body(),
-                )
-                .unwrap(),
-                _ => panic!("unexpected forwarded {msg:?}"),
-            };
 
-            match rmsg.msg() {
-                relaymsg::AnyRelayMsg::Extended2(e) => {
-                    assert_eq!(e.clone().into_body(), handshake);
-                }
-                _ => panic!("unexpected relay message {rmsg:?}"),
-            }
+            let (_sid, e) = decode_relay_cell!(msg, Extended2);
+            assert_eq!(e.clone().into_body(), handshake);
 
             circid
         }
@@ -585,21 +753,53 @@ pub(crate) mod test {
         /// Read a cell from the inbound channel
         /// (moving towards the client).
         ///
+        /// See [`try_read_inbound`](Self::try_read_inbound).
+        ///
         /// Panics if there are no ready cells on the inbound MPSC channel.
         fn read_inbound(&mut self) -> ChanCell<AnyChanMsg> {
+            self.try_read_inbound().unwrap()
+        }
+
+        /// Try to read a cell from the inbound channel
+        /// (moving towards the client).
+        ///
+        /// For example, for a circuit of the form A -> B -> C,
+        /// where B is the relay whose circuit reactor we're testing,
+        /// this function reads a channel message on the A <-> B channel,
+        /// from the perspective of A (i.e. it reads a channel message sent by B).
+        ///
+        /// Returns None if there are no ready cells on the inbound MPSC channel.
+        fn try_read_inbound(&mut self) -> Option<ChanCell<AnyChanMsg>> {
             #[allow(deprecated)] // TODO(#2386)
-            self.inbound_chan.rx.try_next().unwrap().unwrap()
+            self.inbound_chan.rx.try_next().ok().flatten()
         }
 
         /// Read a cell from the outbound channel
         /// (moving towards the next hop).
         ///
-        /// Panics if there are no ready cells on the outbound MPSC channel.
+        /// See [`try_read_outbound`](Self::try_read_outbound).
+        ///
+        /// Panics if there are no ready cells on the outbound MPSC channel,
+        /// or if there is no outbound channel.
         fn read_outbound(&mut self) -> ChanCell<AnyChanMsg> {
+            self.try_read_outbound().unwrap()
+        }
+
+        /// Read a cell from the outbound channel
+        /// (moving towards the next hop).
+        ///
+        /// For example, for a circuit of the form A -> B -> C,
+        /// where B is the relay whose circuit reactor we're testing,
+        /// this function reads a channel message on the B <-> C channel,
+        /// from the perspective of C (i.e. it reads a channel message sent by B).
+        ///
+        /// Returns None if there are no ready cells on the outbound MPSC channel,
+        /// or if there is no outbound channel.
+        fn try_read_outbound(&mut self) -> Option<ChanCell<AnyChanMsg>> {
             let mut lock = self.outbound_chan.lock().unwrap();
-            let chan = lock.as_mut().unwrap();
+            let chan = lock.as_mut()?;
             #[allow(deprecated)] // TODO(#2386)
-            chan.rx.try_next().unwrap().unwrap()
+            chan.rx.try_next().ok().flatten()
         }
 
         /// Write to the sending end of the outbound Tor channel.
@@ -626,35 +826,42 @@ pub(crate) mod test {
         ]
     }
 
+    macro_rules! assert_cell_is_destroy {
+        ($cell:expr, $reason:expr) => {{
+            match $cell.msg() {
+                chanmsg::AnyChanMsg::Destroy(d) => {
+                    assert_eq!(d.reason(), $reason);
+                }
+                _ => panic!("unexpected ending {:?}", $cell),
+            }
+        }};
+    }
+
     /// Assert that we have sent a DESTROY cell with the specified `reason`
-    /// both towards the "client" and towards the "next hop", if there is one,
-    /// and that the relay circuit is shutting down.
+    /// towards the "client" and/or the "next hop".
     ///
     /// The test is expected to drain the inbound Tor "channel"
     /// of any non-ending cells it might be expecting before calling this function.
-    fn assert_destroy_sent(ctrl: &mut ReactorTestCtrl, reason: DestroyReason) {
+    fn assert_destroy_sent(
+        ctrl: &mut ReactorTestCtrl,
+        reason: DestroyReason,
+        direction: DestroyDirection,
+    ) {
         assert!(ctrl.is_closing());
 
-        macro_rules! assert_cell_is_destroy {
-            ($cell:expr) => {{
-                match $cell.msg() {
-                    chanmsg::AnyChanMsg::Destroy(d) => {
-                        assert_eq!(d.reason(), reason);
-                    }
-                    _ => panic!("unexpected ending {:?}", $cell),
-                }
-            }};
-        }
-
-        // We *always* send a DESTROY towards the client
-        // when killing the circuit
-        let cell = ctrl.read_inbound();
-        assert_cell_is_destroy!(cell);
-
-        // If there's an outbound channel, ensure we sent a DESTROY over it too.
-        if ctrl.outbound_chan_launched() {
-            let cell = ctrl.read_outbound();
-            assert_cell_is_destroy!(cell);
+        match direction {
+            DestroyDirection::Backward => {
+                assert_cell_is_destroy!(ctrl.read_inbound(), reason);
+                assert!(ctrl.try_read_outbound().is_none());
+            }
+            DestroyDirection::Forward => {
+                assert_cell_is_destroy!(ctrl.read_outbound(), reason);
+                assert!(ctrl.try_read_inbound().is_none());
+            }
+            DestroyDirection::Both => {
+                assert_cell_is_destroy!(ctrl.read_inbound(), reason);
+                assert_cell_is_destroy!(ctrl.read_outbound(), reason);
+            }
         }
     }
 
@@ -680,7 +887,7 @@ pub(crate) mod test {
     fn reject_extend2_relay() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             let linkspecs = dummy_linkspecs();
@@ -690,7 +897,10 @@ pub(crate) mod test {
 
             assert!(logs_contain("got EXTEND2 in a RELAY cell?!"));
             assert!(!ctrl.outbound_chan_launched());
-            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+
+            // There is no next hop because we haven't extended the circuit,
+            // so only expect the DESTROY to be sent toward the client (Backward).
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE, DestroyDirection::Backward);
         });
     }
 
@@ -699,7 +909,7 @@ pub(crate) mod test {
     fn reject_extend2_previous_hop() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             // No outbound circuits yet
@@ -742,7 +952,7 @@ pub(crate) mod test {
     fn extend_and_forward() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             // No outbound circuits yet
@@ -794,20 +1004,22 @@ pub(crate) mod test {
     fn forward_before_extend() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             // Send an arbitrary unrecognized cell. The reactor should flag this as
             // a protocol violation, because we don't have an outbound channel to forward it on.
-            let extend2 = relaymsg::End::new_misc().into();
-            ctrl.send_fwd(None, extend2, Recognized::No, true).await;
+            let end = relaymsg::End::new_misc().into();
+            ctrl.send_fwd(None, end, Recognized::No, true).await;
             rt.advance_until_stalled().await;
 
-            // The reactor handled the EXTEND2 and launched an outbound channel
             assert!(logs_contain(
                 "Asked to forward cell before the circuit was extended?!"
             ));
-            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+
+            // There is no next hop because we haven't extended the circuit,
+            // so only expect the DESTROY to be sent toward the client (Backward).
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE, DestroyDirection::Backward);
         });
     }
 
@@ -816,7 +1028,7 @@ pub(crate) mod test {
     fn reject_invalid_begin() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             let begin = relaymsg::Begin::new("127.0.0.1", 1111, 0).unwrap().into();
@@ -829,7 +1041,10 @@ pub(crate) mod test {
             assert!(logs_contain(
                 "Invalid stream ID [scrubbed] for relay command BEGIN"
             ));
-            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+
+            // There is no next hop because we haven't extended the circuit,
+            // so only expect the DESTROY to be sent toward the client (Backward).
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE, DestroyDirection::Backward);
         });
     }
 
@@ -838,8 +1053,18 @@ pub(crate) mod test {
     fn destroy_from_client() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
+
+            // Extend the circuit by another hop
+            let linkspecs = dummy_linkspecs();
+            let handshake_type = HandshakeType::NTOR_V3;
+            let extend2 = relaymsg::Extend2::new(linkspecs, handshake_type, vec![]).into();
+            ctrl.send_fwd(None, extend2, Recognized::Yes, true).await;
+            rt.advance_until_stalled().await;
+            let _circid = ctrl.do_create2_handshake(&rt, handshake_type).await;
+            assert!(logs_contain("Extended circuit to the next hop"));
+            assert!(ctrl.outbound_chan_launched());
 
             // Simulate the client sending us a DESTROY cell
             let destroy = Destroy::new(DestroyReason::PROTOCOL);
@@ -850,8 +1075,10 @@ pub(crate) mod test {
                 "Received outbound DESTROY, circuit shutting down"
             ));
 
-            // Ensure the destroy reason (PROTOCOL) is not propagated
-            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+            // Since this is a circuit of the form A -> B -> C,
+            // and A sent us a DESTROY, we expect our relay (B) to forward
+            // the DESTROY to C.
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE, DestroyDirection::Forward);
         });
     }
 
@@ -860,7 +1087,7 @@ pub(crate) mod test {
     fn destroy_from_next_hop() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             // Extend the circuit by another hop
@@ -873,7 +1100,7 @@ pub(crate) mod test {
             assert!(logs_contain("Extended circuit to the next hop"));
             assert!(ctrl.outbound_chan_launched());
 
-            // Simulate the client sending us a DESTROY cell
+            // Simulate the next hop sending us a DESTROY cell
             let destroy = Destroy::new(DestroyReason::PROTOCOL);
             ctrl.write_outbound(circid, destroy.into());
             rt.advance_until_stalled().await;
@@ -888,9 +1115,10 @@ pub(crate) mod test {
                 "Received inbound DESTROY, circuit shutting down"
             ));
 
-            // Ensure the destroy reason (PROTOCOL) is not propagated
-            // This will check that we've sent a DESTROY cell in both directions.
-            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+            // There is no next hop because we haven't extended the circuit,
+            // so only expect the DESTROY to be sent toward the client (Backward).
+            // This also ensures the destroy reason (PROTOCOL) is not propagated.
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE, DestroyDirection::Backward);
         });
     }
 
@@ -899,7 +1127,7 @@ pub(crate) mod test {
     fn truncate() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, _incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             // Simulate the client sending us a TRUNCATE cell
@@ -911,7 +1139,9 @@ pub(crate) mod test {
                 "Circuit protocol violation: TRUNCATE not allowed"
             ));
 
-            assert_destroy_sent(&mut ctrl, DestroyReason::NONE);
+            // There is no next hop because we haven't extended the circuit,
+            // so only expect the DESTROY to be sent toward the client (Backward).
+            assert_destroy_sent(&mut ctrl, DestroyReason::NONE, DestroyDirection::Backward);
         });
     }
 
@@ -922,7 +1152,7 @@ pub(crate) mod test {
             const TO_SEND: &[u8] = b"The bells were musical in the silvery sun";
 
             let (mut ctrl, mut incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             let begin = relaymsg::Begin::new("127.0.0.1", 1111, 0).unwrap().into();
@@ -954,7 +1184,7 @@ pub(crate) mod test {
     fn reject_stream() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
             let (mut ctrl, mut incoming_streams) =
-                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]);
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::BEGIN]).await;
             rt.advance_until_stalled().await;
 
             let begin = relaymsg::Begin::new("127.0.0.1", 1111, 0).unwrap().into();
@@ -998,7 +1228,8 @@ pub(crate) mod test {
                 &rt,
                 // The stream reactor will only accept BEGIN_DIR streams
                 &[RelayCmd::BEGIN_DIR],
-            );
+            )
+            .await;
             rt.advance_until_stalled().await;
 
             // Directory streams should be allowed (because BEGIN_DIR is allowed)...
@@ -1031,6 +1262,44 @@ pub(crate) mod test {
                 incoming_streams.poll_next_unpin(&mut noop_cx).map(|_| ()),
                 Poll::Pending
             );
+        });
+    }
+
+    #[traced_test]
+    #[test]
+    fn resolve_stream() {
+        tor_rtmock::MockRuntime::test_with_various(|rt| async move {
+            let (mut ctrl, mut incoming_streams) =
+                ReactorTestCtrl::spawn_reactor(&rt, &[RelayCmd::RESOLVE]).await;
+            rt.advance_until_stalled().await;
+
+            let resolve = relaymsg::Resolve::new("example.com");
+            let resolve_sid = StreamId::new(1337);
+            ctrl.send_fwd(resolve_sid, resolve.into(), Recognized::Yes, false)
+                .await;
+            rt.advance_until_stalled().await;
+
+            // We should have a pending incoming stream
+            let pending = incoming_streams.next().await.unwrap();
+
+            let mut resolved = relaymsg::Resolved::new_empty();
+            let resolved_val = relaymsg::ResolvedVal::Ip(IpAddr::from([1, 2, 3, 4]));
+            resolved.add_answer(resolved_val.clone(), 1337);
+
+            // We expect the client to receive this cell
+            let expected_resolved = resolved.clone();
+
+            // Respond with RESOLVED
+            pending.resolve(resolved).await.unwrap();
+
+            rt.advance_until_stalled().await;
+            let (sid, resolved) = decode_relay_cell!(ctrl.read_inbound(), Resolved);
+
+            // Make sure the RESOLVED cell sent towards the client
+            // matches what we sent via the IncomingStream::resolve() call above
+            assert_eq!(resolved.into_answers(), expected_resolved.into_answers());
+            assert_eq!(sid, resolve_sid);
+            assert!(logs_contain("Ending stream"));
         });
     }
 }

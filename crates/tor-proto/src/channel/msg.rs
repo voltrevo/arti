@@ -6,7 +6,7 @@
 //! This module also defines [`MessageFilter`] which can be used to filter messages based on
 //! specific details of the message such as direction, command, channel type and channel stage.
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use tor_cell::chancell::{AnyChanCell, ChanCell, ChanMsg, codec, msg::AnyChanMsg};
 
 use crate::{Error, channel::ChannelType};
@@ -15,7 +15,7 @@ use crate::{Error, channel::ChannelType};
 ///
 /// Increases circuit ID width to 4 bytes.
 pub(super) mod linkv4 {
-    use bytes::BytesMut;
+    use bytes::{Bytes, BytesMut};
     use tor_cell::{
         chancell::{AnyChanCell, codec},
         restricted_msg,
@@ -131,12 +131,14 @@ pub(super) mod linkv4 {
     }
 
     /// Decode cell using the given channel type, message stage, codec and byte source.
+    ///
+    /// Returns both the cell and the bytes that the cell were decoded from.
     pub(super) fn decode_cell(
         chan_type: ChannelType,
         stage: &MessageStage,
         codec: &mut codec::ChannelCodec,
         src: &mut BytesMut,
-    ) -> Result<Option<AnyChanCell>, Error> {
+    ) -> Result<Option<(AnyChanCell, Bytes)>, Error> {
         use ChannelType::*;
         use MessageStage::*;
 
@@ -146,9 +148,10 @@ pub(super) mod linkv4 {
             (RelayInitiator, Handshake) => decode_as_any::<HandshakeRelayResponderMsg>,
             (RelayInitiator, Open) => decode_as_any::<OpenChanMsgR2R>,
             (RelayResponder { authenticated: _ }, Handshake) => {
-                // We don't know if the other side is a client or relay. However, this message set
-                // is a superset of the HandshakeClientInitiatorMsg and so we cover the client as
-                // well.
+                // We don't know if the other side is a client or relay.
+                // However, the `HandshakeRelayInitiatorMsg` message set
+                // is a superset of the `HandshakeClientInitiatorMsg` message set
+                // and so we cover any client-sent messages as well.
                 decode_as_any::<HandshakeRelayInitiatorMsg>
             }
             (RelayResponder { authenticated }, Open) => match authenticated {
@@ -196,7 +199,7 @@ pub(super) mod linkv4 {
 ///
 /// Adds support for padding and negotiation.
 pub(super) mod linkv5 {
-    use bytes::BytesMut;
+    use bytes::{Bytes, BytesMut};
     use tor_cell::{
         chancell::{AnyChanCell, codec},
         restricted_msg,
@@ -310,40 +313,36 @@ pub(super) mod linkv5 {
     }
 
     /// Decode cell using the given channel type, message stage, codec and byte source.
+    ///
+    /// Returns both the cell and the bytes that the cell were decoded from.
     pub(super) fn decode_cell(
         chan_type: ChannelType,
         stage: &MessageStage,
         codec: &mut codec::ChannelCodec,
         src: &mut BytesMut,
-    ) -> Result<Option<AnyChanCell>, Error> {
+    ) -> Result<Option<(AnyChanCell, Bytes)>, Error> {
         use ChannelType::*;
         use MessageStage::*;
 
-        match (chan_type, stage) {
-            (ClientInitiator, Handshake) => {
-                decode_as_any::<HandshakeRelayResponderMsg>(stage, codec, src)
-            }
-            (ClientInitiator, Open) => decode_as_any::<OpenChanMsgR2C>(stage, codec, src),
-            (RelayInitiator, Handshake) => {
-                decode_as_any::<HandshakeRelayResponderMsg>(stage, codec, src)
-            }
-            (RelayInitiator, Open) => decode_as_any::<OpenChanMsgR2R>(stage, codec, src),
+        let decode_fn = match (chan_type, stage) {
+            (ClientInitiator, Handshake) => decode_as_any::<HandshakeRelayResponderMsg>,
+            (ClientInitiator, Open) => decode_as_any::<OpenChanMsgR2C>,
+            (RelayInitiator, Handshake) => decode_as_any::<HandshakeRelayResponderMsg>,
+            (RelayInitiator, Open) => decode_as_any::<OpenChanMsgR2R>,
             (RelayResponder { authenticated: _ }, Handshake) => {
-                decode_as_any::<HandshakeRelayInitiatorMsg>(stage, codec, src)
+                // We don't know if the other side is a client or relay.
+                // However, the `HandshakeRelayInitiatorMsg` message set
+                // is a superset of the `HandshakeClientInitiatorMsg` message set
+                // and so we cover any client-sent messages as well.
+                decode_as_any::<HandshakeRelayInitiatorMsg>
             }
-            (
-                RelayResponder {
-                    authenticated: false,
-                },
-                Open,
-            ) => decode_as_any::<OpenChanMsgC2R>(stage, codec, src),
-            (
-                RelayResponder {
-                    authenticated: true,
-                },
-                Open,
-            ) => decode_as_any::<OpenChanMsgR2R>(stage, codec, src),
-        }
+            (RelayResponder { authenticated }, Open) => match authenticated {
+                false => decode_as_any::<OpenChanMsgC2R>,
+                true => decode_as_any::<OpenChanMsgR2R>,
+            },
+        };
+
+        decode_fn(stage, codec, src)
     }
 
     /// Encode a given cell which can contains any type of messages. It is filtered through its
@@ -360,54 +359,43 @@ pub(super) mod linkv5 {
         use ChannelType::*;
         use MessageStage::*;
 
-        match (chan_type, stage) {
-            (ClientInitiator, Handshake) => {
-                encode_as_any::<HandshakeClientInitiatorMsg>(stage, cell, codec, dst)
-            }
-            (ClientInitiator, Open) => encode_as_any::<OpenChanMsgC2R>(stage, cell, codec, dst),
-            (RelayInitiator, Handshake) => {
-                encode_as_any::<HandshakeRelayInitiatorMsg>(stage, cell, codec, dst)
-                // We don't know if the other side is a client or relay. However, this message set
-                // is a superset of the HandshakeClientInitiatorMsg and so we cover the client as
-                // well.
-            }
-            (RelayInitiator, Open) => encode_as_any::<OpenChanMsgR2R>(stage, cell, codec, dst),
+        let encode_fn = match (chan_type, stage) {
+            (ClientInitiator, Handshake) => encode_as_any::<HandshakeClientInitiatorMsg>,
+            (ClientInitiator, Open) => encode_as_any::<OpenChanMsgC2R>,
+            (RelayInitiator, Handshake) => encode_as_any::<HandshakeRelayInitiatorMsg>,
+            (RelayInitiator, Open) => encode_as_any::<OpenChanMsgR2R>,
             (RelayResponder { authenticated: _ }, Handshake) => {
-                encode_as_any::<HandshakeRelayResponderMsg>(stage, cell, codec, dst)
+                encode_as_any::<HandshakeRelayResponderMsg>
             }
-            (
-                RelayResponder {
-                    authenticated: false,
-                },
-                Open,
-            ) => encode_as_any::<OpenChanMsgR2C>(stage, cell, codec, dst),
-            (
-                RelayResponder {
-                    authenticated: true,
-                },
-                Open,
-            ) => encode_as_any::<OpenChanMsgR2R>(stage, cell, codec, dst),
-        }
+            (RelayResponder { authenticated }, Open) => match authenticated {
+                false => encode_as_any::<OpenChanMsgR2C>,
+                true => encode_as_any::<OpenChanMsgR2R>,
+            },
+        };
+
+        encode_fn(stage, cell, codec, dst)
     }
 }
 
 /// Helper function to decode a cell within a restricted msg set into an AnyChanCell.
 ///
 /// The given stage is used to know which error to return.
+///
+/// Returns both the cell and the bytes that the cell were decoded from.
 fn decode_as_any<R>(
     stage: &MessageStage,
     codec: &mut codec::ChannelCodec,
     src: &mut BytesMut,
-) -> Result<Option<AnyChanCell>, Error>
+) -> Result<Option<(AnyChanCell, Bytes)>, Error>
 where
     R: Into<AnyChanMsg> + ChanMsg,
 {
     codec
         .decode_cell::<R>(src)
         .map(|opt| {
-            opt.map(|cell| {
+            opt.map(|(cell, cell_bytes)| {
                 let (circid, msg) = cell.into_circid_and_msg();
-                ChanCell::new(circid, msg.into())
+                (ChanCell::new(circid, msg.into()), cell_bytes)
             })
         })
         .map_err(|e| stage.to_err(format!("Decoding cell error: {e}")))
@@ -537,11 +525,13 @@ impl MessageFilter {
 
     /// Decode a cell from the given bytes for the right link version, channel type and message
     /// stage using the codec given.
+    ///
+    /// Returns both the cell and the bytes that the cell were decoded from.
     pub(super) fn decode_cell(
         &self,
         codec: &mut codec::ChannelCodec,
         src: &mut BytesMut,
-    ) -> Result<Option<AnyChanCell>, Error> {
+    ) -> Result<Option<(AnyChanCell, Bytes)>, Error> {
         match self.link_version {
             LinkVersion::V4 => linkv4::decode_cell(self.channel_type, &self.stage, codec, src),
             LinkVersion::V5 => linkv5::decode_cell(self.channel_type, &self.stage, codec, src),

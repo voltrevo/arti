@@ -29,6 +29,7 @@ use crate::crypto::handshake::ntor_v3::{NtorV3Client, NtorV3PublicKey};
 use crate::crypto::handshake::{ClientHandshake, KeyGenerator};
 use crate::memquota::{CircuitAccount, SpecificAccount as _, StreamAccount};
 use crate::stream::cmdcheck::{AnyCmdChecker, StreamStatus};
+use crate::stream::flow_ctrl::state::WithSidechannelMitigations;
 use crate::stream::msg_streamid;
 use crate::streammap;
 use crate::tunnel::TunnelScopedCircId;
@@ -37,6 +38,7 @@ use crate::util::timeout::TimeoutEstimator;
 use crate::{ClockSkew, Error, Result};
 
 use tor_async_utils::{SinkTrySend as _, SinkTrySendError as _};
+use tor_basic_utils::onionperf_types::{OnionperfCircuitStatus, OnionperfEvent};
 use tor_cell::chancell::msg::{AnyChanMsg, HandshakeType, Relay};
 use tor_cell::chancell::{AnyChanCell, ChanCmd, CircId};
 use tor_cell::chancell::{BoxedCellBody, ChanMsg};
@@ -79,9 +81,6 @@ use {
     crate::conflux::msghandler::{ConfluxAction, ConfluxCmd, ConfluxMsgHandler, OooRelayMsg},
     crate::tunnel::TunnelId,
 };
-
-#[cfg(not(feature = "flowctl-cc"))]
-use crate::stream::STREAM_READER_BUFFER;
 
 pub(super) use circhop::{CircHop, CircHopList};
 
@@ -746,10 +745,19 @@ impl Circuit {
         if let Some(msg) = res {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "hs-service")] {
-                    return self.handle_incoming_stream_request(handlers, msg, streamid, hopnum, leg);
+                    return self.handle_incoming_stream_request(
+                        handlers,
+                        msg,
+                        streamid,
+                        hopnum,
+                        leg,
+                        // This is an onion service stream,
+                        // so we want sidechannel mitigations for flow control.
+                        WithSidechannelMitigations::Enabled,
+                    );
                 } else {
                     return Err(
-                        Error::CircProto(format!("Cannot handle {} cells on this circuit", msg.cmd())).into(),
+                        Error::CircProto(format!("Cannot handle {} cells on this circuit", msg.cmd())),
                     );
                 }
             }
@@ -846,6 +854,7 @@ impl Circuit {
         stream_id: StreamId,
         hop_num: HopNum,
         leg: UniqId,
+        with_sidechannel_mitigations: WithSidechannelMitigations,
     ) -> Result<Option<CircuitCmd>> {
         use tor_cell::relaycell::msg::EndReason;
         use tor_error::into_internal;
@@ -937,6 +946,7 @@ impl Circuit {
             self.chan_sender.time_provider(),
             stream_id,
             cmd_checker,
+            with_sidechannel_mitigations,
             &memquota,
         )?;
 
@@ -1087,6 +1097,13 @@ impl Circuit {
             circ_uniq_id = %self.unique_id,
             forward_circ_id = %self.circ_id,
             "Handshake complete; circuit created."
+        );
+
+        trace!(
+            onionperf = true,
+            circ_uniq_id = %self.unique_id,
+            forward_circ_id = %self.circ_id,
+            event = ?OnionperfEvent::Circuit(OnionperfCircuitStatus::Extended),
         );
 
         let peer_id = self.channel.target().clone();

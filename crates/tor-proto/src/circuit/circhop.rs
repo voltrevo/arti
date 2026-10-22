@@ -12,7 +12,9 @@ use crate::stream::SEND_WINDOW_INIT;
 use crate::stream::StreamMpscSender;
 use crate::stream::cmdcheck::{AnyCmdChecker, StreamStatus};
 use crate::stream::flow_ctrl::params::FlowCtrlParameters;
-use crate::stream::flow_ctrl::state::{FlowCtrlHooks, StreamFlowCtrl, StreamRateLimit};
+use crate::stream::flow_ctrl::state::{
+    FlowCtrlHooks, StreamFlowCtrl, StreamRateLimit, WithSidechannelMitigations,
+};
 use crate::stream::flow_ctrl::xon_xoff::reader::DrainRateRequest;
 use crate::stream::queue::{StreamQueueReceiver, stream_queue};
 use crate::streammap::{
@@ -151,16 +153,13 @@ impl HopSettings {
         let relay_crypt_protocol = match hoptype {
             HopNegotiationType::None => RelayCryptLayerProtocol::Tor1(RelayCellFormat::V0),
             HopNegotiationType::HsV3 => {
-                // TODO-CGO: Support CGO when available.
                 cfg_if! {
-                    if #[cfg(all(feature = "hs-common", feature = "flowctl-cc", feature = "counter-galois-onion"))] {
+                    if #[cfg(feature = "hs-common")] {
                         if ccontrol.alg().compatible_with_cgo() && caps.supports_named_subver(named::RELAY_CRYPT_CGO) {
                             RelayCryptLayerProtocol::Cgo
                         } else {
                             RelayCryptLayerProtocol::HsV3(RelayCellFormat::V0)
                         }
-                    } else if #[cfg(feature = "hs-common")] {
-                            RelayCryptLayerProtocol::HsV3(RelayCellFormat::V0)
                     } else {
                         return Err(
                             tor_error::internal!("Unexpectedly tried to negotiate HsV3 without support!").into(),
@@ -169,20 +168,14 @@ impl HopSettings {
                 }
             }
             HopNegotiationType::Full => {
-                cfg_if! {
-                    if #[cfg(all(feature = "flowctl-cc", feature = "counter-galois-onion"))] {
-                        #[allow(clippy::overly_complex_bool_expr)]
-                        if  ccontrol.alg().compatible_with_cgo()
-                            && caps.supports_named_subver(named::RELAY_NEGOTIATE_SUBPROTO)
-                            && caps.supports_named_subver(named::RELAY_CRYPT_CGO)
-                        {
-                            RelayCryptLayerProtocol::Cgo
-                        } else {
-                            RelayCryptLayerProtocol::Tor1(RelayCellFormat::V0)
-                        }
-                    } else {
-                        RelayCryptLayerProtocol::Tor1(RelayCellFormat::V0)
-                    }
+                #[allow(clippy::overly_complex_bool_expr)]
+                if ccontrol.alg().compatible_with_cgo()
+                    && caps.supports_named_subver(named::RELAY_NEGOTIATE_SUBPROTO)
+                    && caps.supports_named_subver(named::RELAY_CRYPT_CGO)
+                {
+                    RelayCryptLayerProtocol::Cgo
+                } else {
+                    RelayCryptLayerProtocol::Tor1(RelayCellFormat::V0)
                 }
             }
         };
@@ -280,19 +273,8 @@ impl HopSettings {
         let mut cc_extension_set = false;
 
         if self.ccontrol.is_enabled() {
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "flowctl-cc")] {
-                    client_extensions.push(CircRequestExt::CcRequest(CcRequest::default()));
-                    cc_extension_set = true;
-                } else {
-                    return Err(
-                        tor_error::internal!(
-                            "Congestion control is enabled on this circuit, but 'flowctl-cc' feature is not enabled"
-                        )
-                        .into()
-                    );
-                }
-            }
+            client_extensions.push(CircRequestExt::CcRequest(CcRequest::default()));
+            cc_extension_set = true;
         }
 
         // See whether we need to send a list of required protocol capabilities.
@@ -310,7 +292,6 @@ impl HopSettings {
         #[allow(unused_mut)]
         let mut required_protocol_capabilities: Vec<tor_protover::NamedSubver> = Vec::new();
 
-        #[cfg(feature = "counter-galois-onion")]
         if matches!(self.relay_crypt_protocol(), RelayCryptLayerProtocol::Cgo) {
             if !cc_extension_set {
                 return Err(tor_error::internal!("Tried to negotiate CGO without CC.").into());
@@ -509,7 +490,13 @@ impl CircHopOutbound {
         let mut drain_rate_request_tx = NotifySender::new_typed();
         let drain_rate_request_rx = drain_rate_request_tx.subscribe();
 
-        let flow_ctrl = self.build_flow_ctrl(rate_limit_tx, drain_rate_request_tx)?;
+        let flow_ctrl = self.build_flow_ctrl(
+            // We are starting the stream,
+            // so we're a client and want flow control sidechannel mitigations.
+            WithSidechannelMitigations::Enabled,
+            rate_limit_tx,
+            drain_rate_request_tx,
+        )?;
 
         let stream_queue_max_len = flow_ctrl.inbound_queue_max_len();
 
@@ -581,19 +568,23 @@ impl CircHopOutbound {
         );
         // TODO: I am about 80% sure that we only send an END cell if
         // we didn't already get an END cell.  But I should double-check!
-        if let (ShouldSendEnd::Send, CloseStreamBehavior::SendEnd(end_message)) =
-            (should_send_end, message)
-        {
-            let end_cell = AnyRelayMsgOuter::new(Some(id), end_message.into());
-            let cell = SendRelayCell {
-                hop,
-                early: false,
-                cell: end_cell,
-            };
+        let end_message = match should_send_end {
+            ShouldSendEnd::Send => match message {
+                CloseStreamBehavior::SendEnd(end_message) => end_message.into(),
+                CloseStreamBehavior::SendResolved(resolved_message) => resolved_message.into(),
+                CloseStreamBehavior::SendNothing => return Ok(None),
+            },
+            ShouldSendEnd::DontSend => return Ok(None),
+        };
 
-            return Ok(Some(cell));
-        }
-        Ok(None)
+        let end_cell = AnyRelayMsgOuter::new(Some(id), end_message);
+        let cell = SendRelayCell {
+            hop,
+            early: false,
+            cell: end_cell,
+        };
+
+        Ok(Some(cell))
     }
 
     /// Check if we should send an XON message.
@@ -725,6 +716,7 @@ impl CircHopOutbound {
         time_prov: &DynTimeProvider,
         stream_id: StreamId,
         cmd_checker: AnyCmdChecker,
+        with_sidechannel_mitigations: WithSidechannelMitigations,
         memquota: &StreamAccount,
     ) -> Result<ReactorStreamComponents> {
         // TODO: This has a lot of duplicated code with `Self::begin_stream()`.
@@ -738,7 +730,11 @@ impl CircHopOutbound {
         let mut drain_rate_request_tx = NotifySender::new_typed();
         let drain_rate_request_rx = drain_rate_request_tx.subscribe();
 
-        let flow_ctrl = self.build_flow_ctrl(rate_limit_tx, drain_rate_request_tx)?;
+        let flow_ctrl = self.build_flow_ctrl(
+            with_sidechannel_mitigations,
+            rate_limit_tx,
+            drain_rate_request_tx,
+        )?;
 
         let stream_queue_max_len = flow_ctrl.inbound_queue_max_len();
 
@@ -762,9 +758,10 @@ impl CircHopOutbound {
 
     /// Builds the reactor's flow control handler for a new stream.
     // TODO: remove the `Result` once we remove the "flowctl-cc" feature
-    #[cfg_attr(feature = "flowctl-cc", expect(clippy::unnecessary_wraps))]
+    #[expect(clippy::unnecessary_wraps)]
     fn build_flow_ctrl(
         &self,
+        with_sidechannel_mitigations: WithSidechannelMitigations,
         rate_limit_updater: watch::Sender<StreamRateLimit>,
         drain_rate_requester: NotifySender<DrainRateRequest>,
     ) -> Result<StreamFlowCtrl> {
@@ -779,29 +776,12 @@ impl CircHopOutbound {
             let window = sendme::StreamSendWindow::new(SEND_WINDOW_INIT);
             Ok(StreamFlowCtrl::new_window(window))
         } else {
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "flowctl-cc")] {
-                    // TODO: Currently arti only supports clients, and we don't support connecting
-                    // to onion services while using congestion control, so we hardcode this. In the
-                    // future we will need to somehow tell the `CircHop` this so that we can set it
-                    // correctly, since we don't want to enable this at exits.
-                    let use_sidechannel_mitigations = true;
-
-                    Ok(StreamFlowCtrl::new_xon_xoff(
-                        params,
-                        use_sidechannel_mitigations,
-                        rate_limit_updater,
-                        drain_rate_requester,
-                    ))
-                } else {
-                    drop(params);
-                    drop(rate_limit_updater);
-                    drop(drain_rate_requester);
-                    Err(internal!(
-                        "`CongestionControl` doesn't use sendmes, but 'flowctl-cc' feature not enabled",
-                    ).into())
-                }
-            }
+            Ok(StreamFlowCtrl::new_xon_xoff(
+                params,
+                with_sidechannel_mitigations,
+                rate_limit_updater,
+                drain_rate_requester,
+            ))
         }
     }
 
@@ -839,22 +819,11 @@ impl CircHopOutbound {
 
         if let Err(e) = Pin::new(&mut ent.sink).try_send(msg) {
             if e.is_full() {
-                cfg_if::cfg_if! {
-                    if #[cfg(not(feature = "flowctl-cc"))] {
-                        // If we get here, we either have a logic bug (!), or an attacker
-                        // is sending us more cells than we asked for via congestion control.
-                        return Err(Error::CircProto(format!(
-                            "Stream sink would block; received too many cells on stream ID {}",
-                            sv(streamid),
-                        )));
-                    } else {
-                        return Err(internal!(
-                            "Stream (ID {}) uses an unbounded queue, but apparently it's full?",
-                            sv(streamid),
-                        )
-                        .into());
-                    }
-                }
+                return Err(internal!(
+                    "Stream (ID {}) uses an unbounded queue, but apparently it's full?",
+                    sv(streamid),
+                )
+                .into());
             }
             if e.is_disconnected() && cell_counts_toward_windows {
                 // the other side of the stream has gone away; remember

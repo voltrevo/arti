@@ -1014,7 +1014,8 @@ pub(crate) mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
 
     use super::*;
-    use crate::channel::test::{CodecResult, new_reactor};
+    use crate::channel::ChannelMode;
+    use crate::channel::test_utils::{CodecResult, DummyChan};
     use crate::circuit::CircuitRxSender;
     use crate::circuit::reactor::test::rmsg_to_ccmsg;
     use crate::circuit::test::fake_mpsc;
@@ -1132,17 +1133,6 @@ pub(crate) mod test {
         )
     }
 
-    fn working_fake_channel<R: Runtime>(
-        rt: &R,
-    ) -> (Arc<Channel>, Receiver<AnyChanCell>, Sender<CodecResult>) {
-        let (channel, chan_reactor, rx, tx) = new_reactor(rt.clone());
-        rt.spawn(async {
-            let _ignore = chan_reactor.run().await;
-        })
-        .unwrap();
-        (channel, rx, tx)
-    }
-
     /// Which handshake type to use.
     #[derive(Copy, Clone)]
     enum HandshakeType {
@@ -1158,7 +1148,11 @@ pub(crate) mod test {
 
         use crate::crypto::handshake::{ServerHandshake, fast::CreateFastServer, ntor::NtorServer};
 
-        let (chan, mut rx, _sink) = working_fake_channel(rt);
+        let DummyChan {
+            channel,
+            mut rx,
+            tx: _sink,
+        } = DummyChan::run(rt, ChannelMode::Client);
         let circid = CircId::new(128).unwrap();
         let (created_send, created_recv) = oneshot::channel();
         let (_circmsg_send, circmsg_recv) = fake_mpsc(64);
@@ -1167,7 +1161,7 @@ pub(crate) mod test {
 
         let (pending, reactor) = PendingClientTunnel::new(
             circid,
-            chan,
+            channel,
             created_recv,
             circmsg_recv,
             unique_id,
@@ -1197,7 +1191,7 @@ pub(crate) mod test {
                     let (_, rep) = CreateFastServer::server(
                         &mut rng,
                         &mut |_: &()| Some(()),
-                        &[()],
+                        &[],
                         cf.handshake(),
                     )
                     .unwrap();
@@ -1312,7 +1306,6 @@ pub(crate) mod test {
     }
     #[traced_test]
     #[test]
-    #[cfg(feature = "flowctl-cc")]
     fn test_create_ntor_v3_with_cc() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
             test_create(&rt, HandshakeType::NtorV3, true).await;
@@ -1418,7 +1411,7 @@ pub(crate) mod test {
                     fwd_lasthop: idx == last_hop_num,
                     rev_lasthop: idx == u8::from(next_msg_from),
                     peer_id,
-                    params: params.clone(),
+                    params: Box::new(params.clone()),
                     done: tx,
                 })
                 .unwrap();
@@ -1479,8 +1472,12 @@ pub(crate) mod test {
     async fn test_extend<R: Runtime>(rt: &R, handshake_type: HandshakeType) {
         use crate::crypto::handshake::{ServerHandshake, ntor::NtorServer};
 
-        let (chan, mut rx, _sink) = working_fake_channel(rt);
-        let (tunnel, mut sink) = newtunnel(rt, chan).await;
+        let DummyChan {
+            channel,
+            mut rx,
+            tx: _sink,
+        } = DummyChan::run(rt, ChannelMode::Client);
+        let (tunnel, mut sink) = newtunnel(rt, channel).await;
         let circ = Arc::new(tunnel.as_single_circ().unwrap());
         let circid = circ.peek_circid();
         let params = CircParameters::default();
@@ -1550,6 +1547,8 @@ pub(crate) mod test {
         // Do the path accessors report a reasonable outcome?
         {
             let path = circ.single_path().unwrap();
+            // Without the 'hs-common' feature, clippy would prefer a `map()`.
+            #[allow(clippy::unnecessary_filter_map)]
             let path = path
                 .all_hops()
                 .filter_map(|hop| match hop {
@@ -1601,7 +1600,11 @@ pub(crate) mod test {
         reply_hop: HopNum,
         bad_reply: AnyChanMsg,
     ) -> Error {
-        let (chan, mut rx, _sink) = working_fake_channel(rt);
+        let DummyChan {
+            channel,
+            mut rx,
+            tx: _sink,
+        } = DummyChan::run(rt, ChannelMode::Client);
         let hops = std::iter::repeat_with(|| {
             let peer_id = tor_linkspec::OwnedChanTarget::builder()
                 .ed_identity([4; 32].into())
@@ -1618,7 +1621,7 @@ pub(crate) mod test {
         let (tunnel, mut sink) = newtunnel_ext(
             rt,
             unique_id,
-            chan,
+            channel,
             hops,
             reply_hop,
             CircParameters::default(),
@@ -1723,8 +1726,12 @@ pub(crate) mod test {
     #[test]
     fn begindir() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, mut rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut sink) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                mut rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut sink) = newtunnel(&rt, channel).await;
             let circ = tunnel.as_single_circ().unwrap();
             let circid = circ.peek_circid();
 
@@ -1804,8 +1811,12 @@ pub(crate) mod test {
     // Test: close a stream, either by dropping it or by calling AsyncWriteExt::close.
     fn close_stream_helper(by_drop: bool) {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, mut rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut sink) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                mut rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut sink) = newtunnel(&rt, channel).await;
 
             let stream_fut = async move {
                 let stream = tunnel
@@ -1880,8 +1891,12 @@ pub(crate) mod test {
     #[test]
     fn expire_halfstreams() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
-            let (chan, mut rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut sink) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                mut rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut sink) = newtunnel(&rt, channel).await;
 
             let client_fut = async move {
                 let stream = tunnel
@@ -1971,8 +1986,12 @@ pub(crate) mod test {
         Receiver<AnyChanCell>,
         Sender<CodecResult>,
     ) {
-        let (chan, mut rx, sink2) = working_fake_channel(rt);
-        let (tunnel, mut sink) = newtunnel(rt, chan).await;
+        let DummyChan {
+            channel,
+            mut rx,
+            tx: sink2,
+        } = DummyChan::run(rt, ChannelMode::Client);
+        let (tunnel, mut sink) = newtunnel(rt, channel).await;
         let circid = tunnel.as_single_circ().unwrap().peek_circid();
 
         let begin_and_send_fut = {
@@ -2174,8 +2193,12 @@ pub(crate) mod test {
             N_BYTES / N_STREAMS - relaymsg::Data::MAXLEN_V0;
 
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, mut rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut sink) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                mut rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut sink) = newtunnel(&rt, channel).await;
 
             // Run clients in a single task, doing our own round-robin
             // scheduling of writes to the reactor. Conversely, if we were to
@@ -2300,8 +2323,12 @@ pub(crate) mod test {
     #[cfg(feature = "hs-service")]
     fn allow_stream_requests_twice() {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
-            let (chan, _rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, _send) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                rx: _rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, _send) = newtunnel(&rt, channel).await;
 
             let _incoming = tunnel
                 .allow_stream_requests(
@@ -2334,8 +2361,12 @@ pub(crate) mod test {
         tor_rtcompat::test_with_all_runtimes!(|rt| async move {
             const TEST_DATA: &[u8] = b"ping";
 
-            let (chan, _rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut send) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                rx: _rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut send) = newtunnel(&rt, channel).await;
 
             let rfmt = RelayCellFormat::V0;
 
@@ -2413,8 +2444,12 @@ pub(crate) mod test {
             const STREAM_COUNT: usize = 2;
             let rfmt = RelayCellFormat::V0;
 
-            let (chan, _rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut send) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                rx: _rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut send) = newtunnel(&rt, channel).await;
 
             // A helper channel for coordinating the "client"/"service" interaction
             let (mut tx, mut rx) = mpsc::channel(STREAM_COUNT);
@@ -2506,8 +2541,12 @@ pub(crate) mod test {
             const EXPECTED_HOP: u8 = 1;
             let rfmt = RelayCellFormat::V0;
 
-            let (chan, _rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut send) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                rx: _rx,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut send) = newtunnel(&rt, channel).await;
 
             // Expect to receive incoming streams from hop EXPECTED_HOP
             let mut incoming = tunnel
@@ -2641,7 +2680,11 @@ pub(crate) mod test {
             hop_details(3, 10)
         };
 
-        let (chan1, rx1, chan_sink1) = working_fake_channel(rt);
+        let DummyChan {
+            channel: chan1,
+            rx: rx1,
+            tx: chan_sink1,
+        } = DummyChan::run(rt, ChannelMode::Client);
         let (mut tunnel1, sink1) = newtunnel_ext(
             rt,
             UniqId::new(1, 3),
@@ -2652,7 +2695,11 @@ pub(crate) mod test {
         )
         .await;
 
-        let (chan2, rx2, chan_sink2) = working_fake_channel(rt);
+        let DummyChan {
+            channel: chan2,
+            rx: rx2,
+            tx: chan_sink2,
+        } = DummyChan::run(rt, ChannelMode::Client);
 
         let (tunnel2, sink2) =
             newtunnel_ext(rt, UniqId::new(2, 4), chan2, hops2, 2.into(), params).await;
@@ -2741,8 +2788,12 @@ pub(crate) mod test {
     #[cfg(feature = "conflux")]
     fn reject_conflux_linked_before_hs() {
         tor_rtmock::MockRuntime::test_with_various(|rt| async move {
-            let (chan, mut _rx, _sink) = working_fake_channel(&rt);
-            let (tunnel, mut sink) = newtunnel(&rt, chan).await;
+            let DummyChan {
+                channel,
+                rx: _,
+                tx: _sink,
+            } = DummyChan::run(&rt, ChannelMode::Client);
+            let (tunnel, mut sink) = newtunnel(&rt, channel).await;
 
             let nonce = V1Nonce::new(&mut testing_rng());
             let payload = V1LinkPayload::new(nonce, V1DesiredUx::NO_OPINION);
@@ -2889,8 +2940,12 @@ pub(crate) mod test {
             ];
 
             for bad_cell in bad_cells {
-                let (chan, mut _rx, _sink) = working_fake_channel(&rt);
-                let (tunnel, mut sink) = newtunnel(&rt, chan).await;
+                let DummyChan {
+                    channel,
+                    rx: _rx,
+                    tx: _sink,
+                } = DummyChan::run(&rt, ChannelMode::Client);
+                let (tunnel, mut sink) = newtunnel(&rt, channel).await;
 
                 sink.send(bad_cell).await.unwrap();
                 rt.advance_until_stalled().await;

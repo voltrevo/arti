@@ -18,6 +18,7 @@ use tor_rtcompat::{NoOpStreamOpsHandle, Runtime, SpawnExt as _};
 
 use crate::ClockSkew;
 use crate::channel::circmap::CircIdRange;
+use crate::channel::reactor::test::new_reactor;
 use crate::channel::{
     BoxedChannelSink, BoxedChannelStream, Canonicity, Channel, ChannelMode, Reactor, UniqId,
 };
@@ -33,6 +34,8 @@ use {
     crate::stream::incoming::NoOpRequestFilter,
     tor_relay_crypto::pk::RelayNtorKeys,
 };
+
+pub(crate) use crate::channel::reactor::test::CodecResult;
 
 /// Construct a new channel and its reactor.
 pub(crate) fn new_channel<R: Runtime>(
@@ -143,25 +146,31 @@ pub(crate) fn new_channel_pair<R: Runtime>(
 
     // We want to clone cells that the client channel or relay channel sends,
     // and store a copy in the connection inspector.
+    // The connection inspector may also want to modify the cells.
+
+    // Integrate the connection inspector with the client-to-relay sink.
     let client_inspector_tx = conn_inspector.client_inspector_tx.clone();
+    let client_cell_modify_fn = Arc::clone(&conn_inspector.client_cell_modify_fn);
     let c_to_r_tx = c_to_r_tx.with(move |cell: AnyChanCell| {
-        let client_inspector_tx = client_inspector_tx.clone();
-        async move {
-            let (cell, cell_clone) = clone_chan_cell(cell);
-            let _ = client_inspector_tx.unbounded_send(cell_clone);
-            Ok(cell)
-        }
+        let (mut cell, cell_clone) = clone_chan_cell(cell);
+        client_cell_modify_fn(&mut cell);
+        // The connection inspector gets the original cell,
+        // and the modified cell is sent to the relay.
+        let _ = client_inspector_tx.unbounded_send(cell_clone);
+        async move { Ok(cell) }
     });
     let c_to_r_tx = Box::pin(c_to_r_tx);
 
+    // Integrate the connection inspector with the relay-to-client sink.
     let relay_inspector_tx = conn_inspector.relay_inspector_tx.clone();
+    let relay_cell_modify_fn = Arc::clone(&conn_inspector.relay_cell_modify_fn);
     let r_to_c_tx = r_to_c_tx.with(move |cell: AnyChanCell| {
-        let relay_inspector_tx = relay_inspector_tx.clone();
-        async move {
-            let (cell, cell_clone) = clone_chan_cell(cell);
-            let _ = relay_inspector_tx.unbounded_send(cell_clone);
-            Ok(cell)
-        }
+        let (mut cell, cell_clone) = clone_chan_cell(cell);
+        relay_cell_modify_fn(&mut cell);
+        // The connection inspector gets the original cell,
+        // and the modified cell is sent to the client.
+        let _ = relay_inspector_tx.unbounded_send(cell_clone);
+        async move { Ok(cell) }
     });
     let r_to_c_tx = Box::pin(r_to_c_tx);
 
@@ -257,6 +266,30 @@ pub(crate) async fn new_pending_tunnel<R: Runtime>(
     pending_tunnel
 }
 
+/// Dummy channel, for testing.
+pub(crate) struct DummyChan {
+    /// Tor channel output
+    pub(crate) rx: mpsc::Receiver<AnyChanCell>,
+    /// Tor channel input
+    pub(crate) tx: mpsc::Sender<CodecResult>,
+    /// A handle to the Channel object, to prevent the channel reactor
+    /// from shutting down prematurely.
+    pub(crate) channel: Arc<Channel>,
+}
+
+impl DummyChan {
+    /// Create a dummy channel, and spawn a task for its reactor.
+    pub(crate) fn run<R: Runtime>(rt: &R, mode: ChannelMode) -> DummyChan {
+        let (channel, chan_reactor, rx, tx) = new_reactor(rt.clone(), mode);
+        rt.spawn(async {
+            let _ignore = chan_reactor.run().await;
+        })
+        .unwrap();
+
+        DummyChan { tx, rx, channel }
+    }
+}
+
 /// Clone a `ChanCell`.
 ///
 /// This is a hack since `ChanCell` doesn't implement `Clone`.
@@ -270,17 +303,47 @@ fn clone_chan_cell(cell: AnyChanCell) -> (AnyChanCell, AnyChanCell) {
     (cell_1, cell_2)
 }
 
-/// Inspect the cells transitting a connection between two channel objects
-/// corresponding to a client and a relay.
+/// Inspect and modify the cells transitting a connection between two channel objects
+/// corresponding to a client channel and a relay channel.
 #[cfg(feature = "relay")]
 pub(crate) struct ConnInspector {
-    /// Cells from the client to relay.
+    /// For cells sent from the client to relay.
+    ///
+    /// This should be attached to the client channel's [`BoxedChannelSink`],
+    /// so that when the channel sends a cell,
+    /// the cell is also copied to this queue.
     client_inspector_tx: mpsc::UnboundedSender<AnyChanCell>,
+
+    /// For cells sent from the client to relay.
+    ///
+    /// This can be used to inspect cells that were sent on the channel
+    /// using [`Self::client_cell()`] or [`Self::try_client_cell()`].
     client_inspector_rx: mpsc::UnboundedReceiver<AnyChanCell>,
 
-    /// Cells from the relay to client.
+    /// For cells sent from the relay to client.
+    ///
+    /// This should be attached to the relay channnel's [`BoxedChannelSink`],
+    /// so that when the channel sends a cell,
+    /// the cell is also copied to this queue.
     relay_inspector_tx: mpsc::UnboundedSender<AnyChanCell>,
+
+    /// For cells sent from the relay to client.
+    ///
+    /// This can be used to inspect cells that were sent on the channel
+    /// using [`Self::relay_cell()`] or [`Self::try_relay_cell()`].
     relay_inspector_rx: mpsc::UnboundedReceiver<AnyChanCell>,
+
+    /// Function to modify cells sent from the client to relay.
+    ///
+    /// This should be attached to the client channel's [`BoxedChannelSink`],
+    /// so that any cell sent by the channel can be modified by this function.
+    client_cell_modify_fn: Arc<dyn Fn(&mut AnyChanCell) + Send + Sync>,
+
+    /// Function to modify cells sent from the relay to client.
+    ///
+    /// This should be attached to the relay channel's [`BoxedChannelSink`],
+    /// so that any cell sent by the channel can be modified by this function.
+    relay_cell_modify_fn: Arc<dyn Fn(&mut AnyChanCell) + Send + Sync>,
 }
 
 #[cfg(feature = "relay")]
@@ -290,30 +353,67 @@ impl ConnInspector {
         let (client_inspector_tx, client_inspector_rx) = mpsc::unbounded();
         let (relay_inspector_tx, relay_inspector_rx) = mpsc::unbounded();
 
+        // By default we don't modify the cells.
+        let client_cell_modify_fn = Arc::new(|_: &mut AnyChanCell| {});
+        let relay_cell_modify_fn = Arc::new(|_: &mut AnyChanCell| {});
+
         ConnInspector {
             client_inspector_tx,
             client_inspector_rx,
             relay_inspector_tx,
             relay_inspector_rx,
+            client_cell_modify_fn,
+            relay_cell_modify_fn,
         }
     }
 
+    /// Set a function that will be applied to all cells sent from the client to relay.
+    pub(crate) fn set_client_cell_modifier(
+        &mut self,
+        mod_fn: impl Fn(&mut AnyChanCell) + Send + Sync + 'static,
+    ) {
+        self.client_cell_modify_fn = Arc::new(mod_fn);
+    }
+
+    /// Set a function that will be applied to all cells sent from the relay to client.
+    // We don't use this yet, but it complements `set_client_cell_modifier()`.
+    #[expect(unused)]
+    pub(crate) fn set_relay_cell_modifier(
+        &mut self,
+        mod_fn: impl Fn(&mut AnyChanCell) + Send + Sync + 'static,
+    ) {
+        self.relay_cell_modify_fn = Arc::new(mod_fn);
+    }
+
     /// Try to get the next message sent by the client.
+    ///
+    /// This will return the cell *before* any modification from
+    /// the function provided to [`Self::set_client_cell_modifier()`].
     pub(crate) fn try_client_cell(&mut self) -> Option<AnyChanCell> {
         self.client_inspector_rx.try_recv().ok()
     }
 
     /// Try to get the next message sent by the relay.
+    ///
+    /// This will return the cell *before* any modification from
+    /// the function provided to [`Self::set_relay_cell_modifier()`].
     pub(crate) fn try_relay_cell(&mut self) -> Option<AnyChanCell> {
         self.relay_inspector_rx.try_recv().ok()
     }
 
     /// Wait for the next message sent by the client.
+    ///
+    /// This will return the cell *before* any modification from
+    /// the function provided to [`Self::set_client_cell_modifier()`].
     pub(crate) async fn client_cell(&mut self) -> Option<AnyChanCell> {
         self.client_inspector_rx.recv().await.ok()
     }
 
     /// Wait for the next message sent by the relay.
+    ///
+    /// This will return the cell *before* any modification from
+    /// the function provided to [`Self::set_relay_cell_modifier()`].
+    #[expect(dead_code)]
     pub(crate) async fn relay_cell(&mut self) -> Option<AnyChanCell> {
         self.relay_inspector_rx.recv().await.ok()
     }

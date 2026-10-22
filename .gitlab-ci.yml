@@ -29,7 +29,7 @@ variables:
   FF_TIMESTAMPS: "true"
   # Pinned CI image for most Rust tests
   # Using "amd64/" single-arch variant to work around https://gitlab.torproject.org/tpo/tpa/team/-/issues/41621.
-  RECENT_RUST_IMAGE: "docker.io/amd64/rust:1.96.0-trixie"
+  RECENT_RUST_IMAGE: "docker.io/amd64/rust:1.98-trixie"
   # Profile to use when building the arti bins that we use for integration tests.
   # When changing this, also update ARTI_CI_PROFILE_PATH, below.
   ARTI_CI_PROFILE: quicktest
@@ -92,15 +92,26 @@ default:
     # Get some load stats as a crude debugging aid.
     - cat /proc/loadavg
     - for x in cpu io memory ; do echo /proc/pressure/$x; cat /proc/pressure/$x || true; done
-    # In every case, if we have a working `cargo` we should clean up
-    # our target directory before we exit.  (Leaving big hunks of data
-    # on the builders make our admins sad.)
+    # In every case, we should clean up our target directory before we exit.
+    # (Leaving big hunks of data on the builders make our admins sad.)
+    # If the directory exists, we clean it with cargo first,
+    # which tells us how much data was cleaned up.
+    # But we may have copied the build artifacts from an artifact and
+    # don't have cargo installed, so we also try to delete it manually.
     - if command -v cargo && test -d ./target; then cargo clean; fi
+    - if command -v cargo && test -d ./debian/target; then CARGO_TARGET_DIR=debian/target/ cargo clean; fi
+    - if test -d ./target; then rm -r ./target; fi
+    - if test -d ./debian/target; then rm -r ./debian/target; fi
+    - if test -d ./debian/cargo_home; then rm -r ./debian/cargo_home; fi
+    # Output some information about disk usage of the project directory,
+    # which can be helpful when debugging high disk usage issues.
+    # The short (rather than long) flags are needed by some of our container images.
+    - du -d 1 -h "${CI_PROJECT_DIR}"
 
 check-editorconfig:
   needs: []
   stage: build
-  image: docker.io/mstruebing/editorconfig-checker:v3.6.1
+  image: docker.io/mstruebing/editorconfig-checker:v3.11.0
   script:
     - ec
 
@@ -293,13 +304,14 @@ rust-dev-recent:
     - section_start "build docs"
     - RUSTDOCFLAGS="-Dwarnings" cargo doc --all-features --document-private-items --no-deps
     - section_end
-
-    - section_start "preserve artifacts"
-    - ./maint/preserve target/doc/
-    - section_end
+    # We want to archive the rustdoc build, but it will be deleted
+    # by the 'cargo clean' in the after_script.
+    # We move it to a temporary location so that it's not deleted,
+    # and we can upload it as an artifact.
+    - mv target/doc/ rustdoc-build/
   artifacts:
     paths:
-      - artifacts
+      - rustdoc-build/
     expire_in: 1 week
 
 rust-dev-latest:
@@ -412,9 +424,7 @@ rust-clippy-nontest:
 rust-nightly:
   needs: []
   stage: test
-  # Temporarily pinned; see arti#2618.
-  #image: docker.io/rustlang/rust:nightly
-  image: rustlang/rust:nightly-2026-06-28
+  image: docker.io/rustlang/rust:nightly
 
   # In case there is a bug in rust:nightly, you can instead pin an older
   # version of the Docker image until that bug is fixed.  To find the
@@ -438,18 +448,24 @@ rust-nightly:
     - ./maint/add_warning --ci-nightly
     - cargo clippy --all-features --tests -- -D clippy::dbg_macro
     - RUSTDOCFLAGS="-Dwarnings --cfg docsrs" cargo doc --all-features --document-private-items --no-deps
-    - ./maint/preserve target/doc/
+    # We want to archive the rustdoc build, but it will be deleted
+    # by the 'cargo clean' in the after_script.
+    # We move it to a temporary location so that it's not deleted,
+    # and we can upload it as an artifact.
+    - mv target/doc/ rustdoc-build/
   artifacts:
     paths:
-      - artifacts
+      - rustdoc-build/
     expire_in: 1 week
 
 check-api-surface:
   needs: []
   stage: test
-  # Temporarily pinned; see arti#2618.
-  #image: docker.io/rustlang/rust:nightly
-  image: rustlang/rust:nightly-2026-06-28
+  image: docker.io/rustlang/rust:nightly
+
+  # In case there is a bug in rust:nightly, you can instead pin an older
+  # version of the Docker image until that bug is fixed.
+  # See the 'rust-nightly' test for details.
 
   script:
     - maint/common/apt-install jq
@@ -529,8 +545,8 @@ cargo-miri:
   #  1. choose a new Nightly version, for example according to these instructions
   #      https://gitlab.torproject.org/Diziet/rust-derive-deftly/-/blob/main/macros/HACKING.md?ref_type=heads#choose-which-nightly-rust-version-to-update-to
   #  2. insert the new image hash, and corresponding nightly date, above
-  image: rustlang/rust@sha256:26897f428c9e97bba6a734473115608461f3f01cb9ce7ed4c4b568ac83c769a1
-  # ^ this is from tags.2025-10-24T13:08+00:00.gz (see HACKING.md)
+  image: rustlang/rust@sha256:1e95f3ca6d6d55e4561d7863be0953db7424613cef6710b90e5eb6b6476f5f06
+  # ^ this is from tags.2026-08-04T13:08+00:00.gz (see HACKING.md)
   script:
     - rustup component add miri
     # TOOD use miri test more of our crates-containing-unsafe
@@ -563,7 +579,7 @@ coverage:
 minimal-versions:
   stage: test
   # Using "amd64/" single-arch variant to work around https://gitlab.torproject.org/tpo/tpa/team/-/issues/41621.
-  image: docker.io/amd64/rust:1.91
+  image: docker.io/amd64/rust:1.92
   needs: []
   script:
     - rustup install nightly
@@ -578,7 +594,7 @@ minimal-versions:
     TARGET: UNDEFINED--BUG-IN-CI-YAML
   # If you upgrade this image, also change the one in maint/docker-reproducible-build.
   # Using "amd64/" single-arch variant to work around https://gitlab.torproject.org/tpo/tpa/team/-/issues/41621.
-  image: docker.io/amd64/rust:1.96.0-alpine3.23
+  image: docker.io/amd64/rust:1.98-alpine3.24
   script:
     - apk add bash
     - ./maint/reproducible-build $TARGET
@@ -624,8 +640,8 @@ build-shadow:
   variables:
     JOB_SHADOW_REPO: "https://github.com/shadow/shadow.git"
     JOB_SHADOW_BRANCH: "main"
-    # Last updated 2026-07-27
-    JOB_SHADOW_COMMIT: "6599c7c7e1726bf621d10ef83f528575fcf0348d"
+    # Last updated 2026-09-01
+    JOB_SHADOW_COMMIT: "412c4700bcc69a7610dda4dec86b2c034a058186"
   artifacts:
     paths:
       - opt/shadow

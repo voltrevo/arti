@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use anyhow::Context;
+use hickory_resolver::Resolver;
 use tokio::task::JoinSet;
 use tracing::debug;
 #[cfg(unix)]
@@ -17,19 +18,20 @@ use tor_chanmgr::{ChanMgr, ChanMgrConfig, Dormancy};
 use tor_config_path::CfgPathResolver;
 use tor_dircommon::authority::AuthorityContacts;
 use tor_dircommon::config::{DirTolerance, DownloadScheduleConfig};
-use tor_dirmgr::DirMgrConfig;
-use tor_dirserver::mirror::DirMirror;
+use tor_dirmgr::{DirMgrConfig, DirPlugin};
+use tor_dirserver::mirror::{DirMirror, DirMirrorWithBackend};
 use tor_keymgr::{ArtiNativeKeystore, KeyMgr, KeyMgrBuilder};
 use tor_memquota::MemoryQuotaTracker;
 use tor_netdir::params::NetParameters;
 use tor_persist::state_dir::StateDirectory;
 use tor_persist::{FsStateMgr, StateMgr};
 use tor_proto::relay::{CircuitIncomingStreamReceiver, CreateRequestHandler};
-use tor_rtcompat::{NetStreamProvider, Runtime};
+use tor_rtcompat::{DynTimeProvider, NetStreamProvider, Runtime};
 
 use crate::client::RelayClient;
 use crate::config::TorRelayConfig;
 use crate::stream::RequestFilter;
+use crate::stream::dns::resolver::DnsResolverReactor;
 use crate::tasks::channel::build_circ_net_params;
 use crate::tasks::crypto::InitKeyMaterial;
 
@@ -183,7 +185,7 @@ pub(crate) struct TorRelay<R: Runtime> {
     authorities: AuthorityContacts,
 
     /// The directory mirror object, used for handling BEGIN_DIR.
-    dir_mirror: DirMirror,
+    dir_mirror: DirMirrorWithBackend<DirPlugin>,
 
     /// Channel manager, used by circuits etc.
     chanmgr: Arc<ChanMgr<R>>,
@@ -345,6 +347,9 @@ impl<R: Runtime> TorRelay<R> {
 
         let dir_mirror = DirMirror::new(path, dir_mirror_authorities, schedule, tolerance);
 
+        // TODO: This is temporary until the directory mirror has support for downloading documents.
+        let dir_mirror = DirMirrorWithBackend::new(dir_mirror, client.dirmgr_plugin().clone());
+
         Ok(Self {
             runtime,
             memquota,
@@ -423,11 +428,38 @@ impl<R: Runtime> TorRelay<R> {
             Err(anyhow::anyhow!("dir mirror exited"))
         });
 
+        // This builds a hickory resolver that uses
+        // /etc/resolv.conf on Unix-like systems and the registry on Windows.
+        // TODO(relay): we should decide if this the correct behavior
+        // (should double-check what C Tor does).
+        //
+        // TODO(relay): enable DoT
+        //
+        // TODO(relay): disable hickory's internal cache
+        // (this will involve patching hickory to make its moka dependency optional)
+        //
+        // Note: the hickory resolver spawns various background tasks
+        let resolver = Arc::new(Resolver::builder_tokio()?.build()?);
+        let (reactor, resolver) =
+            DnsResolverReactor::new(DynTimeProvider::new(self.runtime.clone()), resolver);
+        // Spawn the DNS reactor
+        //
+        // TODO(relay): only spawn this if we're configured to run as an exit
+        task_handles.spawn(async move {
+            reactor.run().await?;
+            Err(anyhow::anyhow!("DNS reactor exited"))
+        });
+
         let runtime = self.runtime.clone();
         // Listen for new Tor streams
         task_handles.spawn(
             // TODO: Should we give all tasks a `start` method?
-            crate::stream::handle_incoming_streams(runtime, begin_dir_tx, self.circuit_stream_rx),
+            crate::stream::handle_incoming_streams(
+                runtime,
+                begin_dir_tx,
+                self.circuit_stream_rx,
+                resolver,
+            ),
         );
 
         // Channel used to ask the descriptor publisher to rebuild and re-publish the descriptor.

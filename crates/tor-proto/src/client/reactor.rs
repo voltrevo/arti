@@ -41,6 +41,7 @@ use conflux::ConfluxSet;
 use control::ControlHandler;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use tor_basic_utils::onionperf_types::{OnionperfCircuitStatus, OnionperfEvent};
 use tor_cell::relaycell::flow_ctrl::XonKBpsEwma;
 use tor_cell::relaycell::msg::Sendme;
 use tor_cell::relaycell::{AnyRelayMsgOuter, RelayCellFormat, StreamId, UnparsedRelayMsg};
@@ -55,7 +56,6 @@ use oneshot_fused_workaround as oneshot;
 
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::channel::Channel;
 use crate::conflux::msghandler::RemoveLegReason;
@@ -714,6 +714,12 @@ impl Reactor {
             }
         };
 
+        tracing::trace!(
+            onionperf = true,
+            tid = %self.tunnel_id,
+            event = ?&OnionperfEvent::Circuit(OnionperfCircuitStatus::Closed)
+        );
+
         // Log that the reactor stopped, possibly with the associated error as a report.
         // May log at a higher level depending on the error kind.
         const MSG: &str = "Tunnel reactor stopped";
@@ -1012,11 +1018,7 @@ impl Reactor {
 
                     // Note: if we have no measurements for the RTT, this will be set to 0,
                     // and the timeout will be 2 * CBT.
-                    ccontrol
-                        .rtt()
-                        .max_rtt_usec()
-                        .map(|rtt| Duration::from_millis(u64::from(rtt)))
-                        .unwrap_or_default()
+                    ccontrol.rtt().max_rtt().unwrap_or_default()
                 };
 
                 // The length of the circuit up until the hop that has the half-streeam.

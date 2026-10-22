@@ -740,7 +740,8 @@ impl<B: AbstractTunnelBuilder<R> + 'static, R: Runtime> HsCircPoolInner<B, R> {
     }
 
     /// Return a circuit of the specified `kind`, built from `circuit`.
-    #[allow(clippy::unused_async)] // async is used when vanguards + hs-common features are enabled
+    // This is needed because in default cfg, we do not have await in this function
+    #[allow(clippy::unused_async)]
     async fn maybe_extend_stem_circuit<T>(
         &self,
         netdir: &NetDir,
