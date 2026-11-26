@@ -3,7 +3,7 @@
 use super::*;
 pub(super) use netstatus::vote::RouterStatus as RouterStatusVote;
 pub(super) use routerdesc::RdDigest;
-pub(super) use tor_netdoc::doc::{netstatus, routerdesc};
+pub(super) use tor_netdoc::doc::routerdesc;
 
 /// Router id-tuple as used in consensus calculations
 ///
@@ -40,6 +40,16 @@ pub(super) struct StatusTuple {
     /// or_port
     pub or_port: u16,
 }
+
+/// "Already computed" context type for router status entries
+///
+/// Having a newtype around `PlainPreamble` allows us to specially mark
+/// trait impls that apply only inside routerstatus entries.
+///
+/// That way we can `impl Aggregate` for types that appear in several places,
+/// and the `AC` on the `Aggregate` impl avoids using the wrong one.
+#[derive(derive_more::Deref)]
+pub(super) struct RouterStatusAC<'r>(pub &'r PlainPreamble);
 
 /// The `RouterStatusVote` provided by each voter that voted for this id-tuple
 ///

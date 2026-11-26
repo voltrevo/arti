@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,7 +46,11 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
+
+#![allow(clippy::redundant_field_names)]
+// TODO beta clippy bug, rust-clippy/issues/17525
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
 #![cfg_attr(
@@ -172,6 +177,31 @@ pub fn supported_client_protocols() -> tor_protover::Protocols {
         RELAY_CRYPT_CGO,
     ];
 
+    protocols.into_iter().collect()
+}
+
+/// Return a list of the protocols [supported](tor_protover::doc_supported)
+/// by this crate, running as a relay.
+#[cfg(feature = "relay")]
+pub fn supported_relay_protocols() -> tor_protover::Protocols {
+    use tor_protover::named::*;
+    // WARNING: REMOVING ELEMENTS FROM THIS LIST CAN BE DANGEROUS!
+    // SEE [`tor_protover::doc_changing`]
+    let protocols = vec![
+        LINK_V4,
+        LINK_V5,
+        LINKAUTH_ED25519_SHA256_EXPORTER,
+        FLOWCTRL_AUTH_SENDME,
+        FLOWCTRL_CC,
+        RELAY_NTOR,
+        RELAY_EXTEND_IPv6,
+        RELAY_NTORV3,
+        RELAY_NEGOTIATE_SUBPROTO,
+        RELAY_CRYPT_CGO,
+    ];
+
+    // TODO(relay): Conflux, circuit padding, and onion-service introduction and
+    // rendezvous handling are not implemented yet.
     protocols.into_iter().collect()
 }
 

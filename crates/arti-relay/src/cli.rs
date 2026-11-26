@@ -23,7 +23,7 @@ static DEFAULT_CONFIG_PATHS: LazyLock<Result<Vec<PathBuf>, CfgPathError>> =
 #[derive(Clone, Debug, Parser)]
 #[command(author = "The Tor Project Developers")]
 #[command(version)]
-#[command(defer = cli_cmd_post_processing)]
+#[command(defer(cli_cmd_post_processing))]
 pub(crate) struct Cli {
     /// Sub-commands.
     #[command(subcommand)]
@@ -42,7 +42,7 @@ pub(crate) struct Cli {
 fn cli_cmd_post_processing(cli: Command) -> Command {
     /// Append the paths to the help text.
     fn fmt_help(help: Option<&str>, paths: &[PathBuf]) -> String {
-        let help = help.map(|x| format!("{x}\n\n")).unwrap_or("".to_string());
+        let help = help.map(|x| format!("{x}\n\n")).unwrap_or_default();
         let paths: Vec<_> = paths
             .iter()
             .map(|path| {

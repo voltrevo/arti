@@ -1,6 +1,6 @@
 [package]
 name = "tor-dirclient"
-version = "0.47.0"
+version = "0.48.0"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 rust-version = "1.92"
@@ -50,31 +50,31 @@ experimental = []
 __is_experimental = []
 
 [dependencies]
-async-compression = { version = "0.4.5", features = ["futures-io", "zlib"] }
-base64ct = "1.5.1"
-derive_more = { version = "2.0.1", features = ["full"] }
-futures = "0.3.14"
+async-compression = { version = "0.4.51", features = ["futures-io", "zlib"] }
+base64ct = "1.8.3"
+derive_more = { version = "2.1.1", features = ["full"] }
+futures = "0.3.34"
 hex = "0.4"
-http = "1.0"
-httparse = "1.2"
+http = "1.5"
+httparse = "1.10"
 httpdate = "1.0"
 itertools = "0.15.0"
 thiserror = "2"
-tor-circmgr = { path = "../tor-circmgr", version = "0.47.0" }
-tor-error = { path = "../tor-error", version = "0.47.0" }
-tor-hscrypto = { path = "../tor-hscrypto", version = "0.47.0", optional = true }
-tor-linkspec = { path = "../tor-linkspec", version = "0.47.0" }
-tor-llcrypto = { path = "../tor-llcrypto", version = "0.47.0" }
-tor-netdoc = { path = "../tor-netdoc", version = "0.47.0" }
-tor-proto = { path = "../tor-proto", version = "0.47.0" }
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.47.0" }
+tor-circmgr = { path = "../tor-circmgr", version = "0.48.0" }
+tor-error = { path = "../tor-error", version = "0.48.0" }
+tor-hscrypto = { path = "../tor-hscrypto", version = "0.48.0", optional = true }
+tor-linkspec = { path = "../tor-linkspec", version = "0.48.0" }
+tor-llcrypto = { path = "../tor-llcrypto", version = "0.48.0" }
+tor-netdoc = { path = "../tor-netdoc", version = "0.48.0" }
+tor-proto = { path = "../tor-proto", version = "0.48.0" }
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.48.0" }
 ruzstd = { version = "0.9.1", optional = true }
-tracing = "0.1.36"
+tracing = "0.1.44"
 web-time-compat = { path = "../web-time-compat", version = "0.3.0" }
 
 [dev-dependencies]
 futures-await-test = "0.3.0"
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.47.0", features = ["tokio", "native-tls"] }
-tor-rtmock = { path = "../tor-rtmock", version = "0.47.0" }
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.48.0", features = ["tokio", "native-tls"] }
+tor-rtmock = { path = "../tor-rtmock", version = "0.48.0" }
 [package.metadata.docs.rs]
 all-features = true

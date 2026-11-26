@@ -1,10 +1,24 @@
 //! Consensus methods
-#![allow(unused)] // TODO DIRAUTH
+
+// We have many free functions that have signatures matching `Aggregate::aggregate`, etc.
+// This annoys clippy because it can't see they have to be that way.
+//
+// These lints are generally not all that useful anyway.  Suppress them in this whole code area.
+//
+// TODO DIRAUTH drop the individual allows from code in in-flight branches, once merged
+// ie, at some point(s) do this:
+//     git-grep -P '\#\[.*clippy::(?:needless_pass_by_value|unnecessary_wraps)' crates/tor-dirauth/src/consensus*
+#![allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
 
 use crate::internal_prelude::*;
 
-use tor_netdoc::doc::netstatus::{NetParams, RelayWeightsItem, VoteRelayWeightsItem};
-use tor_netdoc::types::{NotPresent, relay_flags::DocRelayFlags};
+use tor_netdoc::doc::netstatus::{
+    self, NetParams, PlainPreamble, RelayWeightsItem, VoteRelayWeightsItem,
+};
+use tor_netdoc::types::{
+    NotPresent,
+    relay_flags::{DocRelayFlags, RelayFlag},
+};
 
 // md calculations
 mod ip_summary;
@@ -15,6 +29,7 @@ mod tracked_method;
 // consensus calculations
 #[macro_use]
 mod calculate_macros;
+mod footer;
 mod framework;
 mod functions;
 mod preamble;
@@ -22,10 +37,12 @@ mod preamble;
 mod rs_common;
 mod rs_body;
 mod rs_select;
+mod toplevel;
 
 pub use framework::*;
 pub use method::*;
 pub use microdesc::*;
+pub use toplevel::*;
 pub use tracked_method::*;
 
 /// Supported consensus methods
@@ -49,7 +66,7 @@ pub const SUPPORTED_METHODS: &[RangeInclusive<ConsensusMethod>] = {
 };
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
     #![allow(clippy::bool_assert_comparison)]
     #![allow(clippy::clone_on_copy)]
@@ -65,6 +82,8 @@ mod test {
     #![allow(clippy::string_slice)] // See arti#2571
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
+
+    pub(crate) use toplevel::test::compute_test;
 
     #[test]
     fn supported_well_formed() {

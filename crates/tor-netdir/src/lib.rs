@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,6 +46,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 pub mod details;
@@ -727,6 +729,7 @@ pub trait NetDirProvider: UpcastArcNetDirProvider + Send + Sync {
     fn protocol_statuses(&self) -> Option<(SystemTime, Arc<netstatus::ProtoStatuses>)>;
 }
 
+#[async_trait]
 impl<T> NetDirProvider for Arc<T>
 where
     T: NetDirProvider,
@@ -745,6 +748,23 @@ where
 
     fn params(&self) -> Arc<dyn AsRef<NetParameters>> {
         self.deref().params()
+    }
+
+    async fn wait_for_netdir(
+        &self,
+        timeliness: Timeliness,
+    ) -> std::result::Result<Arc<NetDir>, NetdirProviderShutdown> {
+        self.deref().wait_for_netdir(timeliness).await
+    }
+
+    async fn wait_for_netdir_to_list(
+        &self,
+        target: &tor_linkspec::RelayIds,
+        timeliness: Timeliness,
+    ) -> std::result::Result<(), NetdirProviderShutdown> {
+        self.deref()
+            .wait_for_netdir_to_list(target, timeliness)
+            .await
     }
 
     fn protocol_statuses(&self) -> Option<(SystemTime, Arc<netstatus::ProtoStatuses>)> {

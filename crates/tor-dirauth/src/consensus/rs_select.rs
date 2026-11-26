@@ -3,12 +3,12 @@
 use super::*;
 use rs_common::*;
 
-impl ConsensusesFromVotes for Vec<RouterStatusVote> {
+impl ConsensusesFromVotes<PlainPreamble> for Vec<RouterStatusVote> {
     type PlainOutput = Vec<netstatus::plain::RouterStatus>;
     type MdOutput = Vec<netstatus::md::RouterStatus>;
 
     fn consensuses<'i>(
-        context: &ConsensusContext,
+        context: ConsensusContextRefs<PlainPreamble>,
         inputs: impl ComponentInVotes<&'i Self>,
     ) -> Result<(Self::PlainOutput, Self::MdOutput), ConsensusError>
     where
@@ -22,7 +22,7 @@ impl ConsensusesFromVotes for Vec<RouterStatusVote> {
         let voters_per_id; // buffer; TODO want to use super let instead
         {
             let mut per_id = HashMap::<IdTuple, VoterSet>::new();
-            for (vnum, voter_rs_list) in inputs.clone() {
+            for (vnum, voter_rs_list) in inputs.iter() {
                 for rs in voter_rs_list {
                     let id = IdTuple::from_rs(rs);
                     per_id.entry(id).or_default().insert(vnum);
@@ -70,7 +70,7 @@ impl ConsensusesFromVotes for Vec<RouterStatusVote> {
                 // for each possible output status-tuple, who voted for it:
                 HashMap<StatusTuple, Box<RouterStatusPerRelevantVoter>>,
             >::new();
-            for (vnum, voter_rs_list) in inputs.clone() {
+            for (vnum, voter_rs_list) in inputs.iter() {
                 for rs in voter_rs_list {
                     let id = IdTuple::from_rs(rs);
                     if !output_ids.contains(&id) {
@@ -111,8 +111,17 @@ impl ConsensusesFromVotes for Vec<RouterStatusVote> {
         };
 
         output_rs_inputs
-            .map(|resolved_rs_input| resolved_rs_input.consensuses(context))
-            .flatten_ok()
-            .collect()
+            .map(|resolved_rs_input| {
+                resolved_rs_input
+                    .consensuses(context.with_computed(&RouterStatusAC(context.computed)))
+            })
+            .process_results(|rss_iter| {
+                rss_iter
+                    .map(|both| {
+                        both.map(|(plain, md)| (Some(plain), md))
+                            .unwrap_or_default()
+                    })
+                    .filter_collect_unzip()
+            })
     }
 }

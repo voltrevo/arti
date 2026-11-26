@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,6 +46,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO beta clippy bug, rust-clippy/issues/17525
@@ -370,6 +372,10 @@ impl OnionService {
             status_tx.clone().into(),
         )?;
 
+        let bad_hsdescs_dir = state_handle
+            .raw_subdir("bad_hsdescs")
+            .map_err(StartupError::StateDirectoryInaccessible)?;
+
         let publisher: Publisher<R, publish::Real<R>> = Publisher::new(
             runtime,
             nickname.clone(),
@@ -382,6 +388,7 @@ impl OnionService {
             path_resolver,
             pow_manager.clone(),
             publisher_update_rx,
+            bad_hsdescs_dir,
         );
 
         let svc = Arc::new(RunningOnionService {
@@ -416,14 +423,6 @@ impl OnionService {
     /// keystores.
     pub fn onion_address(&self) -> Option<HsId> {
         onion_address(&self.keymgr, &self.config.nickname)
-    }
-
-    /// Return the onion address of this service.
-    ///
-    /// See [`onion_address`](Self::onion_address)
-    #[deprecated = "Use the new onion_address method instead"]
-    pub fn onion_name(&self) -> Option<HsId> {
-        self.onion_address()
     }
 
     /// Generate an identity key (KP_hs_id) for this service.
@@ -578,14 +577,6 @@ impl RunningOnionService {
     pub fn onion_address(&self) -> Option<HsId> {
         onion_address(&self.keymgr, &self.nickname)
     }
-
-    /// Return the onion address of this service.
-    ///
-    /// See [`onion_address`](Self::onion_address)
-    #[deprecated = "Use the new onion_address method instead"]
-    pub fn onion_name(&self) -> Option<HsId> {
-        self.onion_address()
-    }
 }
 
 /// Generate the identity key of the service, unless it already exists or `offline_hsid` is `true`.
@@ -614,6 +605,32 @@ fn maybe_generate_hsid(
     let (hsid, generated) = match kp {
         Some(kp) => (kp.id(), false),
         None => {
+            // There is no HsId, but there *may* be some leftover keys
+            // associated with the old identity.
+            //
+            // If we've reached this point, it means our HsId is *not*
+            // stored offline, so any leftover keys must have been
+            // generated from an old HsId that was removed at some point.
+            //
+            // Since we're going to generate a new key, we really need to
+            // remove the old descriptor signing keys and blinded identity keys,
+            // because otherwise the publisher will happily use the old keys,
+            // essentially continuing to publish for the old identity instead
+            // of the new one.
+            let removed = remove_keys_for_service(nickname, keymgr).map_err(|cause| {
+                StartupError::Keystore {
+                    action: "remove old keys",
+                    cause,
+                }
+            })?;
+
+            if removed {
+                info!(
+                    nickname=%nickname,
+                    "Removed blinded identity keys and descriptor signing keys for no-longer present identity"
+                );
+            };
+
             // Note: there is a race here. If the HsId is generated through some other means
             // (e.g. via the CLI) at some point between the time we looked up the keypair and
             // now, we will return an error.
@@ -684,6 +701,16 @@ pub fn supported_hsservice_protocols() -> tor_protover::Protocols {
 }
 
 /// Returns all the keys (as [`KeystoreEntry`]) of the service
+/// identified by `nickname`.
+fn list_keys_for_service<'a>(
+    nickname: &HsNickname,
+    keymgr: &'a KeyMgr,
+) -> tor_keymgr::Result<Vec<KeystoreEntry<'a>>> {
+    let arti_pat = tor_keymgr::KeyPathPattern::Arti(format!("hss/{}/*", nickname));
+    keymgr.list_matching(&arti_pat)
+}
+
+/// Returns all the keys (as [`KeystoreEntry`]) of the service
 /// identified by `nickname` that are expired according to the
 /// provided [`HsDirParams`].
 fn list_expired_keys_for_service<'a>(
@@ -691,8 +718,7 @@ fn list_expired_keys_for_service<'a>(
     nickname: &HsNickname,
     keymgr: &'a KeyMgr,
 ) -> tor_keymgr::Result<Vec<KeystoreEntry<'a>>> {
-    let arti_pat = tor_keymgr::KeyPathPattern::Arti(format!("hss/{}/*", nickname));
-    let possibly_relevant_keys = keymgr.list_matching(&arti_pat)?;
+    let possibly_relevant_keys = list_keys_for_service(nickname, keymgr)?;
     let mut expired_keys = Vec::new();
 
     for entry in possibly_relevant_keys {
@@ -700,7 +726,7 @@ fn list_expired_keys_for_service<'a>(
         let mut append_if_expired = |spec: &dyn HsTimePeriodKeySpecifier| {
             if spec.nickname() != nickname {
                 return Err(internal!(
-                    "keymgr gave us key {spec:?} that doesn't match our pattern {arti_pat:?}"
+                    "keymgr gave us key {spec:?} belonging to another service?!"
                 )
                 .into());
             }
@@ -731,6 +757,24 @@ fn list_expired_keys_for_service<'a>(
     Ok(expired_keys)
 }
 
+/// Remove all the keys of the service with the specified `nickname`.
+///
+/// Returns `Ok(true)` if any keys were removed
+fn remove_keys_for_service<'a>(
+    nickname: &HsNickname,
+    keymgr: &'a KeyMgr,
+) -> tor_keymgr::Result<bool> {
+    let mut removed = false;
+    let all_keys = list_keys_for_service(nickname, keymgr)?;
+
+    for entry in all_keys {
+        removed = true;
+        keymgr.remove_entry(&entry)?;
+    }
+
+    Ok(removed)
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     // @@ begin test lint list maintained by maint/add_warning @@
@@ -758,6 +802,7 @@ pub(crate) mod test {
     use tor_basic_utils::test_rng::testing_rng;
     use tor_keymgr::{ArtiNativeKeystore, KeyMgrBuilder};
     use tor_llcrypto::pk::ed25519;
+    use tor_llcrypto::rng::FakeEntropicRng;
     use tor_persist::state_dir::InstanceStateHandle;
 
     use crate::config::OnionServiceConfigBuilder;
@@ -941,6 +986,97 @@ pub(crate) mod test {
                 Default::default()
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn generate_hsid_removes_existing_keys() {
+        let temp_dir = test_temp_dir!();
+        let nickname = HsNickname::try_from(TEST_SVC_NICKNAME.to_string()).unwrap();
+
+        let keymgr = create_keymgr(&temp_dir);
+
+        let (hsid_keypair, _hsid_public) = create_hsid();
+        let period = TimePeriod::new(
+            humantime::parse_duration("24 hours").unwrap(),
+            humantime::parse_rfc3339("2023-02-09T12:00:00Z").unwrap(),
+            humantime::parse_duration("12 hours").unwrap(),
+        )
+        .unwrap();
+
+        let (_pub_blinded_id, blinded_id, _subcred) =
+            HsIdKeypair::from(ed25519::ExpandedKeypair::from(hsid_keypair))
+                .compute_blinded_key(period)
+                .unwrap();
+
+        // Insert a blinded id key and desc signing key for this service.
+        // These should all be removed by maybe_generate_hsid(),
+        // if a new HsId is generated.
+        let blind_id_key_spec = BlindIdKeypairSpecifier::new(nickname.clone(), period);
+        keymgr
+            .insert(blinded_id, &blind_id_key_spec, Default::default(), true)
+            .unwrap();
+
+        assert!(
+            keymgr
+                .get::<HsBlindIdKeypair>(&blind_id_key_spec)
+                .unwrap()
+                .is_some()
+        );
+
+        let hs_desc_sign_key_spec = DescSigningKeypairSpecifier::new(nickname.clone(), period);
+        let mut rng = FakeEntropicRng(testing_rng());
+        let hs_desc_sign = keymgr
+            .get_or_generate::<HsDescSigningKeypair>(
+                &hs_desc_sign_key_spec,
+                Default::default(),
+                &mut rng,
+            )
+            .unwrap();
+
+        keymgr
+            .insert(
+                hs_desc_sign,
+                &hs_desc_sign_key_spec,
+                Default::default(),
+                true,
+            )
+            .unwrap();
+
+        assert!(
+            keymgr
+                .get::<HsDescSigningKeypair>(&hs_desc_sign_key_spec)
+                .unwrap()
+                .is_some()
+        );
+
+        // The keystore doesn't already contain an HsId for this nickname,
+        // and offline_hsid = false, so this will generate a fresh HsId.
+        maybe_generate_hsid(
+            &keymgr,
+            &nickname,
+            false, /* offline_hsid */
+            Default::default(),
+        )
+        .unwrap();
+
+        // The new key was created
+        let hsid_spec = HsIdKeypairSpecifier::new(nickname.clone());
+        assert!(keymgr.get::<HsIdKeypair>(&hsid_spec).unwrap().is_some());
+
+        // All the old keys of the service should have been removed...
+        assert!(
+            keymgr
+                .get::<HsBlindIdKey>(&blind_id_key_spec)
+                .unwrap()
+                .is_none()
+        );
+
+        assert!(
+            keymgr
+                .get::<HsDescSigningKeypair>(&hs_desc_sign_key_spec)
+                .unwrap()
+                .is_none()
         );
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "oneshot-fused-workaround"
-version = "0.8.0"
+version = "0.8.1"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2024"
 rust-version = "1.92"
@@ -13,7 +13,7 @@ categories = ["rust-patterns"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 
 [dependencies]
-futures = "0.3.14"
+futures = "0.3.34"
 
 [features]
 full = []

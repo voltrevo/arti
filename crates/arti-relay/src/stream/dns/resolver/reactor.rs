@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use derive_more::Constructor;
@@ -17,11 +17,12 @@ use futures::select_biased;
 use futures::stream::StreamExt as _;
 use hickory_resolver::lookup::Lookup;
 use hickory_resolver::net::runtime::TokioRuntimeProvider;
+use smallvec::SmallVec;
 use tokio::task::JoinSet;
 
 use tor_async_utils::oneshot_broadcast;
 use tor_error::{Bug, internal, into_internal};
-use tor_rtcompat::{DynTimeProvider, SleepProvider as _};
+use tor_rtcompat::{DynTimeProvider, SleepProvider as _, SleepProviderExt as _};
 
 use crate::stream::dns::resolver::{
     DnsRequest, DnsResolver, DnsResponseReceiver, LookupAnswers, LookupError, RecordData,
@@ -29,6 +30,33 @@ use crate::stream::dns::resolver::{
 
 /// The hickory stub resolver.
 pub(crate) type HickoryResolver = hickory_resolver::Resolver<TokioRuntimeProvider>;
+
+/// The ASCII-encoded hostname from a RESOLVE, in canonical form.
+type Query = Arc<str>;
+
+// TODO(relay): check the TTLs against C Tor and the relevant DNS RFCs
+// to make sure they're fit for purpose
+
+/// The TTL to use for responses that have an empty answer section (not NXDOMAIN).
+const TTL_FOR_EMPTY_ANS: Duration = Duration::from_mins(5);
+
+/// The TTL for error responses.
+const TTL_FOR_ERRORS: Duration = Duration::from_mins(5);
+
+/// Our "low" TTL value. Any TTLs below this are clipped to this value.
+///
+/// Must be greater than FUZZY_DNS_TTL_SECONDS, otherwise our calculations can underflow.
+const MIN_DNS_TTL: Duration = Duration::from_mins(5);
+
+/// Our "high" TTL value. Any TTLs above MIN_DNS_TTL are clipped to this value.
+const MAX_DNS_TTL: Duration = Duration::from_mins(60);
+
+/// The amount we +- to the clipped TTL to make it "fuzzy".
+///
+/// Must be less than MIN_DNS_TTL, otherwise our calculations can underflow.
+///
+/// See "The effect of DNS on Tor's Anonymity" by Greschbach et al.
+const FUZZY_DNS_TTL: Duration = Duration::from_mins(4);
 
 /// A reactor that performs DNS lookups on behalf of incoming streams (RESOLVE, BEGIN).
 ///
@@ -45,8 +73,6 @@ pub(crate) struct DnsResolverReactor<M: MockableAsyncResolver = HickoryResolver>
     /// The DNS lookups we have launched that we are still waiting on.
     pending: PendingQueries,
     /// The DNS cache.
-    ///
-    /// The exactly details of its implementation are TODO(#2697)
     cache: DnsCache,
     /// MPSC channel for receiving DNS queries.
     query_rx: mpsc::Receiver<DnsRequest>,
@@ -57,8 +83,6 @@ pub(crate) struct DnsResolverReactor<M: MockableAsyncResolver = HickoryResolver>
 /// We cache the response as a whole, not the individual answers.
 #[derive(Clone, Debug, Constructor)]
 pub(crate) struct DnsResponse {
-    /// The query this response was for.
-    query: Arc<str>,
     /// The answer records.
     pub(crate) answers: Result<LookupAnswers<RecordData>, LookupError>,
     /// The timestamp when this response becomes invalid.
@@ -76,8 +100,14 @@ pub(crate) struct DnsResponse {
     //
     // "If the data is unable to be authoritatively refreshed when the TTL expires,
     // the record MAY be used as though it is unexpired"
-    #[allow(dead_code)]
     valid_until: Instant,
+}
+
+impl DnsResponse {
+    /// Returns `true` if this response is expired at `now`.
+    fn is_expired(&self, now: Instant) -> bool {
+        self.valid_until <= now
+    }
 }
 
 /// An answer record.
@@ -85,8 +115,7 @@ pub(crate) struct DnsResponse {
 pub(crate) struct AnswerRecord {
     /// The answer record.
     data: RecordData,
-    /// The TTL
-    #[expect(unused)] // TODO(relay): use this to compute the valid_until of the DnsResponse
+    /// The TTL, used to compute the valid_until of the corresponding [`DnsResponse`].
     ttl: u32,
 }
 
@@ -110,13 +139,18 @@ impl TryFrom<&HickoryRecord> for AnswerRecord {
 /// [`DnsResolverReactor`] tests.
 #[async_trait]
 pub(crate) trait MockableAsyncResolver: Send + Sync + 'static {
+    /// A random number generator
+    type Rng: rand::Rng + rand::CryptoRng;
+
     /// Performs a dual-stack DNS lookup for the IP for the given hostname.
     async fn lookup_ip(&self, query: &str) -> Result<LookupAnswers<AnswerRecord>, LookupError>;
 
     /// Performs a lookup for the associated type.
-    #[allow(dead_code)] // TODO(relay)
     async fn reverse_lookup(&self, query: &str)
     -> Result<LookupAnswers<AnswerRecord>, LookupError>;
+
+    /// Return a random number generator
+    fn thread_rng(&self) -> Self::Rng;
 }
 
 // TODO(relay): do we want hickory_resolver::ConnectionProvider to be a supertrait of tor_rtcompat::Runtime?
@@ -127,6 +161,8 @@ pub(crate) trait MockableAsyncResolver: Send + Sync + 'static {
 
 #[async_trait]
 impl MockableAsyncResolver for HickoryResolver {
+    type Rng = rand::rngs::ThreadRng;
+
     async fn lookup_ip(&self, query: &str) -> Result<LookupAnswers<AnswerRecord>, LookupError> {
         let lookup = self.lookup_ip(query).await?;
 
@@ -141,6 +177,10 @@ impl MockableAsyncResolver for HickoryResolver {
 
         extract_hickory_answers(&lookup)
     }
+
+    fn thread_rng(&self) -> Self::Rng {
+        rand::rng()
+    }
 }
 
 /// Convert a hickory [`Lookup`] into a collection of [`AnswerRecord`]s.
@@ -153,14 +193,6 @@ fn extract_hickory_answers(lookup: &Lookup) -> Result<LookupAnswers<AnswerRecord
     // from the Lookup object here. However, that wouldn't give us
     // the real TTL, because hickory-resolver always sets this to the maximum
     // allowed TTL of 1 day (see the Future impl for LookupIpFuture in hickory_resolver).
-    //
-    // TODO(gabi): This *might* be tolerable for our use case, but I am not sure.
-    // We might want to compute our own valid_until timestamp for the lookup,
-    // based on the individual TTLs of the answers. This has the added benefit
-    // of allowing us to make the valid_until relative to the `now` timestamp
-    // (which will make it easier to write tests for the cache expiry logic,
-    // when we implement that).
-
     lookup
         .answers()
         .iter()
@@ -169,18 +201,109 @@ fn extract_hickory_answers(lookup: &Lookup) -> Result<LookupAnswers<AnswerRecord
 }
 
 /// A response cache for the [`DnsResolverReactor`].
-#[derive(Default)]
-struct DnsCache {/* TODO(#2697): implement */}
+///
+/// Maps [`Query`]s to [`DnsResponse`]s. In other words, we cache whole responses,
+/// which may contain multiple answer records, each with its own TTL.
+/// The TTL of a *cache entry* is calculated using the TTLs of the answers it contains:
+///
+///   * if the lookup failed, we use [`TTL_FOR_ERRORS`]
+///   * if the lookup succeeded, but the answer section is empty,
+///     we use [`TTL_FOR_EMPTY_ANS`]
+///   * if the lookup succeded, and we got some answers, we calculate the TTL of the response
+///     by taking the maximum TTL of the answers it contains
+///
+/// Finally, we clip and fuzz the resulting TTL before using it to calculate the
+/// `valid_until` expiration timestamp of the cache entry (see [`clip_dns_fuzzy_ttl`]).
+struct DnsCache {
+    /// Our DNS cache, keyed by the ASCII encoded address extracted
+    /// from RESOLVE queries.
+    //
+    // TODO(relay): make this memquota-aware, and have memquota
+    // evict entries using an LRU policy if we're under
+    // memory pressure
+    inner: HashMap<Query, DnsResponse>,
+    /// The timestamp when the expired entries should be purged using
+    /// [`remove_expired`](Self::remove_expired).
+    ///
+    /// This is recalculated each time `remove_expired is called.
+    ///
+    /// This shouldn't happen too frequently, because it's an O(n) operation
+    /// that blocks all incoming requests until it completes.
+    purge_expired_at: Instant,
+}
 
 impl DnsCache {
+    /// Create an empty [`DnsCache`].
+    fn new(now: Instant) -> Self {
+        Self {
+            inner: Default::default(),
+            purge_expired_at: Self::next_expired_purge(now),
+        }
+    }
+
     /// Return the cached response for `query` if it still fresh at `now`,
     /// or `None` otherwise.
     ///
     /// If the query response is cached, but is expired at `now`,
     /// this will remove it from the cache.
-    fn get_or_remove_expired(&mut self, _query: &Arc<str>, _now: Instant) -> Option<DnsResponse> {
-        // TODO(#2697): implement
-        None
+    fn get_or_remove_expired(&mut self, query: &Query, now: Instant) -> Option<DnsResponse> {
+        match self.inner.entry(Arc::clone(query)) {
+            Entry::Occupied(e) => {
+                let entry = e.get();
+                if !entry.is_expired(now) {
+                    Some(entry.clone())
+                } else {
+                    // The entry is expired, we should remove it from the cache
+                    let _ = e.remove();
+                    None
+                }
+            }
+            Entry::Vacant(_) => None,
+        }
+    }
+
+    /// Insert the specified response into the cache.
+    fn insert(&mut self, query: Query, res: DnsResponse) {
+        self.inner.insert(query, res);
+    }
+
+    /// Remove all the entries that are expired at `now`.
+    ///
+    /// This is an O(n) operation, so it should be used sparingly.
+    /// Currently called on a timer from the main loop of the reactor.
+    fn remove_expired(&mut self, now: Instant) {
+        self.inner.retain(|_, res| !res.is_expired(now));
+        self.purge_expired_at = Self::next_expired_purge(now);
+    }
+
+    /// When remove_expired() should be called next to purge leftover expired entries.
+    fn next_expired_purge(now: Instant) -> Instant {
+        /// How frequently do we want to garbage-collect the expired entries?
+        ///
+        /// Note(gabi): doing this every 1h seems sensible, although we could
+        /// probably do it even less frequently.
+        ///
+        /// Eventually, we might want a more principled approach here.
+        /// For example, we might want to remove the expired entries
+        /// from the cache as soon as their TTL runs out,
+        /// but there are some trade-offs:
+        ///
+        ///   * we would need some sort of data structure for determining
+        ///     when the next cache entry is due to expire.
+        ///     This would likely be a min-heap, so it would be an additional
+        ///     O(n) space to store
+        ///   * in addition to the extra memory usage, removing the expired
+        ///     entries right away will likely have an impact on performance too.
+        ///     If our cache regularly fills up with lots of short-lived (TTL = 5 min)
+        ///     unpopular entries (possibly tracking domains?), the reactor will
+        ///     have to a bunch of frequent removals, essentially interrupting
+        ///     its incoming request handling
+        ///
+        /// For these reasons, right now, it seems better to remove the expired
+        /// entries in batches.
+        const CACHE_PURGE_INTERVAL: Duration = Duration::from_mins(60);
+
+        now + CACHE_PURGE_INTERVAL
     }
 }
 
@@ -194,23 +317,23 @@ struct PendingQueries {
     /// Each of these has an entry in self.inflight.
     ///
     /// Keyed by the ASCII-encoded hostname from the RESOLVE, in canonical form.
-    pending_response: HashMap<Arc<str>, oneshot_broadcast::Sender<DnsResponse>>,
+    pending_response: HashMap<Query, oneshot_broadcast::Sender<DnsResponse>>,
     /// DNS queries we're currently waiting a response for.
     //
     // TODO(relay): this uses a tokio JoinSet, as opposed to a runtime-agnotic
     // tor-rtcompat thing. Eventually, we might want to eventually replace this
     // with an equivalent tor-rtcompat type, so that we can control the execution
     // of these tasks in the tests.
-    inflight: JoinSet<DnsResponse>,
+    inflight: JoinSet<(Query, DnsResponse)>,
 }
 
 impl PendingQueries {
     /// Returns a [`DnsResponseReceiver`] for the specified `query`
     /// if there is currently an in-flight lookup for it,
     /// or spawn a new lookup, returning the [`DnsResponseReceiver`] for awaiting the response.
-    fn get_or_insert<M: MockableAsyncResolver>(
+    fn get_or_launch_lookup<M: MockableAsyncResolver>(
         &mut self,
-        query: Arc<str>,
+        query: Query,
         resolver: &Arc<M>,
         now: Instant,
     ) -> DnsResponseReceiver {
@@ -257,8 +380,10 @@ impl PendingQueries {
             let resolver = Arc::clone(resolver);
 
             // Time to launch a new lookup
-            self.inflight
-                .spawn(async move { resolve_query(query, resolver, now).await });
+            self.inflight.spawn(async move {
+                let res = resolve_query(Arc::clone(&query), resolver, now).await;
+                (query, res)
+            });
         }
 
         DnsResponseReceiver::from(res_rx)
@@ -277,12 +402,8 @@ impl PendingQueries {
 ///
 /// The `host` must be a hostname.
 /// If it ends in `in-addr.arpa.` or `ip6.arpa.`, this function will perform a reverse lookup.
-///
-// TODO(relay): The returned `DnsResponse` has an associated `valid_until`,
-// which will be used for deciding how long to cache the response for.
-// Currently unused
 async fn resolve_query<M: MockableAsyncResolver>(
-    host: Arc<str>,
+    host: Query,
     resolver: Arc<M>,
     now: Instant,
 ) -> DnsResponse {
@@ -294,23 +415,72 @@ async fn resolve_query<M: MockableAsyncResolver>(
         resolver.lookup_ip(&host)
     };
 
-    let (answers, valid_until) = match lookup.await {
+    let (answers, ttl) = match lookup.await {
         Ok(res) => {
-            // TODO(relay): compute valid_until based on the TTLs of the answers
-            // Note: see C Tor's clip_dns_fuzzy_ttl(ttl)
-            // https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4420#note_3471238
-            let valid_until = now;
-            let answers = res.into_iter().map(|res| res.data).collect();
-            (Ok(answers), valid_until)
+            let answers: SmallVec<_> = res;
+            // Use the max TTL of all the answers
+            let ttl = answers
+                .iter()
+                .map(|ans: &AnswerRecord| u64::from(ans.ttl))
+                .max()
+                .map(Duration::from_secs)
+                .unwrap_or(TTL_FOR_EMPTY_ANS);
+
+            let answers = answers.into_iter().map(|res| res.data).collect();
+
+            (Ok(answers), ttl)
         }
-        Err(e) => {
-            // TODO(relay): declare a constant for the TTL of negative answers
-            let valid_until = now;
-            (Err(e), valid_until)
-        }
+        Err(e) => (Err(e), TTL_FOR_ERRORS),
     };
 
-    DnsResponse::new(host, answers, valid_until)
+    let valid_until = now + clip_dns_fuzzy_ttl(ttl, &mut resolver.thread_rng());
+    DnsResponse::new(answers, valid_until)
+}
+
+/// Clip the `ttl` to be either 5 minutes or 60 minutes.
+///
+/// If `ttl` is below 5 minutes, returns a TTL of 5 minutes.
+/// If `ttl` is 5 minutes or above, returns a TTL of 60 minutes.
+///
+/// Like in C Tor, this logic is a defense against [DefectTor]
+/// DNS-based traffic confirmation attacks.
+///
+/// [DefectTor]: https://nymity.ch/tor-dns/tor-dns.pdf
+fn clip_dns_ttl(ttl: Duration) -> Duration {
+    if ttl < MIN_DNS_TTL {
+        MIN_DNS_TTL
+    } else {
+        MAX_DNS_TTL
+    }
+}
+
+/// Clip and randomize the specified `ttl`.
+///
+/// This clips the `ttl` (see [`clip_dns_ttl`]),
+/// and adds a random duration (sampled uniformly from [-4 min, 4min]),
+/// in order to make it harder to infer when the corresponding domain
+/// was visited from this exit relay (see "Website Fingerprinting with Website Oracles").
+fn clip_dns_fuzzy_ttl<R: rand::Rng + rand::CryptoRng>(ttl: Duration, rng: &mut R) -> Duration {
+    use tor_basic_utils::RngExt;
+
+    let fuzzy_ttl_seconds = FUZZY_DNS_TTL.as_secs() as i32;
+
+    let fuzz: i32 = rng
+        .gen_range_checked(-fuzzy_ttl_seconds..=fuzzy_ttl_seconds)
+        .expect("low as not < high");
+
+    let ttl_secs: i32 = clip_dns_ttl(ttl)
+        .as_secs()
+        .try_into()
+        .expect("clip_dns_ttl returned a humonguous TTL?!");
+
+    debug_assert!(ttl_secs > fuzz, "FUZZY_DNS_TTL > MIN_DNS_TTL?!");
+
+    let fuzzed_ttl_secs: u64 = (ttl_secs + fuzz)
+        .try_into()
+        .expect("a TTL of minutes does not fit in a u64?!");
+
+    Duration::from_secs(fuzzed_ttl_secs)
 }
 
 impl<M: MockableAsyncResolver> DnsResolverReactor<M> {
@@ -345,11 +515,12 @@ impl<M: MockableAsyncResolver> DnsResolverReactor<M> {
             inflight,
         };
 
+        let now = runtime.now();
         let reactor = Self {
             resolver,
             runtime,
             pending,
-            cache: Default::default(),
+            cache: DnsCache::new(now),
             query_rx,
         };
 
@@ -360,18 +531,22 @@ impl<M: MockableAsyncResolver> DnsResolverReactor<M> {
 
     /// Run the reactor.
     pub(crate) async fn run(mut self) -> Result<(), Bug> {
+        let now = self.runtime.now();
         loop {
             select_biased! {
+                () = self.runtime.sleep_until(self.cache.purge_expired_at).fuse() => {
+                    self.cache.remove_expired(now);
+                },
                 res = self.pending.inflight.join_next().fuse() => {
                     // inflight can never yield None because
                     // we pushed a forever pending future in it
-                    let res = res.expect("pending future resolvewd?!");
+                    let res = res.expect("pending future resolved?!");
 
                     // This can only happen if a task panics, or is aborted.
                     // We never abort tasks, so this can only happen on panic.
-                    let response = res.map_err(into_internal!("A DNS lookup panicked?!"))?;
+                    let (query, response) = res.map_err(into_internal!("A DNS lookup panicked?!"))?;
 
-                    self.handle_response(response)?;
+                    self.handle_response(query, response)?;
                 },
                 query = self.query_rx.next() => {
                     let Some(query) = query else {
@@ -407,17 +582,19 @@ impl<M: MockableAsyncResolver> DnsResolverReactor<M> {
             // If we don't have a cached answer,
             // we need to launch a new lookup,
             // unless we already have a pending one for this query
-            self.pending.get_or_insert(query, &self.resolver, now)
+            self.pending
+                .get_or_launch_lookup(query, &self.resolver, now)
         };
 
         let _ = tx.send(response_rx);
     }
 
     /// Called when one of our pending queries completes.
-    fn handle_response(&mut self, res: DnsResponse) -> Result<(), Bug> {
-        let response_tx = self.pending.remove(&res.query)?;
+    fn handle_response(&mut self, query: Query, res: DnsResponse) -> Result<(), Bug> {
+        let response_tx = self.pending.remove(&query)?;
 
-        // TODO(relay): Insert the response into the cache
+        // Update the cache
+        self.cache.insert(query, res.clone());
 
         // Notify all the tasks waiting on this response.
         // If all the receivers have gone away, this will be ignored

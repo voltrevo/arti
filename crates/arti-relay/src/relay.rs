@@ -5,13 +5,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use anyhow::Context;
-use hickory_resolver::Resolver;
+use hickory_net::runtime::TokioRuntimeProvider;
+use hickory_resolver::{Resolver, ResolverBuilder};
 use tokio::task::JoinSet;
-use tracing::debug;
 #[cfg(unix)]
 use tracing::warn;
+use tracing::{debug, info};
 
 use fs_mistrust::Mistrust;
+use tor_async_utils::bw_pool::{BandwidthPool, BandwidthRefiller};
 use tor_basic_utils::iter_join;
 use tor_cell::relaycell::RelayCmd;
 use tor_chanmgr::{ChanMgr, ChanMgrConfig, Dormancy};
@@ -29,7 +31,7 @@ use tor_proto::relay::{CircuitIncomingStreamReceiver, CreateRequestHandler};
 use tor_rtcompat::{DynTimeProvider, NetStreamProvider, Runtime};
 
 use crate::client::RelayClient;
-use crate::config::TorRelayConfig;
+use crate::config::{DnsConfig, TorRelayConfig};
 use crate::stream::RequestFilter;
 use crate::stream::dns::resolver::DnsResolverReactor;
 use crate::tasks::channel::build_circ_net_params;
@@ -184,11 +186,19 @@ pub(crate) struct TorRelay<R: Runtime> {
     /// exposed by a [`tor_dirmgr::DirProvider`] hence why we keep that copy from the config.
     authorities: AuthorityContacts,
 
+    /// Relay information used to build our descriptor.
+    ///
+    /// We keep a copy here from the config so we can pass it to the descriptor publisher task.
+    desc_info: crate::tasks::descriptor::RouterDescInfo,
+
     /// The directory mirror object, used for handling BEGIN_DIR.
     dir_mirror: DirMirrorWithBackend<DirPlugin>,
 
     /// Channel manager, used by circuits etc.
     chanmgr: Arc<ChanMgr<R>>,
+
+    /// Refillers of the global bandwidth pools. None if unlimited bandwidth.
+    bw_refillers: Option<BandwidthRefillers>,
 
     /// Handles CREATE* requests on channels.
     ///
@@ -208,6 +218,16 @@ pub(crate) struct TorRelay<R: Runtime> {
 
     /// Listening OR ports.
     or_listeners: Vec<<R as NetStreamProvider<SocketAddr>>::Listener>,
+
+    /// The hickory stub resolver, used for building the DNS resolver reactor.
+    //
+    // TODO(relay): this should be optional, and only set to Some
+    // if we're configured to run as an exit.
+    //
+    // Right now, because there is no exit config,
+    // arti-relay unconditionally spawns the DNS resolver task,
+    // and unconditionally accepts all RESOLVE.
+    resolver: Arc<Resolver<TokioRuntimeProvider>>,
 }
 
 impl<R: Runtime> TorRelay<R> {
@@ -226,9 +246,31 @@ impl<R: Runtime> TorRelay<R> {
             .context("Failed to initialize memquota tracker")?;
 
         // Init the channel manager.
-        let config = ChanMgrConfig::new(inert.config.channel.clone())
+        let mut config = ChanMgrConfig::new(inert.config.channel.clone())
             .with_my_addrs(inert.config.relay.advertise.all_addr())
             .with_auth_material(Arc::new(init_key_material.chan_auth_keys));
+
+        // Global bandwidth rate limiting with one pool per direction. This is what C-tor
+        // does as sharing a bw pool with both directions is usually not a great idea
+        // because clogging one side then clogs the other side creating all sorts of side
+        // channel possibilities or DoS vector.
+        let bw = &inert.config.relay.bandwidth;
+        let bw_refillers = if let (Some(rate), Some(burst)) = (bw.rate, bw.burst) {
+            info!("Bandwidth rate limit per direction: rate {rate}/s, burst {burst}");
+            let rate = u64::try_from(*rate).expect("bw rate to u64");
+            let burst = u64::try_from(*burst).expect("bw burst to u64");
+            let (read_pool, read_refiller) = BandwidthPool::new(burst);
+            let (write_pool, write_refiller) = BandwidthPool::new(burst);
+            config = config.with_bandwidth_pools(read_pool, write_pool);
+            Some(BandwidthRefillers {
+                read: read_refiller,
+                write: write_refiller,
+                rate,
+            })
+        } else {
+            info!("No bandwidth rate limit configured, bandwidth is unlimited");
+            None
+        };
         let chanmgr = Arc::new(
             ChanMgr::new(
                 runtime.clone(),
@@ -244,6 +286,11 @@ impl<R: Runtime> TorRelay<R> {
         );
 
         let authorities = inert.dirmgr_config.authorities().clone();
+        let desc_info = crate::tasks::descriptor::RouterDescInfo {
+            nickname: inert.config.relay.nickname.clone(),
+            contact: inert.config.relay.contact.clone(),
+            advertise: inert.config.relay.advertise.clone(),
+        };
 
         // Init the relay's client.
         let client = RelayClient::new(
@@ -350,17 +397,22 @@ impl<R: Runtime> TorRelay<R> {
         // TODO: This is temporary until the directory mirror has support for downloading documents.
         let dir_mirror = DirMirrorWithBackend::new(dir_mirror, client.dirmgr_plugin().clone());
 
+        let resolver = Arc::new(build_hickory_resolver(&inert.config)?);
+
         Ok(Self {
             runtime,
             memquota,
             client,
             authorities,
+            desc_info,
             dir_mirror,
             chanmgr,
+            bw_refillers,
             create_request_handler,
             keymgr: inert.keymgr,
             or_listeners,
             circuit_stream_rx,
+            resolver,
         })
     }
 
@@ -380,6 +432,11 @@ impl<R: Runtime> TorRelay<R> {
                     .context("Failed to run channel house keeping task")
             }
         });
+
+        // Launch the refillers of the global bandwidth pool if any.
+        if let Some(bw_refillers) = self.bw_refillers {
+            bw_refillers.spawn(&self.runtime, &mut task_handles);
+        }
 
         // Update the CREATE* request handler when there are new network parameters.
         task_handles.spawn({
@@ -428,20 +485,15 @@ impl<R: Runtime> TorRelay<R> {
             Err(anyhow::anyhow!("dir mirror exited"))
         });
 
-        // This builds a hickory resolver that uses
-        // /etc/resolv.conf on Unix-like systems and the registry on Windows.
-        // TODO(relay): we should decide if this the correct behavior
-        // (should double-check what C Tor does).
-        //
         // TODO(relay): enable DoT
         //
         // TODO(relay): disable hickory's internal cache
         // (this will involve patching hickory to make its moka dependency optional)
         //
         // Note: the hickory resolver spawns various background tasks
-        let resolver = Arc::new(Resolver::builder_tokio()?.build()?);
+
         let (reactor, resolver) =
-            DnsResolverReactor::new(DynTimeProvider::new(self.runtime.clone()), resolver);
+            DnsResolverReactor::new(DynTimeProvider::new(self.runtime.clone()), self.resolver);
         // Spawn the DNS reactor
         //
         // TODO(relay): only spawn this if we're configured to run as an exit
@@ -489,11 +541,13 @@ impl<R: Runtime> TorRelay<R> {
         task_handles.spawn({
             let netdir = Arc::clone(self.client.dirmgr()) as Arc<_>;
             let authorities = self.authorities;
+            let desc_info = self.desc_info;
             async move {
                 crate::tasks::RelayDescriptorPublisherTask::new(
                     &self.runtime,
                     netdir,
                     authorities,
+                    desc_info,
                     crypto_command_tx,
                     desc_command_rx,
                 )
@@ -537,4 +591,95 @@ impl<R: Runtime> TorRelay<R> {
         // We can never get here since a `Void` cannot be constructed.
         void::unreachable(void);
     }
+}
+
+/// Refillers of the global read and write bandwidth pools.
+struct BandwidthRefillers {
+    /// Refiller of the read pool.
+    read: BandwidthRefiller,
+    /// Refiller of the write pool.
+    write: BandwidthRefiller,
+    /// Refill rate in bytes per second for both pools.
+    rate: u64,
+}
+
+impl BandwidthRefillers {
+    /// Spawn the read and write refiller tasks into `task_handles`, a tokio [`JoinSet`].
+    fn spawn<R: Runtime>(
+        self,
+        runtime: &R,
+        task_handles: &mut JoinSet<anyhow::Result<void::Void>>,
+    ) {
+        let rate = self.rate;
+        for (refiller, name) in [(self.read, "read"), (self.write, "write")] {
+            let runtime = runtime.clone();
+            task_handles.spawn(async move {
+                refiller.run(runtime, rate).await;
+                Err(anyhow::anyhow!("{name} bandwidth refiller exited"))
+            });
+        }
+    }
+}
+
+/// Build the hickory resolver, configuring it using
+/// the settings from our [`DnsConfig`].
+fn build_hickory_resolver(
+    config: &TorRelayConfig,
+) -> anyhow::Result<Resolver<TokioRuntimeProvider>> {
+    let mut builder = prepare_hickory_builder(config)?;
+
+    // Set the hickory's internal cache size to 0
+    // (we will be implementing our own cache separately)
+    builder.options_mut().cache_size = 0;
+
+    // Unconditionally enable case randomization,
+    // equivalent to C Tor's ServerDNSRandomizeCase.
+    builder.options_mut().case_randomization = true;
+
+    Ok(builder.build()?)
+}
+
+/// Prepare the hickory resolver builder, using the settings from
+/// our [`DnsConfig`].
+#[cfg(all(unix, not(any(target_os = "android", target_vendor = "apple"))))]
+fn prepare_hickory_builder(
+    config: &TorRelayConfig,
+) -> anyhow::Result<ResolverBuilder<TokioRuntimeProvider>> {
+    use hickory_resolver::system_conf::parse_resolv_conf;
+    let DnsConfig { resolv_conf } = &config.relay.dns;
+    let builder = if let Some(resolv_conf) = resolv_conf {
+        let mistrust = config.storage.permissions();
+        let resolv_conf = mistrust.verifier().file_access().read(resolv_conf)?;
+        let (config, opts) = parse_resolv_conf(resolv_conf)?;
+
+        let rt_provider = TokioRuntimeProvider::default();
+        let mut builder = Resolver::builder_with_config(config, rt_provider);
+        // Setting the options like this is a bit funky,
+        // but hickory doesn't have any other API for setting them
+        *builder.options_mut() = opts;
+
+        builder
+    } else {
+        Resolver::builder_tokio()?
+    };
+
+    Ok(builder)
+}
+
+/// Prepare the hickory resolver builder, using the settings from
+/// our [`DnsConfig`](crate::config::DnsConfig).
+///
+// Note: currently this returns a default-initialized hickory resolver,
+// because all of the DnsConfig options we have today are unavailable
+// on these platforms.
+#[cfg(not(all(unix, not(any(target_os = "android", target_vendor = "apple")))))]
+fn prepare_hickory_builder(
+    config: &TorRelayConfig,
+) -> anyhow::Result<ResolverBuilder<TokioRuntimeProvider>> {
+    // We can't use resolv_conf on this platform,
+    // but we deconstruct DnsConfig here to make sure that
+    // if we add new fields, this will fail to compile,
+    // reminding us to handle them here
+    let DnsConfig { resolv_conf: _ } = &config.relay.dns;
+    Ok(Resolver::builder_tokio()?)
 }

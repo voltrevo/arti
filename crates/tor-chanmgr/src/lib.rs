@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,6 +46,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 pub mod builder;
@@ -243,6 +245,7 @@ impl<R: Runtime> ChanMgr<R> {
             if #[cfg(feature = "relay")] {
                 let builder = if let Some(auth_material) = &config.auth_material {
                     builder::ChanBuilder::new_relay(runtime.clone(), transport, auth_material.clone(), config.my_addrs, None)?
+                        .with_bandwidth_pools(config.bw_pools)
                 } else {
                     // Yes, clients can have the "relay" feature enabled (unit tests).
                     builder::ChanBuilder::new_client(runtime.clone(), transport)

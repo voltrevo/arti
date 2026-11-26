@@ -789,7 +789,7 @@ define_derive_deftly! {
     ${define THIS_ITEM { input.next_item()?.expect("peeked") }}
     ${define F_ACCUMULATE_VAR { (&mut $fpatname) }}
 
-    impl<$tgens> $P::NetdocParseableSignatures for $ttype {
+    ${impl $P::NetdocParseableSignatures} {
         type HashesAccu = $SIGS_HASHES_ACCU_TYPE;
 
         fn is_item_keyword(kw: $P::KeywordRef<'_>) -> bool {
@@ -882,7 +882,7 @@ define_derive_deftly! {
         $fname: $F_ACCUMULATE_TYPE,
     ) }
 
-    impl<$tgens> $P::NetdocParseableFields for $ttype {
+    ${impl $P::NetdocParseableFields} {
         type Accumulator = $<$ttype NetdocParseAccumulator>;
 
         fn is_item_keyword(
@@ -1077,11 +1077,11 @@ define_derive_deftly! {
 
     /// The parsed but unverified body part of a signed network document (working type)
     ///
-   $/// Contains a $tname which has been parsed
+   $/// Contains a [`$tname`] which has been parsed
     /// as part of a signed document,
     /// but the signatures aren't embodied here, and have not been verified.
     ///
-    /// Not very useful to callers, who should use the `BodyUnverified` type instead,
+   $/// Not very useful to callers, who should use the `${tname}Unverified` type instead,
     /// and its implementation of `NetdocParseable`.
     //
     // We implement NetdocParseable on FooUnverified using ItemStream::parse_signed.
@@ -1104,7 +1104,7 @@ define_derive_deftly! {
         unverified: $ttype,
     }
 
-    impl<$tgens> $P::NetdocParseable for $<$ttype Unverified> {
+    ${impl $P::NetdocParseable for $<$ttype Unverified>} {
         fn doctype_for_error() -> &'static str {
             $NETDOC_PARSEABLE_TTYPE::doctype_for_error()
         }
@@ -1129,7 +1129,7 @@ define_derive_deftly! {
         }
     }
 
-    impl<$tgens> $P::NetdocParseableUnverified for $<$ttype Unverified> {
+    ${impl $P::NetdocParseableUnverified for $<$ttype Unverified>} {
         type Body = $ttype;
         type Signatures = $SIGS_TYPE;
         fn inspect_unverified(&self) -> (&Self::Body, &$SIGS_DATA_TYPE) {
@@ -1143,7 +1143,7 @@ define_derive_deftly! {
         }
     }
 
-    impl<$tgens> $P::HasUnverifiedParsedBody for $ttype {
+    ${impl $P::HasUnverifiedParsedBody} {
         type UnverifiedParsedBody = $NETDOC_PARSEABLE_TTYPE;
         fn unverified_into_inner_unchecked(unverified: Self::UnverifiedParsedBody) -> Self {
             unverified.unverified
@@ -1258,7 +1258,7 @@ define_derive_deftly! {
     ///    and replaces `<FIELD as FromStr>::from_str`.
     ///
     ///    With `#[deftly(netdoc(object))]`, uses `MODULE::try_from`
-    ///    which must have the signature `fn(Vec<u8>) -> Result<OBJECT, _>;
+    ///    which must have the signature `fn(Vec<u8>) -> Result<OBJECT, _>`;
     ///    like `TryFrom::<Vec<u8>>>::try_from`.
     ///    LABEL must also be specified
     ///    unless the object also implements `ItemObjectParseable`.
@@ -1287,7 +1287,7 @@ define_derive_deftly! {
         $ttype: $P::NetdocParseable
     }
 
-    impl<$tgens> $P::$TRAIT for $ttype {
+    ${impl $P::$TRAIT} {
       ${if T_IS_SIGNATURE {
         type HashAccu = $SIG_HASH_ACCU_TYPE;
       }}
