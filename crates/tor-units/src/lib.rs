@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,6 +46,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 use derive_more::{Add, Display, Div, From, FromStr, Mul};
@@ -249,9 +251,12 @@ impl From<BoundedInt32<1, 254>> for u8 {
     }
 }
 
+/// Convert to `u32`.
+///
+/// If `L` is negative, this will panic at build-time. See [`BoundedInt32::get_u32`].
 impl<const L: i32, const H: i32> From<BoundedInt32<L, H>> for u32 {
     fn from(val: BoundedInt32<L, H>) -> u32 {
-        val.value as u32
+        val.get_u32()
     }
 }
 

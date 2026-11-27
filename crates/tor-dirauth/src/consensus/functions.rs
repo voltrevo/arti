@@ -5,11 +5,12 @@
 use super::*;
 
 /// Return the low median of the inputs
-pub(super) fn low_median<'i, T: Ord + Clone + 'i>(
-    context: &ConsensusContext,
+#[allow(clippy::needless_pass_by_value)]
+pub(super) fn low_median<'i, T: Ord + Clone + 'i, AC>(
+    _context: ConsensusContextRefs<AC>,
     inputs: impl ComponentInVotes<&'i T>,
 ) -> Result<T, ConsensusError> {
-    low_median_raw(inputs.map(|(_vnum, v)| v.clone())).ok_or(ConsensusError::NoVotes)
+    low_median_raw(inputs.votes().cloned()).ok_or(ConsensusError::NoVotes)
 }
 
 /// Return the low median of the inputs, without cloning, and without context
@@ -18,6 +19,40 @@ pub(super) fn low_median_raw<'i, T: Ord + 'i>(inputs: impl Iterator<Item = T>) -
     all.sort();
     let i = all.len().checked_sub(1)? / 2;
     all.into_iter().nth(i)
+}
+
+/// Return the value which is most popular
+///
+/// If there are several values which are equally most popular,
+/// ties are broken in favour of the earliest according to `ord`.
+/// (We avoid calling `ord` unless it is necessary.)
+///
+/// This is used for `v` and `pr` items in routerstatuses:
+///  * <https://spec.torproject.org/dir-spec/computing-consensus.html>
+///  * <https://spec.torproject.org/dir-spec/consensus-formats.html#item:pr>
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+pub(super) fn choose_most_popular_amongst_votes<'i, T, K, AC>(
+    _context: ConsensusContextRefs<AC>,
+    inputs: impl ComponentInVotes<&'i T>,
+    ord_key: impl Fn(&'i T) -> K,
+) -> Result<Option<T>, ConsensusError>
+where
+    T: Eq + Hash + Clone + 'i,
+    K: Ord,
+{
+    let counts = inputs.votes().counts();
+
+    let Some(best) = counts.values().copied().max() else {
+        return Ok(None);
+    };
+
+    Ok(counts
+        .into_iter()
+        .filter(|&(_v, count)| count == best)
+        .map(|(v, _count)| v)
+        .at_most_one()
+        .unwrap_or_else(|several| several.min_by_key(|v| ord_key(*v)))
+        .cloned())
 }
 
 #[cfg(test)]

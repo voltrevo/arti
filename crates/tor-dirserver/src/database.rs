@@ -49,6 +49,7 @@ use std::{
     num::NonZero,
     ops::{Add, Sub},
     path::Path,
+    rc::Rc,
     time::{Duration, SystemTime},
 };
 
@@ -59,8 +60,8 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rand::Rng;
 use rusqlite::{
-    ToSql, Transaction, TransactionBehavior, named_params, params,
-    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
+    OptionalExtension, ToSql, Transaction, TransactionBehavior, named_params, params,
+    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef},
 };
 use saturating_time::SaturatingTime;
 use tor_basic_utils::RngExt;
@@ -69,7 +70,10 @@ use tor_netdoc::doc::{authcert::AuthCert, netstatus::ConsensusFlavor};
 
 use crate::{
     err::DatabaseError,
-    types::{FlavoredConsensusBody, FlavoredConsensusSignatures, FlavoredConsensusUnverified},
+    types::{
+        FlavoredConsensusBody, FlavoredConsensusSignatures, FlavoredConsensusUnverified,
+        FlavoredDescriptor,
+    },
 };
 
 /// Version 1 of the database schema.
@@ -161,6 +165,12 @@ macro_rules! impl_hash_wrapper {
             }
         }
 
+        impl From<$name> for Value {
+            fn from(value: $name) -> Value {
+                Value::Text(value.to_string())
+            }
+        }
+
         impl PartialEq<&str> for $name {
             fn eq(&self, other: &&str) -> bool {
                 self.to_string() == other.to_uppercase()
@@ -185,7 +195,9 @@ impl_hash_wrapper!(Sha3_256, tor_llcrypto::d::Sha3_256, 32);
 pub(crate) type DocumentId = Sha256;
 
 /// The supported content encodings.
-#[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display, strum::EnumIter)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumString, strum::Display, strum::EnumIter,
+)]
 #[strum(serialize_all = "kebab-case", ascii_case_insensitive)]
 pub(crate) enum ContentEncoding {
     /// RFC2616 section 3.5.
@@ -298,7 +310,7 @@ pub(crate) struct ConsensusMeta<T> {
     pub docid: DocumentId,
 
     /// The SHA3 of the unsigned part of the consensus.
-    pub unsigned_sha3_256: Sha3_256,
+    pub sha3_256: Sha3_256,
 
     /// The time after which this consensus is valid.
     pub valid_after: Timestamp,
@@ -317,28 +329,30 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
     /// Select the missing router descriptors.
     ///
     /// A router descriptor is considered missing if it exists in
-    /// `consensus_router_descriptor_member` but not in `router_descriptor`
+    /// `consensus_descriptor_member` but not in `descriptor`
     /// because the first entry is added once the consensus got parsed,
     /// whereas the second entry is added once we have actually retrieved it.
     ///
-    /// It works by doing a left join on router_descriptor and filtering for
+    /// It works by doing a left join on descriptor and filtering for
     /// all entries where the join is NULL, as that implies we are aware of
     /// the descriptor but not have it stored.
     ///
     /// Parameters:
     /// :docid - The docid of the consensus.
+    /// :exclude - The descriptors to skip.
     /// :limit - The maximum number of descriptors to return.
     //
     // TODO DIRMIRROR: Potentially constify more queries.
     const MISSING_ROUTERS_QUERY: &'static str = sql!(
         "
-        SELECT cr.unsigned_sha1, RANDOM() AS rand
-        FROM consensus_router_descriptor_member AS cr
-          LEFT JOIN router_descriptor AS router ON cr.unsigned_sha1 = router.unsigned_sha1
+        SELECT cr.sha1, RANDOM() AS rand
+        FROM consensus_descriptor_member AS cr
+          LEFT JOIN descriptor AS router ON cr.sha1 = router.sha1
         WHERE
           cr.consensus_docid = :docid
-          AND cr.unsigned_sha1 IS NOT NULL
-          AND router.unsigned_sha1 IS NULL
+          AND cr.sha1 IS NOT NULL
+          AND cr.sha1 NOT IN rarray(:exclude)
+          AND router.sha1 IS NULL
         ORDER BY rand
         LIMIT :limit
         "
@@ -354,7 +368,7 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         // Select the most recent flavored consensus document from the database.
         let mut meta_stmt = tx.prepare_cached(sql!(
             "
-            SELECT docid, unsigned_sha3_256, valid_after, fresh_until, valid_until
+            SELECT docid, sha3_256, valid_after, fresh_until, valid_until
             FROM consensus
             WHERE
               flavor = :flavor
@@ -370,7 +384,7 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
             |row| {
                 Ok(Self {
                     docid: row.get(0)?,
-                    unsigned_sha3_256: row.get(1)?,
+                    sha3_256: row.get(1)?,
                     valid_after: row.get(2)?,
                     fresh_until: row.get(3)?,
                     valid_until: row.get(4)?,
@@ -427,9 +441,12 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
     /// on performance related matters:
     ///
     /// <https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/4378#note_3467300>
+    // TODO DIRMIRROR: This has a large overlap with missing_extras and
+    // missing_micros, we should genericise or macrofy this at one point.
     pub(crate) fn missing_routers(
         &self,
         tx: &Transaction<'_>,
+        exclude: impl Iterator<Item = Sha1>,
         limit: Option<u64>,
     ) -> Result<HashSet<Sha1>, DatabaseError> {
         if T::flavor() != ConsensusFlavor::Plain {
@@ -438,10 +455,12 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
 
         let mut stmt = tx.prepare_cached(Self::MISSING_ROUTERS_QUERY)?;
 
+        let exclude = exclude.map(Value::from).collect();
+        let exclude: Rc<Vec<Value>> = Rc::new(exclude);
         let limit = limit.map_or(-1, |n| n.try_into().unwrap_or(i64::MAX));
         let missing = stmt
             .query_map(
-                named_params! {":docid": self.docid, ":limit": limit},
+                named_params! {":docid": self.docid, ":limit": limit, ":exclude": exclude},
                 |row| row.get(0),
             )?
             .collect::<Result<HashSet<_>, _>>()?;
@@ -461,6 +480,7 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
     pub(crate) fn missing_extras(
         &self,
         tx: &Transaction<'_>,
+        exclude: impl Iterator<Item = Sha1>,
         limit: Option<u64>,
     ) -> Result<HashSet<Sha1>, DatabaseError> {
         if T::flavor() != ConsensusFlavor::Plain {
@@ -475,35 +495,39 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         // router descriptor.
         //
         // It works by doing an inner join from
-        // `consensus_router_descriptor_member` to `router_descriptor` because
+        // `consensus_descriptor_member` to `descriptor` because
         // we can only know about the extra-infos of which we have the router
         // descriptors from.  Afterwards, we do a left join with the
-        // `router_extra_info` table and filter for all results where the left
+        // `extra_info` table and filter for all results where the left
         // join result is null, hence where we have a router descriptor but not
         // the respective extra-info.
         //
         // Parameters:
         // :docid - The docid of the consensus.
+        // :exclude - The descriptors to skip.
         // :limit - The maximum number of descriptors to return.
         let mut stmt = tx.prepare_cached(sql!(
             "
-            SELECT router.extra_unsigned_sha1, RANDOM() AS rand
-            FROM consensus_router_descriptor_member AS cr
-              INNER JOIN router_descriptor AS router ON cr.unsigned_sha1 = router.unsigned_sha1
-              LEFT JOIN router_extra_info AS extra ON router.extra_unsigned_sha1 = extra.unsigned_sha1
+            SELECT router.extra_sha1, RANDOM() AS rand
+            FROM consensus_descriptor_member AS cr
+              INNER JOIN descriptor AS router ON cr.sha1 = router.sha1
+              LEFT JOIN extra_info AS extra ON router.extra_sha1 = extra.sha1
             WHERE
               cr.consensus_docid = :docid
-              AND router.extra_unsigned_sha1 IS NOT NULL
-              AND extra.unsigned_sha1 IS NULL
+              AND router.extra_sha1 IS NOT NULL
+              AND extra.sha1 IS NULL
+              AND extra.sha1 NOT IN rarray(:exclude)
             ORDER BY rand
             LIMIT :limit
             "
         ))?;
 
+        let exclude = exclude.map(Value::from).collect();
+        let exclude: Rc<Vec<Value>> = Rc::new(exclude);
         let limit = limit.map_or(-1, |n| n.try_into().unwrap_or(i64::MAX));
         let missing = stmt
             .query_map(
-                named_params! {":docid": self.docid, ":limit": limit},
+                named_params! {":docid": self.docid, ":limit": limit, ":exclude": exclude},
                 |row| row.get(0),
             )?
             .collect::<Result<HashSet<_>, _>>()?;
@@ -520,6 +544,7 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
     pub(crate) fn missing_micros(
         &self,
         tx: &Transaction<'_>,
+        exclude: impl Iterator<Item = Sha256>,
         limit: Option<u64>,
     ) -> Result<HashSet<Sha256>, DatabaseError> {
         if T::flavor() != ConsensusFlavor::Microdesc {
@@ -529,11 +554,11 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         // Select the missing micro descriptors.
         //
         // A micro descriptor is considered missing if it exists in
-        // `consensus_router_descriptor_member` but not in `router_descriptor`
+        // `consensus_descriptor_member` but not in `descriptor`
         // because the first entry is added once the consensus got parsed,
         // whereas the second entry is added once we have actually retrieved it.
         //
-        // It works by doing a left join on router_descriptor and filtering for
+        // It works by doing a left join on descriptor and filtering for
         // all entries where the join is NULL, as that implies we are aware of
         // the descriptor but not have it stored.
         //
@@ -542,22 +567,25 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         // :limit - The maximum number of descriptors to return.
         let mut stmt = tx.prepare_cached(sql!(
             "
-            SELECT cr.unsigned_sha2, RANDOM() AS rand
-            FROM consensus_router_descriptor_member AS cr
-              LEFT JOIN router_descriptor AS micro ON cr.unsigned_sha2 = micro.unsigned_sha2
+            SELECT cr.sha2, RANDOM() AS rand
+            FROM consensus_descriptor_member AS cr
+              LEFT JOIN descriptor AS micro ON cr.sha2 = micro.sha2
             WHERE
               cr.consensus_docid = :docid
-              AND cr.unsigned_sha2 IS NOT NULL
-              AND micro.unsigned_sha2 IS NULL
+              AND cr.sha2 IS NOT NULL
+              AND cr.sha2 NOT IN rarray(:exclude)
+              AND micro.sha2 IS NULL
             ORDER BY rand
             LIMIT :limit
             "
         ))?;
 
+        let exclude = exclude.map(Value::from).collect();
+        let exclude: Rc<Vec<Value>> = Rc::new(exclude);
         let limit = limit.map_or(-1, |n| n.try_into().unwrap_or(i64::MAX));
         let missing = stmt
             .query_map(
-                named_params! {":docid": self.docid, ":limit": limit},
+                named_params! {":docid": self.docid, ":limit": limit, ":exclude": exclude},
                 |row| row.get(0),
             )?
             .collect::<Result<HashSet<_>, _>>()?;
@@ -567,7 +595,7 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
     /// Inserts a verified consensus into the database.
     ///
     /// This method *DOES NOT* compute any consensus diffs but populates
-    /// associated meta tables such as `consensus_router_descriptor_member`
+    /// associated meta tables such as `consensus_descriptor_member`
     /// and `consensus_authority_voter` properly.
     pub(crate) fn insert<I>(
         tx: &Transaction<'_>,
@@ -585,16 +613,16 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         //
         // Parameters:
         // :docid - The docid of the consensus.
-        // :unsigned_sha3_256 - The SHA3-256 sum of the part of the consensus
+        // :sha3_256 - The SHA3-256 sum of the part of the consensus
         //   without signatures but a trailing `\ndirectory-signature<SPACE>`.
         // :flavor - The consensus flavor to use.
         // :valid_after, :fresh_until, :valid_until - The respective validities.
         let mut cons_stmt = tx.prepare_cached(sql!(
             "
             INSERT INTO consensus
-            (docid, unsigned_sha3_256, flavor, valid_after, fresh_until, valid_until)
+            (docid, sha3_256, flavor, valid_after, fresh_until, valid_until)
             VALUES
-            (:docid, :unsigned_sha3_256, :flavor, :valid_after, :fresh_until, :valid_until)
+            (:docid, :sha3_256, :flavor, :valid_after, :fresh_until, :valid_until)
             ON CONFLICT DO NOTHING
             "
         ))?;
@@ -607,8 +635,8 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         // :sha2 - The micro descriptor digest (microdesc consensus only, NULL otherwise).
         let mut cons_rs_member_stmt = tx.prepare_cached(sql!(
             "
-            INSERT INTO consensus_router_descriptor_member
-            (consensus_docid, unsigned_sha1, unsigned_sha2)
+            INSERT INTO consensus_descriptor_member
+            (consensus_docid, sha1, sha2)
             VALUES
             (:docid, :sha1, :sha2)
             ON CONFLICT DO NOTHING
@@ -634,17 +662,17 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         let docid = store_insert(tx, data.as_bytes(), encodings)?;
 
         // TODO DIRMIRROR: We *need* this in tor-netdoc!!!
-        let unsigned_sha3_256 = Sha3_256::digest(
+        let sha3_256 = Sha3_256::digest(
             data.split_inclusive("\ndirectory-signature ")
                 .next()
-                .ok_or(internal!("verified document without signatures?"))?
+                .ok_or_else(|| internal!("verified document without signatures?"))?
                 .as_bytes(),
         );
 
         let lifetime = body.lifetime();
         let meta = ConsensusMeta {
             docid,
-            unsigned_sha3_256,
+            sha3_256,
             valid_after: lifetime.valid_after.0.into(),
             fresh_until: lifetime.fresh_until.0.into(),
             valid_until: lifetime.valid_until.0.into(),
@@ -652,7 +680,7 @@ impl<T: FlavoredConsensusUnverified> ConsensusMeta<T> {
         };
         cons_stmt.execute(named_params! {
             ":docid": meta.docid,
-            ":unsigned_sha3_256": meta.unsigned_sha3_256,
+            ":sha3_256": meta.sha3_256,
             ":valid_after": meta.valid_after,
             ":fresh_until": meta.fresh_until,
             ":valid_until": meta.valid_until,
@@ -805,6 +833,128 @@ impl AuthCertMeta {
     }
 }
 
+/// Representation of a descriptor from the database.
+///
+/// This is different from [`FlavoredDescriptor`] in the sense that it represents
+/// a row in the `descriptor` table of the database, whereas [`FlavoredDescriptor`]
+/// represents an agnostic wrapper around the [`tor_netdoc`] equivalent.
+///
+/// Yet, it still accepts a [`FlavoredDescriptor`] as a type parameter in order
+/// to obtain the flavor from it.
+// TODO DIRMIRROR: Is it possible to change this generic type somehow?
+// Potentially a const ConsensusFlavor?  After all, this is not a wrapper
+// type but rather a unit marker which we only use to call ::flavor().
+// Similar logic probably also applies to ConsensusMeta.
+#[derive(Educe)]
+#[educe(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct DescriptorMeta<Flavor> {
+    /// The document id uniquely identifying the document.
+    pub docid: DocumentId,
+
+    /// The SHA-1 as found in the signature.
+    pub sha1: Sha1,
+
+    /// The SHA-256 as found in the signature.
+    pub sha2: Sha256,
+
+    /// The RSA identity fingerprint, if present.
+    pub kp_relay_id_rsa_sha1: Option<Sha1>,
+
+    /// Use of the generic for determining the flavor.
+    flavor: PhantomData<Flavor>,
+
+    /// The SHA-1 of the extra-info document, if present.
+    pub extra_sha1: Option<Sha1>,
+}
+
+impl<Flavor: FlavoredDescriptor> DescriptorMeta<Flavor> {
+    /// Queries a [`DescriptorMeta`] by it's [`DocumentId`], mostly for internal
+    /// use.
+    fn query_docid(
+        tx: &Transaction<'_>,
+        docid: DocumentId,
+    ) -> Result<Option<DescriptorMeta<Flavor>>, DatabaseError> {
+        let mut stmt = tx.prepare_cached(sql!(
+            "
+            SELECT docid, sha1, sha2, kp_relay_id_rsa_sha1, extra_sha1
+            FROM descriptor
+            WHERE docid = :docid AND flavor = :flavor
+            "
+        ))?;
+
+        stmt.query_one(
+            named_params! {
+                ":docid": docid,
+                ":flavor": Flavor::flavor().name()
+            },
+            |row| {
+                Ok(DescriptorMeta::<Flavor> {
+                    docid: row.get(0)?,
+                    sha1: row.get(1)?,
+                    sha2: row.get(2)?,
+                    kp_relay_id_rsa_sha1: row.get(3)?,
+                    extra_sha1: row.get(4)?,
+                    flavor: Default::default(),
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.into())
+    }
+
+    /// Inserts a [`FlavoredDescriptor`] into the database.
+    pub(crate) fn insert<I>(
+        tx: &Transaction<'_>,
+        encodings: I,
+        descriptor: &Flavor,
+        data: &str,
+    ) -> Result<(), DatabaseError>
+    where
+        I: Iterator<Item = ContentEncoding>,
+    {
+        // Insertion statement of a single descriptor.
+        //
+        // Parameters:
+        // :docid - The document id.
+        // :sha1 - The SHA-1 as found in the signature.
+        // :sha256 - The SHA-256 as found in the signature.
+        // :id_rsa - The RSA identity key fingerprint, if present.
+        // :flavor - The ConsensusFlavor associated with it.
+        // :extra_info - The extra-info SHA-1, if present.
+        let mut stmt = tx.prepare_cached(sql!(
+            "
+            INSERT INTO descriptor
+            (docid, sha1, sha2, kp_relay_id_rsa_sha1, flavor, extra_sha1)
+            VALUES
+            (:docid, :sha1, :sha256, :id_rsa, :flavor, :extra_info)
+            "
+        ))?;
+
+        let docid = store_insert(tx, data.as_bytes(), encodings)?;
+        stmt.execute(named_params! {
+            ":docid": docid,
+            ":sha1": descriptor.sha1()?,
+            ":sha256": descriptor.sha256()?,
+            ":id_rsa": descriptor.id_rsa().map(|rsa| Sha1(rsa.to_bytes())),
+            ":flavor": Flavor::flavor().name(),
+            ":extra_info": descriptor.extra_info_sha1().map(|extra| Sha1(extra.sha1.0)),
+        })?;
+
+        Ok(())
+    }
+
+    /// Queries the raw data of a [`DescriptorMeta`].
+    pub(crate) fn data(&self, tx: &Transaction<'_>) -> Result<String, DatabaseError> {
+        let mut stmt = tx.prepare_cached(sql!("SELECT content FROM store WHERE docid = :docid"))?;
+
+        let raw = stmt.query_one(named_params! {":docid": self.docid}, |row| {
+            row.get::<_, Vec<u8>>(0)
+        })?;
+        let raw = String::from_utf8(raw).map_err(into_internal!("utf-8 constraint violated?"))?;
+        Ok(raw)
+    }
+}
+
 /// A no-op macro just returning the supplied.
 ///
 /// The purpose of this macro is to semantically mark [`str`] literals to be
@@ -852,7 +1002,8 @@ pub(crate) fn open<P: AsRef<Path>>(
         .unwrap_or(NonZero::new(8).expect("8 == 0?"))
         .get() as u32;
 
-    let manager = r2d2_sqlite::SqliteConnectionManager::file(&path);
+    let manager = r2d2_sqlite::SqliteConnectionManager::file(&path)
+        .with_init(|c| rusqlite::vtab::array::load_module(c));
     let pool = Pool::builder().max_size(num_cores).build(manager)?;
 
     rw_tx(&pool, |tx| {
@@ -1436,7 +1587,7 @@ mod test {
             meta,
             ConsensusMeta::<Plain> {
                 docid: Sha256::digest(data.as_bytes()),
-                unsigned_sha3_256: testdata2::consensus_sha3(data),
+                sha3_256: testdata2::consensus_sha3(data),
                 valid_after: body.preamble.lifetime.valid_after.0.into(),
                 fresh_until: body.preamble.lifetime.fresh_until.0.into(),
                 valid_until: body.preamble.lifetime.valid_until.0.into(),
@@ -1445,7 +1596,7 @@ mod test {
         );
         let meta2 = ConsensusMeta::<Plain>::query(&tx).unwrap();
         assert_eq!(meta2, vec![meta]);
-        let missing_descs = meta.missing_routers(&tx, None).unwrap();
+        let missing_descs = meta.missing_routers(&tx, iter::empty(), None).unwrap();
         let missing_descs2 = body.routers.iter().map(|r| Sha1(*r.doc_digest())).collect();
         assert_eq!(missing_descs, missing_descs2);
     }
@@ -1460,10 +1611,10 @@ mod test {
         // We repeat the tests a few thousand times to go over many random values.
         let docid = Sha256::digest(testdata2::current_consensus_ns().2.as_bytes());
         let lifetime = testdata2::current_consensus_ns().0.preamble.lifetime;
-        let unsigned_sha3_256 = testdata2::consensus_sha3(testdata2::current_consensus_ns().2);
+        let sha3_256 = testdata2::consensus_sha3(testdata2::current_consensus_ns().2);
         let cons = ConsensusMeta::<Plain> {
             docid,
-            unsigned_sha3_256,
+            sha3_256,
             valid_after: lifetime.valid_after.0.into(),
             fresh_until: lifetime.fresh_until.0.into(),
             valid_until: lifetime.valid_until.0.into(),
@@ -1491,7 +1642,7 @@ mod test {
     /// For this, we remove existing router descriptors from the database and
     /// see whether they are determined as missing properly.
     #[test]
-    fn missing_router_descriptors() {
+    fn missing_descriptors() {
         let pool = testdata2::test_db();
         let meta = read_tx(&pool, ConsensusMeta::<Plain>::query)
             .unwrap()
@@ -1511,8 +1662,8 @@ mod test {
             .execute(
                 sql!(
                     "
-                    DELETE FROM router_descriptor
-                    WHERE unsigned_sha1 = ?1
+                    DELETE FROM descriptor
+                    WHERE sha1 = ?1
                     "
                 ),
                 params![removed_descriptor],
@@ -1520,21 +1671,29 @@ mod test {
             .unwrap();
 
         // Only one should be returned.
-        let missing_routers = read_tx(&pool, |tx| meta.missing_routers(tx, None))
+        let missing_routers = read_tx(&pool, |tx| meta.missing_routers(tx, iter::empty(), None))
             .unwrap()
             .unwrap();
         assert_eq!(missing_routers, HashSet::from([removed_descriptor]));
 
+        // None should be returned if we exclude the descriptor we just removed.
+        let missing_routers = read_tx(&pool, |tx| {
+            meta.missing_routers(tx, iter::once(removed_descriptor), None)
+        })
+        .unwrap()
+        .unwrap();
+        assert!(missing_routers.is_empty());
+
         // If we delete all router descriptors we have, we should get all.
         rw_tx(&pool, |tx| {
-            tx.execute(sql!("DELETE FROM router_descriptor"), params![])
+            tx.execute(sql!("DELETE FROM descriptor"), params![])
         })
         .unwrap()
         .unwrap();
 
         // Now all should be returned; we verify this by checking that the
         // result is present in all_descriptors, which is a superset.
-        let missing_routers = read_tx(&pool, |tx| meta.missing_routers(tx, None))
+        let missing_routers = read_tx(&pool, |tx| meta.missing_routers(tx, iter::empty(), None))
             .unwrap()
             .unwrap();
         // This is a superset of missing_routers because it includes router
@@ -1548,6 +1707,28 @@ mod test {
                 .iter()
                 .all(|sha1| all_descriptors.contains(sha1))
         );
+
+        // If we exclude one random descriptor, only that one should be missing.
+        let to_exclude = missing_routers.iter().copied().next().unwrap();
+        let missing_routers2 = read_tx(&pool, |tx| {
+            meta.missing_routers(tx, iter::once(to_exclude), None)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            missing_routers
+                .difference(&missing_routers2)
+                .collect::<HashSet<_>>(),
+            [&to_exclude].into()
+        );
+
+        // If we exclude all descriptors, it should be empty too.
+        let missing_routers = read_tx(&pool, |tx| {
+            meta.missing_routers(tx, all_descriptors.iter().copied(), None)
+        })
+        .unwrap()
+        .unwrap();
+        assert!(missing_routers.is_empty());
     }
 
     /// Tests whether or not the missing descriptors are actually random.
@@ -1555,18 +1736,17 @@ mod test {
     fn missing_descriptors_are_random() {
         let pool = testdata2::test_db();
         rw_tx(&pool, |tx| {
-            tx.execute(sql!("DELETE FROM router_descriptor"), ())
-                .unwrap();
+            tx.execute(sql!("DELETE FROM descriptor"), ()).unwrap();
             let meta = ConsensusMeta::<Plain>::query(tx).unwrap()[0];
 
             // Ensure there are more than 1 missing descriptors now.
-            let n = meta.missing_routers(tx, None).unwrap().len();
+            let n = meta.missing_routers(tx, iter::empty(), None).unwrap().len();
             assert!(n > 1);
 
             let mut prev = HashSet::new();
             let mut randomness_works = false;
             for _ in 0..100 {
-                let cur = meta.missing_routers(tx, Some(1)).unwrap();
+                let cur = meta.missing_routers(tx, iter::empty(), Some(1)).unwrap();
                 if prev != cur {
                     randomness_works = true;
                     break;
@@ -1585,15 +1765,17 @@ mod test {
         let pool = testdata2::test_db();
         rw_tx(&pool, |tx| {
             let meta = ConsensusMeta::<Plain>::query(tx).unwrap();
-            tx.execute(sql!("DELETE FROM router_descriptor"), ())
-                .unwrap();
+            tx.execute(sql!("DELETE FROM descriptor"), ()).unwrap();
 
             let mut stmt = tx
                 .prepare_cached(ConsensusMeta::<Plain>::MISSING_ROUTERS_QUERY)
                 .unwrap();
 
+            let empty = Rc::new(Vec::<Value>::new());
             let res = stmt
-                .query_map(params![meta[0].docid, -1], |row| row.get::<_, i64>(1))
+                .query_map(params![meta[0].docid, empty, -1], |row| {
+                    row.get::<_, i64>(1)
+                })
                 .unwrap()
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap();
@@ -1623,7 +1805,7 @@ mod test {
         );
 
         // We should have no missing extra-infos.
-        let missing_extras = read_tx(&pool, |tx| meta.missing_extras(tx, None))
+        let missing_extras = read_tx(&pool, |tx| meta.missing_extras(tx, iter::empty(), None))
             .unwrap()
             .unwrap();
         assert!(missing_extras.is_empty());
@@ -1657,8 +1839,8 @@ mod test {
             .execute(
                 sql!(
                     "
-                    DELETE FROM router_descriptor
-                    WHERE unsigned_sha2 = ?1
+                    DELETE FROM descriptor
+                    WHERE sha2 = ?1
                     "
                 ),
                 params![removed_descriptor],
@@ -1666,21 +1848,21 @@ mod test {
             .unwrap();
 
         // Only one should be returned.
-        let missing_micros = read_tx(&pool, |tx| meta.missing_micros(tx, None))
+        let missing_micros = read_tx(&pool, |tx| meta.missing_micros(tx, iter::empty(), None))
             .unwrap()
             .unwrap();
         assert_eq!(missing_micros, HashSet::from([removed_descriptor]));
 
         // If we delete all micro descriptors we have, we should get all.
         rw_tx(&pool, |tx| {
-            tx.execute(sql!("DELETE FROM router_descriptor"), params![])
+            tx.execute(sql!("DELETE FROM descriptor"), params![])
         })
         .unwrap()
         .unwrap();
 
         // Now all should be returned; we verify this by checking that the
         // result is present in all_descriptors, which is a superset.
-        let missing_micros = read_tx(&pool, |tx| meta.missing_micros(tx, None))
+        let missing_micros = read_tx(&pool, |tx| meta.missing_micros(tx, iter::empty(), None))
             .unwrap()
             .unwrap();
         // This is a superset of missing_micros because it includes micro

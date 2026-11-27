@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,6 +46,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO: Try making it not Deref and having expose+expose_mut instead; how bad is it?
@@ -313,6 +315,12 @@ impl<'a, T: Redactable + ?Sized> Redactable for &'a T {
     fn display_redacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         (*self).display_redacted(f)
     }
+
+    fn debug_redacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        (*self).debug_redacted(f)
+    }
+
+    // The default implementations for redacted() and maybe_redacted() are okay unconditionally.
 }
 
 /// A wrapper around a `Redactable` that displays it in redacted format.

@@ -1,1 +1,1 @@
-ADDED: impl `Hash` for `curve25519::PublicKey`
+BREAKING: Removed `with-sha1-asm` feature, which is deprecated upstream.

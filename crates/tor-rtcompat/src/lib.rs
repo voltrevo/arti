@@ -24,6 +24,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -45,6 +46,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 // TODO #1645 (either remove this, or decide to have it everywhere)
@@ -61,6 +63,7 @@ mod coarse_time;
 mod compound;
 mod dyn_time;
 pub mod general;
+pub mod join_set;
 mod network;
 mod opaque;
 pub mod scheduler;
@@ -72,9 +75,9 @@ pub mod unix;
 #[cfg(all(any(feature = "async-std", feature = "tokio", feature = "smol"), not(target_arch = "wasm32")))]
 use std::io;
 pub use traits::{
-    Blocking, CertifiedConn, CoarseTimeProvider, NetStreamListener, NetStreamProvider,
-    NoOpStreamOpsHandle, Runtime, SleepProvider, SpawnExt, StreamOps, TlsProvider, ToplevelBlockOn,
-    ToplevelRuntime, UdpProvider, UdpSocket, UnsupportedStreamOp,
+    Blocking, CertifiedConn, CoarseTimeProvider, JoinSet, JoinSetProvider, NetStreamListener,
+    NetStreamProvider, NoOpStreamOpsHandle, Runtime, SleepProvider, SpawnExt, StreamOps,
+    TlsProvider, ToplevelBlockOn, ToplevelRuntime, UdpProvider, UdpSocket, UnsupportedStreamOp,
 };
 
 pub use coarse_time::{CoarseDuration, CoarseInstant, RealCoarseTimeProvider};

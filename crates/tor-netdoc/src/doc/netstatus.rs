@@ -126,7 +126,10 @@ pub use UnvalidatedPlainConsensus as UnvalidatedNsConsensus;
 
 pub use rs::{RouterStatusMdDigestsVote, SoftwareVersion};
 
-pub use dir_source::{ConsensusAuthoritySection, DirSource, SupersededAuthorityKey};
+pub use dir_source::{
+    ConsensusAuthoritySection, ConsensusAuthoritySectionConstructor, DirSource,
+    DirSourceConstructor, SupersededAuthorityKey,
+};
 
 define_constant_string! {
     /// `network-status-version` version value
@@ -329,6 +332,26 @@ pub mod consensus_methods_comma_separated {
     }
 }
 
+/// Contents of a `voting-delay` item in the network status preamble
+///
+/// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:voting-delay>
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Copy, Deftly)]
+#[derive_deftly(Constructor, ItemValueEncodable, ItemValueParseable)]
+#[allow(clippy::exhaustive_structs)]
+pub struct VotingDelay {
+    /// VoteSeconds
+    #[deftly(constructor)]
+    pub vote_seconds: u32,
+
+    /// DistSeconds
+    #[deftly(constructor)]
+    pub dist_seconds: u32,
+
+    #[doc(hidden)]
+    #[deftly(netdoc(skip))]
+    pub __non_exhaustive: (),
+}
+
 /// A set of named network parameters.
 ///
 /// These are used to describe current settings for the Tor network,
@@ -418,18 +441,25 @@ where
 /// Each consensus has two of these: one for relays, and one for clients.
 ///
 /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:required-relay-protocols>
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize, Deftly)]
+#[derive_deftly(Constructor)]
+#[allow(clippy::exhaustive_structs)]
 pub struct ProtoStatus {
     /// Set of protocols that are recommended; if we're missing a protocol
     /// in this list we should warn the user.
     ///
     /// `recommended-client-protocols` or `recommended-relay-protocols`
-    recommended: Protocols,
+    pub recommended: Protocols,
+
     /// Set of protocols that are required; if we're missing a protocol
     /// in this list we should refuse to start.
     ///
     /// `required-client-protocols` or `required-relay-protocols`
-    required: Protocols,
+    pub required: Protocols,
+
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub __non_exhaustive: (),
 }
 
 impl ProtoStatus {
@@ -497,12 +527,19 @@ impl HasKind for ProtocolSupportError {
 /// Represents the collection of four items: `{recommended,required}-{client,relay}-protocols`.
 ///
 /// <https://spec.torproject.org/dir-spec/consensus-formats.html#item:required-relay-protocols>
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize, Deftly)]
+#[derive_deftly(Constructor)]
+#[allow(clippy::exhaustive_structs)]
 pub struct ProtoStatuses {
     /// Lists of recommended and required subprotocol versions for clients
-    client: ProtoStatus,
+    pub client: ProtoStatus,
+
     /// Lists of recommended and required subprotocol versions for relays
-    relay: ProtoStatus,
+    pub relay: ProtoStatus,
+
+    #[doc(hidden)]
+    #[serde(skip)]
+    pub __non_exhaustive: (),
 }
 
 impl ProtoStatuses {
@@ -691,17 +728,6 @@ define_derive_deftly! {
         ${vattrs doc}
         pub $FNAME: Option<[u8; ${vmeta(hash_len) as expr}]>,
       )
-
-      /// `sha1` but without the algorithm name
-      ///
-      /// This is needed because the hash includes the whole signature item keyword line,
-      /// and therefore a signature with the `sha1` explicitly stated,
-      /// and one without, have different hashes!
-      ///
-      /// So we mustn't use the `sha1` field for both implicit and explicit use of SHA-1,
-      /// or multiple signatures with different syntax would overwrite each others'
-      /// different hashes.
-      pub sha1_unnamed: Option<[u8; 20]>,
     }
 
     impl DirectorySignaturesHashesAccu {
@@ -732,7 +758,7 @@ define_derive_deftly! {
                 }
               )
                 None => {
-                    ${define UPDATE sha1_unnamed}
+                    ${define UPDATE sha1}
                     ${define ALGO Sha1}
                     $HASH
                 }
@@ -752,7 +778,7 @@ define_derive_deftly! {
               $(
                 Some(KeywordOrString::Known($vtype)) => Some(self.$FNAME.as_ref()?),
               )
-                None => Some(self.sha1_unnamed.as_ref()?),
+                None => Some(self.sha1.as_ref()?),
                 Some(KeywordOrString::Unknown(..)) => None,
             }
         }
@@ -1659,6 +1685,7 @@ impl ProtoStatus {
         Ok(ProtoStatus {
             recommended,
             required,
+            __non_exhaustive: (),
         })
     }
 
@@ -2884,6 +2911,7 @@ mod test {
         let outcome = ProtoStatus {
             recommended: "Link=7".parse().unwrap(),
             required: "Desc=5".parse().unwrap(),
+            __non_exhaustive: (),
         }
         .check_protocols(&my_protocols);
         assert!(outcome.is_ok());
@@ -2891,6 +2919,7 @@ mod test {
         let outcome = ProtoStatus {
             recommended: "Microdesc=4 Link=7".parse().unwrap(),
             required: "Desc=5".parse().unwrap(),
+            __non_exhaustive: (),
         }
         .check_protocols(&my_protocols);
         assert_eq!(
@@ -2903,6 +2932,7 @@ mod test {
         let outcome = ProtoStatus {
             recommended: "Microdesc=4 Link=7".parse().unwrap(),
             required: "Desc=5 Cons=5-12 Wombat=15".parse().unwrap(),
+            __non_exhaustive: (),
         }
         .check_protocols(&my_protocols);
         assert_eq!(
@@ -2919,11 +2949,14 @@ mod test {
             client: ProtoStatus {
                 recommended: "Link=1-5 LinkAuth=2-5".parse().unwrap(),
                 required: "Link=5 LinkAuth=3".parse().unwrap(),
+                __non_exhaustive: (),
             },
             relay: ProtoStatus {
                 recommended: "Wombat=20-30 Knish=20-30".parse().unwrap(),
                 required: "Wombat=20-22 Knish=25-27".parse().unwrap(),
+                __non_exhaustive: (),
             },
+            __non_exhaustive: (),
         };
         let json = serde_json::to_string(&ps).unwrap();
         let ps2 = serde_json::from_str(json.as_str()).unwrap();
@@ -3089,7 +3122,7 @@ mod test {
 
         let doc = verify(doc, &authorities, &certs)?.if_valid_at(&now)?;
 
-        println!("{doc:?}");
+        println!("{doc:#?}");
 
         let mut enc = NetdocEncoder::new();
         doc.encode_unsigned(&mut enc)?;
@@ -3307,7 +3340,7 @@ $2
         let var = "TOR_NETDOC_TESTDATA_LIVE_PREFIX";
         let prefix = std::env::var_os(var)
             .map(|s| s.into_string().expect(var))
-            .unwrap_or("testdata-live/".into());
+            .unwrap_or_else(|| "testdata-live/".into());
         format!("{prefix}{f}")
     }
 

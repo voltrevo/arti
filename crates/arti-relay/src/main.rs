@@ -34,6 +34,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -55,6 +56,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 
 #![allow(clippy::redundant_field_names)] // TODO beta clippy bug, rust-clippy/issues/17525
@@ -98,6 +100,15 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::config::{DEFAULT_LOG_LEVEL, TorRelayConfig, base_resolver};
 use crate::relay::InertTorRelay;
+
+/// Return the protocol capabilities supported by this relay.
+pub(crate) fn supported_protocols() -> tor_protover::Protocols {
+    // WARNING: REMOVING ELEMENTS FROM THIS LIST CAN BE DANGEROUS!
+    // SEE [`tor_protover::doc_changing`]
+    //
+    // TODO(relay): No DirCache capabilities just yet. Missing HSDir/HSRend/HSIntro.
+    tor_proto::supported_relay_protocols().union(&tor_netdoc::supported_protocols())
+}
 
 fn main() {
     // Will exit if '--help' used or there's a parse error.

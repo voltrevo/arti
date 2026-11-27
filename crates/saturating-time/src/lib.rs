@@ -23,6 +23,7 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::or_fun_call)]
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
@@ -44,6 +45,7 @@
 #![allow(clippy::collapsible_if)] // See arti#2342
 #![deny(clippy::unused_async)]
 #![deny(clippy::string_slice)] // See arti#2571
+#![allow(recursion_depth_exceeding_limit)] // arti#2715, rust/issues/159228
 //! <!-- @@ end lint list maintained by maint/add_warning @@ -->
 #![allow(unexpected_cfgs)]
 #![forbid(unsafe_code)]
@@ -151,7 +153,7 @@ pub trait SaturatingTime: internal::SaturatingTime {
     /// ```
     fn saturating_add(self, duration: Duration) -> Self {
         self.checked_add(duration)
-            .unwrap_or(SaturatingTime::max_value())
+            .unwrap_or_else(SaturatingTime::max_value)
     }
 
     /// Performs a saturating subtraction of a [`Duration`].
@@ -175,7 +177,7 @@ pub trait SaturatingTime: internal::SaturatingTime {
     /// ```
     fn saturating_sub(self, duration: Duration) -> Self {
         self.checked_sub(duration)
-            .unwrap_or(SaturatingTime::min_value())
+            .unwrap_or_else(SaturatingTime::min_value)
     }
 
     /// Performs a saturating time difference calculation between two points.

@@ -269,8 +269,14 @@ impl Consensus {
         };
 
         // Find the appropriate digest.
-        let signed_str = r.str().get(start_pos..end_pos).ok_or(internal!("chopped utf8"))?;
-        let remainder = r.str().get(end_pos..).ok_or(internal!("chopped utf8"))?;
+        let signed_str = r
+            .str()
+            .get(start_pos..end_pos)
+            .ok_or_else(|| internal!("chopped utf8"))?;
+        let remainder = r
+            .str()
+            .get(end_pos..)
+            .ok_or_else(|| internal!("chopped utf8"))?;
         let (sha256, sha1) = match RouterStatus::flavor() {
             ConsensusFlavor::Plain => (
                 None,
@@ -284,8 +290,6 @@ impl Consensus {
         let hashes = DirectorySignaturesHashesAccu {
             sha256,
             sha1,
-            // TODO #2530 This is wrong.  There isn't one hash, there's two.
-            sha1_unnamed: sha1,
         };
         let siggroup = SignatureGroup {
             hashes,
@@ -377,7 +381,7 @@ impl Preamble {
                 RECOMMENDED_RELAY_PROTOCOLS,
                 REQUIRED_RELAY_PROTOCOLS,
             )?;
-            Arc::new(ProtoStatuses { client, relay })
+            Arc::new(ProtoStatuses { client, relay, __non_exhaustive: () })
         };
 
         let params = sec.maybe(PARAMS).args_as_str().unwrap_or("").parse()?;
@@ -401,12 +405,11 @@ impl Preamble {
             .map(SharedRandStatus::from_item)
             .transpose()?;
 
-        let voting_delay = if let Some(tok) = sec.get(VOTING_DELAY) {
-            let n1 = tok.parse_arg(0)?;
-            let n2 = tok.parse_arg(1)?;
-            Some((n1, n2))
-        } else {
-            None
+        let voting_delay = {
+            let tok = sec.required(VOTING_DELAY)?;
+            let vote_seconds = tok.parse_arg(0)?;
+            let dist_seconds = tok.parse_arg(1)?;
+            VotingDelayConstructor { vote_seconds, dist_seconds }.construct()
         };
 
         let shared_rand = SharedRandStatuses {

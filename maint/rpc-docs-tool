@@ -12,7 +12,7 @@ Requires rustdoc nightly, for json support.
 May require specific versions of rustdoc nightly,
 since the json format is unstable.
 
-Known to work with nightly from 2024-10-22.
+Known to work with nightly from 2026-10-23.
 """
 
 import io
@@ -22,10 +22,10 @@ import re
 import subprocess
 import sys
 
-# What version of rustdoc json do we know?
-SUPPORTED_FORMAT_VERSION = 38
+# What version of rustdoc json do we know that we know?
+SUPPORTED_FORMAT_VERSION = 61
 # What nightly do we know to provide that version?
-KNOWN_GOOD_NIGHTLY = "nightly-2025-01-17"
+KNOWN_GOOD_NIGHTLY = "nightly-2026-10-23"
 
 # Tricky bits, unsolved
 #   - Converting links in the md to be correct.
@@ -109,12 +109,18 @@ def add_additional_methods(methods):
     Add entries for additional methods that are not ordinarily detected
     `by arti:x_list_all_rpc_methods`.
     """
-    # This one isn't detected because it applies to all objects.
+    # These aren't detected because they apply to all objects.
     # Eventually we may add a better way to solve this.
     methods["methods"]["rpc:release"] = {
         "applies_to_object_types": "*",
         "method_type": "arti_rpcserver::objmap::methods::RpcRelease",
         "output_type": "tor_rpcbase::Nil",
+        "update_type": None,
+    }
+    methods["methods"]["rpc:clone_id"] = {
+        "applies_to_object_types": "*",
+        "method_type": "arti_rpcserver::objmap::methods::RpcCloneId",
+        "output_type": "tor_rpcbase::SingleIdResponse",
         "update_type": None,
     }
 

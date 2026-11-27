@@ -1,6 +1,6 @@
 [package]
 name = "arti-relay"
-version = "0.47.0"
+version = "0.48.0"
 authors = ["The Tor Project, Inc."]
 edition = "2024"
 rust-version = "1.92"
@@ -20,12 +20,14 @@ full = [
     "safelog/full",
     "tor-async-utils/full",
     "tor-chanmgr/full",
+    "tor-checkable/full",
     "tor-config/full",
     "tor-error/full",
     "tor-keymgr/full",
     "tor-netdir/full",
     "tor-netdoc/full",
     "tor-proto/full",
+    "tor-protover/full",
     "tor-relay-crypto/full",
     "tor-rtcompat/full",
     "tor-memquota/full",
@@ -49,6 +51,7 @@ full = [
     "tor-dirserver/full",
     "otlp-file-exporter?/full",
     "tor-config-shared/full",
+    "oneshot-fused-workaround/full",
 ]
 
 # This feature flag enables experimental features that are not supported. Turning it on may
@@ -69,75 +72,77 @@ opentelemetry = [
 __is_experimental = []
 
 [dependencies]
-anyhow = "1.0.23"
-async-trait = "0.1.54"
-base64ct = "1.8.0"
-cfg-if = "1.0.0"
-clap = { version = "4.3.24", features = ["string", "wrap_help", "derive"] }
-derive-deftly = { version = "~1.12.0", features = ["full", "beta"] }
-derive_more = { version = "2.0.1", features = ["full"] }
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+base64ct = "1.8.3"
+cfg-if = "1.0.5"
+clap = { version = "4.6.7", features = ["string", "wrap_help", "derive"] }
+derive-deftly = { version = "~1.14.0", features = ["full", "beta"] }
+derive_more = { version = "2.1.1", features = ["full"] }
 directories = "6"
-either = "1.18.0"
-fs-mistrust = { path = "../fs-mistrust", version = "0.16.0", features = ["serde"] }
-futures = "0.3.14"
+either = "1.19.0"
+fs-mistrust = { path = "../fs-mistrust", version = "0.16.1", features = ["serde"] }
+futures = "0.3.34"
 hickory-net = "0.26.3"
 hickory-proto = "0.26.3"
 hickory-resolver = "0.26.3"
 libc = "0.2"
-metrics-exporter-prometheus = { version = "0.18.0", optional = true, default-features = false, features = [
+metrics-exporter-prometheus = { version = "0.18.3", optional = true, default-features = false, features = [
     "http-listener",
 ] }
 oneshot-fused-workaround = { path = "../oneshot-fused-workaround", version = "0.8.0" }
-opentelemetry = { version = "0.32.0", optional = true }
+opentelemetry = { version = "0.33.1", optional = true }
 opentelemetry-appender-tracing = { version = "0.32.0", optional = true }
-opentelemetry-otlp = { version = "0.32.0", optional = true }
-opentelemetry-proto = { version = "0.32.0", optional = true }
+opentelemetry-otlp = { version = "0.33.1", optional = true }
+opentelemetry-proto = { version = "0.33.1", optional = true }
 # TODO: Figure out why this feature is needed, and how it interacts with non-tokio runtimes.
-opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"], optional = true }
+opentelemetry_sdk = { version = "0.33.1", features = ["rt-tokio"], optional = true }
 otlp-file-exporter = { path = "../otlp-file-exporter", version = "0.2.0", optional = true }
-rand = "0.10.1"
-rustls = { version = "0.23.5", default-features = false, features = ["logging", "aws_lc_rs"] }
-safelog = { path = "../safelog", version = "0.10.0" }
-serde = { version = "1.0.103", features = ["derive"] }
-smallvec = "1.10"
+rand = "0.10.3"
+rustls = { version = "0.23.46", default-features = false, features = ["logging", "aws_lc_rs"] }
+safelog = { path = "../safelog", version = "0.10.1" }
+serde = { version = "1.0.229", features = ["derive"] }
+smallvec = "1.16"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2"
-tokio = { version = "1.47.1", features = ["signal"] }
-tor-async-utils = { path = "../tor-async-utils", version = "0.47.0" }
-tor-basic-utils = { path = "../tor-basic-utils", version = "0.47.0" }
-tor-cell = { path = "../tor-cell", version = "0.47.0", features = ["relay"] }
-tor-cert = { path = "../tor-cert", version = "0.47.0" }
-tor-chanmgr = { path = "../tor-chanmgr", version = "0.47.0", features = ["relay"] }
-tor-circmgr = { version = "0.47.0", path = "../tor-circmgr" }
-tor-config = { path = "../tor-config", version = "0.47.0" }
-tor-config-path = { path = "../tor-config-path", version = "0.47.0" }
-tor-config-shared = { path = "../tor-config-shared", version = "0.47.0" }
-tor-dirclient = { version = "0.47.0", path = "../tor-dirclient", features = ["relay"] }
-tor-dircommon = { version = "0.47.0", path = "../tor-dircommon" }
-tor-dirmgr = { path = "../tor-dirmgr", version = "0.47.0", features = ["dir-plugin"] }
-tor-dirpublish = { path = "../tor-dirpublish", version = "0.47.0" }
-tor-dirserver = { path = "../tor-dirserver", version = "0.47.0", features = ["dir-plugin-backend"] }
-tor-error = { path = "../tor-error", version = "0.47.0" }
-tor-general-addr = { path = "../tor-general-addr", version = "0.47.0" }
-tor-guardmgr = { version = "0.47.0", path = "../tor-guardmgr" }
-tor-key-forge = { version = "0.47.0", path = "../tor-key-forge" }
-tor-keymgr = { path = "../tor-keymgr", version = "0.47.0", features = ["keymgr", "experimental-api"] }
-tor-llcrypto = { path = "../tor-llcrypto", version = "0.47.0" }
-tor-log-ratelim = { path = "../tor-log-ratelim", version = "0.47.0" }
-tor-memquota = { version = "0.47.0", path = "../tor-memquota" }
-tor-netdir = { path = "../tor-netdir", version = "0.47.0" }
-tor-netdoc = { path = "../tor-netdoc", version = "0.47.0" }
-tor-persist = { path = "../tor-persist", version = "0.47.0", features = ["state-dir"] }
-tor-proto = { path = "../tor-proto", version = "0.47.0", features = ["tokio"] }
-tor-relay-crypto = { path = "../tor-relay-crypto", version = "0.47.0" }
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.47.0", features = ["rustls", "tokio", "tls-server"] }
-tor-units = { path = "../tor-units", version = "0.47.0" }
-tracing = "0.1.36"
-tracing-opentelemetry = { version = "0.33.0", optional = true }
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tokio = { version = "1.54.1", features = ["signal"] }
+tor-async-utils = { path = "../tor-async-utils", version = "0.48.0" }
+tor-basic-utils = { path = "../tor-basic-utils", version = "0.48.0" }
+tor-cell = { path = "../tor-cell", version = "0.48.0", features = ["relay"] }
+tor-cert = { path = "../tor-cert", version = "0.48.0" }
+tor-chanmgr = { path = "../tor-chanmgr", version = "0.48.0", features = ["relay"] }
+tor-checkable = { path = "../tor-checkable", version = "0.48.0" }
+tor-circmgr = { version = "0.48.0", path = "../tor-circmgr" }
+tor-config = { path = "../tor-config", version = "0.48.0" }
+tor-config-path = { path = "../tor-config-path", version = "0.48.0" }
+tor-config-shared = { path = "../tor-config-shared", version = "0.48.0" }
+tor-dirclient = { version = "0.48.0", path = "../tor-dirclient", features = ["relay"] }
+tor-dircommon = { version = "0.48.0", path = "../tor-dircommon" }
+tor-dirmgr = { path = "../tor-dirmgr", version = "0.48.0", features = ["dir-plugin"] }
+tor-dirpublish = { path = "../tor-dirpublish", version = "0.48.0" }
+tor-dirserver = { path = "../tor-dirserver", version = "0.48.0", features = ["dir-plugin-backend"] }
+tor-error = { path = "../tor-error", version = "0.48.0" }
+tor-general-addr = { path = "../tor-general-addr", version = "0.48.0" }
+tor-guardmgr = { version = "0.48.0", path = "../tor-guardmgr" }
+tor-key-forge = { version = "0.48.0", path = "../tor-key-forge" }
+tor-keymgr = { path = "../tor-keymgr", version = "0.48.0", features = ["keymgr", "experimental-api"] }
+tor-llcrypto = { path = "../tor-llcrypto", version = "0.48.0" }
+tor-log-ratelim = { path = "../tor-log-ratelim", version = "0.48.0" }
+tor-memquota = { version = "0.48.0", path = "../tor-memquota" }
+tor-netdir = { path = "../tor-netdir", version = "0.48.0" }
+tor-netdoc = { path = "../tor-netdoc", version = "0.48.0" }
+tor-persist = { path = "../tor-persist", version = "0.48.0", features = ["state-dir"] }
+tor-proto = { path = "../tor-proto", version = "0.48.0", features = ["tokio"] }
+tor-protover = { path = "../tor-protover", version = "0.48.0" }
+tor-relay-crypto = { path = "../tor-relay-crypto", version = "0.48.0" }
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.48.0", features = ["rustls", "tokio", "tls-server"] }
+tor-units = { path = "../tor-units", version = "0.48.0" }
+tracing = "0.1.44"
+tracing-opentelemetry = { version = "0.34.0", optional = true }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 void = "1"
 web-time-compat = { path = "../web-time-compat", version = "0.3.0" }
 
 [dev-dependencies]
-tor-keymgr = { path = "../tor-keymgr", version = "0.47.0", features = ["ephemeral-keystore", "testing"] }
-tor-rtmock = { path = "../tor-rtmock", version = "0.47.0" }
+tor-keymgr = { path = "../tor-keymgr", version = "0.48.0", features = ["ephemeral-keystore", "testing"] }
+tor-rtmock = { path = "../tor-rtmock", version = "0.48.0" }

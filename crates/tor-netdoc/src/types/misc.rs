@@ -99,7 +99,7 @@ define_derive_deftly_module! {
   ${for fields {
     ${loop_exactly_1 "must be applied to a single-field struct"}
 
-    impl<$tgens> From<$ftype> for $ttype {
+    ${impl From<$ftype>} {
         fn from($fpatname: $ftype) -> $ttype {
             $vpat
         }
@@ -108,32 +108,32 @@ define_derive_deftly_module! {
     // TODO: This implementation is probably a bug, as it forbids to derive
     // Transparent on types like `struct Foo<T>(T)`, namely `T` not being
     // covered by something else, like `PhantomData<T>` or `Vec<T>`.
-    impl<$tgens> From<$ttype> for $ftype {
+    ${impl From<$ttype> for $ftype} {
         fn from(self_: $ttype) -> $ftype {
             self_.$fname
         }
     }
 
-    impl<$tgens> Deref for $ttype {
+    ${impl Deref} {
         type Target = $ftype;
         fn deref(&self) -> &$ftype {
             &self.$fname
         }
     }
 
-    impl<$tgens> DerefMut for $ttype {
+    ${impl DerefMut} {
         fn deref_mut(&mut self) -> &mut $ftype {
             &mut self.$fname
         }
     }
 
-    impl<$tgens> AsRef<$ftype> for $ttype {
+    ${impl AsRef<$ftype>} {
         fn as_ref(&self) -> &$ftype {
             &self.$fname
         }
     }
 
-    impl<$tgens> AsMut<$ftype> for $ttype {
+    ${impl AsMut<$ftype>} {
         fn as_mut(&mut self) -> &mut $ftype {
             &mut self.$fname
         }
@@ -202,7 +202,7 @@ define_derive_deftly! {
 
     $TRANSPARENT_IMPLS
 
-    impl<$tgens> ConstantTimeEq for $ttype {
+    ${impl ConstantTimeEq} {
         fn ct_eq(&self, other: &$ttype) -> Choice {
           $(
             self.$fname.ct_eq(&other.$fname)
@@ -210,18 +210,18 @@ define_derive_deftly! {
         }
     }
     $/// `$tname` is `Eq` via its constant-time implementation.
-    impl<$tgens> PartialEq for $ttype {
+    ${impl PartialEq} {
         fn eq(&self, other: &$ttype) -> bool {
             self.ct_eq(other).into()
         }
     }
-    impl<$tgens> Eq for $ttype {}
-    impl<$tgens> PartialOrd for $ttype {
+    ${impl Eq} {}
+    ${impl PartialOrd} {
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
             Some(self.cmp(other))
         }
     }
-    impl<$tgens> Ord for $ttype {
+    ${impl Ord} {
         fn cmp(&self, other: &Self) -> Ordering {
           $(
             self.$fname.cmp(&other.$fname)
@@ -229,7 +229,7 @@ define_derive_deftly! {
         }
     }
 
-    impl<$tgens> $ttype {
+    $impl {
         /// Return the byte array from this object.
         pub fn as_bytes(&self) -> &[u8] {
           $(
@@ -238,7 +238,7 @@ define_derive_deftly! {
         }
     }
 
-    impl<$tgens> AsRef<[u8]> for $ttype {
+    ${impl AsRef<[u8]>} {
         fn as_ref(&self) -> &[u8] {
           $(
             self.$fname.as_ref()
@@ -246,11 +246,43 @@ define_derive_deftly! {
         }
     }
 
-    impl<$tgens> AsMut<[u8]> for $ttype {
+    ${impl AsMut<[u8]>} {
         fn as_mut(&mut self) -> &mut [u8] {
           $(
             self.$fname.as_mut()
           )
+        }
+    }
+}
+
+define_derive_deftly! {
+    /// Implement useful methods for a fixed-size byte array wrapper
+    ///
+    /// Typically used in conjunction with deriving `BytesTransparent`.
+    ///
+    /// # Requirements
+    ///
+    ///  * Self must be a single-field struct wrapping a byte array
+    ///
+    /// # Generated code
+    ///
+    ///  * `Self::from_byte_slice`
+    FixedBytes beta_deftly:
+
+    $impl {
+        $/// Construct a `$$ttype` from a byte slice
+        $///
+        $/// Copies the contents.  Returns `None` if the length is wrong.
+        //
+        // Provided because the alternative involving constructors, try_into(),
+        // etc., is very clumsy.
+        pub fn from_byte_slice(slice: &[u8]) -> Option<Self> {
+            let array: &[u8; _] = slice.try_into().ok()?;
+
+            Some(Self { $(
+                ${loop_exactly_1 "must be applied to a single-field struct"}
+                $fname: *array,
+            ) })
         }
     }
 }
@@ -328,7 +360,7 @@ mod b64impl {
     ///
     /// As with [`B64`], padding is optional when parsing, but omitted when encoding.
     #[derive(Clone, Hash, Deftly)]
-    #[derive_deftly(BytesTransparent)]
+    #[derive_deftly(BytesTransparent, FixedBytes)]
     #[allow(clippy::derived_hash_with_manual_eq)]
     #[derive(derive_more::Debug)]
     #[debug(r#"FixedB64::<{N}>("{self}")"#)]
@@ -386,7 +418,7 @@ mod b16impl {
 
     /// A fixed-length version of [`B16U`].
     #[derive(Clone, Hash, Deftly)]
-    #[derive_deftly(BytesTransparent)]
+    #[derive_deftly(BytesTransparent, FixedBytes)]
     #[allow(clippy::derived_hash_with_manual_eq)]
     #[derive(derive_more::Debug)]
     #[debug(r#"FixedB16U("{self}")"#)]
@@ -1994,7 +2026,7 @@ mod identified_digest {
             }
         }}
 
-        impl FromStr for $ttype {
+        ${impl FromStr} {
             type Err = Void;
             fn from_str(s: &str) -> Result<Self, Void> {
                 $(
@@ -2010,7 +2042,7 @@ mod identified_digest {
                 )
             }
         }
-        impl AsRef<str> for $ttype {
+        ${impl AsRef<str>} {
             fn as_ref(&self) -> &str {
                 match self {
                     $(
@@ -2024,7 +2056,7 @@ mod identified_digest {
                 }
             }
         }
-        impl Display for $ttype {
+        ${impl Display} {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let s: &str = self.as_ref();
                 Display::fmt(s, f)
@@ -2048,15 +2080,15 @@ mod identified_digest {
     /// A single digest made with a nominated digest algorithm, `ALGORITHM=DIGEST`
     #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Display)]
     #[display("{alg}={value}")]
-    #[non_exhaustive]
+    #[allow(clippy::exhaustive_structs)] // Seems very unlikely to grow
     pub struct IdentifiedDigest {
         /// The algorithm name.
-        alg: DigestName,
+        pub alg: DigestName,
 
         /// The digest value.
         ///
         /// Invariant: length is correct for `alg`, assuming `alg` is known.
-        value: B64,
+        pub value: B64,
     }
 
     impl NormalItemArgument for DigestName {}
@@ -2286,7 +2318,17 @@ mod nickname {
     ///
     /// Nicknames are required to be ASCII, alphanumeric, and between 1 and 19
     /// characters inclusive.
-    #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+    #[derive(
+        Clone,
+        Debug,
+        PartialEq,
+        Eq,
+        Ord,
+        PartialOrd,
+        Hash,
+        serde_with::SerializeDisplay,
+        serde_with::DeserializeFromStr,
+    )]
     pub struct Nickname(tinystr::TinyAsciiStr<MAX_NICKNAME_LEN>);
 
     /// Invalid nickname
@@ -2471,7 +2513,14 @@ mod contact_info {
     ///
     /// Also used for authority entries in netstatus documents.
     #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Deftly)] //
-    #[derive(derive_more::Into, derive_more::AsRef, derive_more::Deref, derive_more::Display)]
+    #[derive(
+        derive_more::Into,
+        derive_more::AsRef,
+        derive_more::Deref,
+        derive_more::Display,
+        serde_with::SerializeDisplay,
+        serde_with::DeserializeFromStr,
+    )]
     #[derive_deftly(ItemValueEncodable)]
     #[non_exhaustive]
     pub struct ContactInfo(#[deftly(netdoc(rest))] String);

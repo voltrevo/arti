@@ -12,15 +12,15 @@ impl<'i> ResolvedRouterStatusInputs<'i> {
     /// from the resolution part of the algorithm.
     ///
     /// Can return `None` to mean that this router should not be listed after all
-    /// (eg, because its listing would lack the Running flag).
+    /// (eg, because its listing would lack the Running flag),
+    /// or `Some((md, None))` to list in the plain consensus, but not in the md consensus.
     pub(super) fn consensuses(
         &self,
-        context: &ConsensusContext,
+        context: ConsensusContextRefs<RouterStatusAC<'_>>,
     ) -> Result<
         Option<(
-            //
             netstatus::plain::RouterStatus,
-            netstatus::md::RouterStatus,
+            Option<netstatus::md::RouterStatus>,
         )>,
         ConsensusError,
     > {
@@ -66,27 +66,45 @@ impl<'i> ResolvedRouterStatusInputs<'i> {
         calc! { plain.m = NotPresent }
         calc! { plain, md .weight }
 
+        calc! { out.flags }
+        // "routers that do not have the Running flag are not listed at all."
+        if !out_flags.contains(RelayFlag::Running) {
+            return Ok(None);
+        }
+        calc! { both.flags = out_flags.clone() }
+        calc! { both.protos }
+
+        // In principle we could omit writing these, and let Constructor default them,
+        // but this way it's clearer that we've thought of every field,
+        // and it might catch mistakes.
+        calc! { md.port_policy = NotPresent }
+        calc! { both.stats = NotPresent }
+
+        // TODO DIRAUTH replace dummy values
+        calc! { both.a = Default:: default() }
+        calc! { plain.port_policy = Default:: default() }
+        calc! { both.version = None }
+
         // TODO DIRAUTH replace routerstatus dummy values
-        calc! { both.flags = DocRelayFlags::new_empty_unknown_discarded() }
-        calc! { both.protos = Default::default() }
         calc! { md.m = [0; 32].into() }
 
-        Ok(Some(construct_both! {
+        let (plain, md) = construct_both! {
             netstatus::plain::RouterStatus, netstatus::md::RouterStatus {
                 both. r, m, flags, protos, weight, ed25519_id;
             } {
-                // TODO DIRAUTH routerstatus fields missing
+                both. a, version, port_policy, stats;
             }
-        }))
+        };
+        Ok(Some((plain, Some(md))))
     }
 }
 
-impl Aggregate for VoteRelayWeightsItem {
+impl Aggregate<RouterStatusAC<'_>> for VoteRelayWeightsItem {
     type Output = RelayWeightsItem;
 
     #[allow(clippy::needless_late_init)] // re median_inputs and unmeasured; clearer this way
     fn aggregate<'i>(
-        context: &ConsensusContext,
+        context: ConsensusContextRefs<RouterStatusAC<'_>>,
         inputs: impl ComponentInVotes<&'i VoteRelayWeightsItem>,
     ) -> Result<RelayWeightsItem, ConsensusError>
     where
@@ -94,53 +112,263 @@ impl Aggregate for VoteRelayWeightsItem {
     {
         // https://spec.torproject.org/dir-spec/computing-consensus.html#router-status-entries
         // under "`w` item".
-        //
-        // TODO DIRAUTH implements torspec!542, as yet unmerged, so may need to change.
 
         const MEASURED: &str = "Measured";
         const BANDWIDTH: &str = "Bandwidth";
         const UNMEASURED: &str = "Unmeasured";
+        const MAX_UNMEASURED_BW_PARAM: &str = "maxunmeasuredbw";
         const MEASURED_THRESHOLD: usize = 3;
 
-        // Obtains the Measured value from this vote, if its there and we ought to use it
-        let get_measured = |(vnum, rwi): (_, &VoteRelayWeightsItem)| -> Option<u32> {
-            if context.bandwidth_authorities.contains(&vnum) {
-                rwi.w.as_ref()?.get(MEASURED).copied()
-            } else {
-                None
-            }
+        let get_inputs = |k| {
+            inputs
+                .votes()
+                .filter_map(move |rwi| rwi.w.as_ref()?.get(k).copied())
         };
-        // Obtains some bandwidth value from this vote
-        let get_bandwidth = |(vnum, rwi): (_, &VoteRelayWeightsItem)| -> Option<u32> {
-            get_measured((vnum, rwi)).or_else(|| {
-                //
-                rwi.w.as_ref()?.get(BANDWIDTH).copied()
-            })
-        };
+        let calc_median = |k| functions::low_median_raw(get_inputs(k));
 
-        // Iterator of the Measured values.
-        let measured_inputs = inputs.clone().filter_map(&get_measured as &dyn Fn(_) -> _);
-
-        let median_inputs; // the inputs for the median
+        let out; // the calculated output value, for Bandwdith
         let unmeasured; // the (keyword, value) for Unmeasured, or None
-        if measured_inputs.clone().count() >= MEASURED_THRESHOLD {
-            median_inputs = measured_inputs;
+        if get_inputs(MEASURED).count() >= MEASURED_THRESHOLD {
+            out = calc_median(MEASURED).expect(".count() was >= MEASURED_THRESHOLD so >0");
+            const_assert!(MEASURED_THRESHOLD > 0);
             unmeasured = None;
-        } else {
-            median_inputs = inputs.clone().filter_map(&get_bandwidth as _);
+        } else if let Some(median) = calc_median(BANDWIDTH) {
+            let max_unmeasured = context
+                .computed
+                .params
+                .get(MAX_UNMEASURED_BW_PARAM)
+                .copied()
+                // w items are unsigned 32-bit, but it's capped using netparams which are
+                // are *signed* 32-bit.  If the netparam is negative, ignore it
+                // (rather than treating it as zero).
+                .and_then(|mu: i32| u32::try_from(mu).ok());
+
+            out = chain!([median], max_unmeasured,)
+                .min()
+                .expect("[median] is nonempthy");
             unmeasured = Some((UNMEASURED, 1));
-        };
-
-        let Some(median) = functions::low_median_raw(median_inputs) else {
-            // There were no w lines, or none of them had a bandwidth of any kind.
+        } else {
+            // There were no w lines, or not enough had Measured, or none had Bandwidth
             return Ok(RelayWeightsItem::default());
-        };
+        }
 
-        let out = chain!([(BANDWIDTH, median)], unmeasured)
+        let out = chain!([(BANDWIDTH, out)], unmeasured)
             .collect::<NetParams<_>>()
             .try_into()
             .map_err(into_internal!("generated bad w item"))?;
 
         Ok(out)
+    }
+}
+
+impl Aggregate<RouterStatusAC<'_>> for DocRelayFlags {
+    type Output = DocRelayFlags;
+
+    fn aggregate<'i>(
+        context: ConsensusContextRefs<RouterStatusAC<'_>>,
+        inputs: impl ComponentInVotes<&'i Self>,
+    ) -> Result<Self::Output, ConsensusError>
+    where
+        Self: 'i,
+    {
+        let mut out: DocRelayFlags = context
+            .computed
+            .known_flags
+            // "A routerstatus has a flag set if that is included by more than half of the
+            // authorities who care about that flag."
+            .iter_incl_unknown()?
+            .try_filter(|flag| {
+                // Check the votes' opinions about `flag`
+                let mut tally = BoolIndexedArray::<usize>::default();
+                for (vnum, vote_rs_flags) in inputs.iter() {
+                    let vote_known_flags = &context.votes.vote(vnum)?.preamble.known_flags;
+                    if !vote_known_flags.contains_incl_unknown(flag)? {
+                        // This authority didn't advertise this flag as one it knows about.
+                        // It's possible that it is included in that authority's vote for this
+                        // relay anyway; if so we disregard it.
+                        continue;
+                    }
+                    let is_in_favour: bool = vote_rs_flags.contains_incl_unknown(flag)?;
+                    let update = &mut tally[is_in_favour];
+                    // can't overflow, but let's use saturating add anyway
+                    *update = update.saturating_add(1);
+                }
+                let y = tally.more_yes_than_no();
+                Ok::<_, Bug>(y)
+            })
+            .try_collect()?;
+
+        // https://spec.torproject.org/dir-spec/computing-consensus.html#routerstatuses
+        #[allow(clippy::single_element_loop)] // more uniform this way
+        {
+            // TODO DIRAUTH this needs to be tested somehow
+            use RelayFlag as F;
+            let out = &mut out.known;
+            if out.contains(F::MiddleOnly) {
+                for clear in [F::Exit, F::Guard, F::V2Dir, F::HSDir] {
+                    out.remove(clear);
+                }
+                for set in [F::BadExit] {
+                    if context.computed.known_flags.contains(set) {
+                        out.insert(set);
+                    }
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+impl Aggregate<RouterStatusAC<'_>> for tor_protover::Protocols {
+    type Output = Self;
+
+    fn aggregate<'i>(
+        context: ConsensusContextRefs<RouterStatusAC<'_>>,
+        inputs: impl ComponentInVotes<&'i Self>,
+    ) -> Result<Self::Output, ConsensusError>
+    where
+        Self: 'i,
+    {
+        Ok(functions::choose_most_popular_amongst_votes(
+            context,
+            inputs,
+            |pr: &tor_protover::Protocols| pr.to_string(),
+        )?
+        .unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    // @@ begin test lint list maintained by maint/add_warning @@
+    #![allow(clippy::bool_assert_comparison)]
+    #![allow(clippy::clone_on_copy)]
+    #![allow(clippy::dbg_macro)]
+    #![allow(clippy::mixed_attributes_style)]
+    #![allow(clippy::print_stderr)]
+    #![allow(clippy::print_stdout)]
+    #![allow(clippy::single_char_pattern)]
+    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unchecked_time_subtraction)]
+    #![allow(clippy::useless_vec)]
+    #![allow(clippy::needless_pass_by_value)]
+    #![allow(clippy::string_slice)] // See arti#2571
+    //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+    use super::*;
+    use crate::consensus::test::compute_test;
+
+    #[test]
+    fn relay_flags() -> Result<(), ConsensusError> {
+        use tor_netdoc::types::relay_flags::DocRelayFlag;
+
+        let n_voters = 5;
+
+        type One = (&'static str, &'static [usize], &'static [usize], Option<()>);
+        #[rustfmt::skip]
+        let cases: &[One] = &[
+            // flag name      known_flags   rs.f        expected
+            ("unknown",       &[],          &[],        None),
+            ("one-against",   &[0],         &[],        None),
+            ("one-in-favour", &[0],         &[0],       Some(())),
+            ("equal",         &[0,1,2,3],   &[0,1],     None),
+            ("greater",       &[0,1,2,3],   &[0,1,2],   Some(())),
+            ("contradict",    &[0,1,2],     &[0,3],     None),
+        ];
+
+        // We use `Unknown` always here.  That's OK because we're not trying to test
+        // DocRelayFlag etc. (which is pretty straightforward anyway).
+        let f_name = |one: &One| DocRelayFlag::Unknown(one.0.into());
+        let f_known = |one: &One| one.1;
+        let f_vote = |one: &One| one.2;
+        let f_outcome = |one: &One| one.3;
+
+        let mut cc = ConsensusCommonContext::new_for_test();
+        cc.n_authorities = n_voters;
+        let votes = (0..n_voters)
+            .into_iter()
+            .map(|v| {
+                let mut vote = tor_netdoc::testdata_live::netstatus_vote().clone();
+                vote.routers.truncate(1);
+
+                let mk_flags = |extractor: fn(&One) -> &'static [usize]| {
+                    cases
+                        .iter()
+                        .filter(|one| extractor(one).contains(&v))
+                        .map(f_name)
+                        .collect()
+                };
+
+                vote.preamble.known_flags = mk_flags(f_known);
+                vote.routers[0].flags = mk_flags(f_vote);
+
+                println!("vote");
+                println!("    known   {:?}", vote.preamble.known_flags);
+                println!("    router  {:?}", vote.routers[0].flags);
+
+                vote
+            })
+            .collect_vec();
+        cc.votes = votes.iter().collect();
+
+        // TODO it seems likely that much of this testdata- and type-wrestling
+        // will want to be reused/simplified as we add more test cases.
+
+        let (plain_preamble, _) = netstatus::vote::Preamble::consensuses(
+            cc.with_computed(&()),
+            cc.votes
+                .iter_enumerated()
+                .map(|(vnum, vote)| (vnum, &vote.preamble)),
+        )?;
+
+        let output = DocRelayFlags::aggregate(
+            cc.with_computed(&RouterStatusAC(&plain_preamble)),
+            cc.votes
+                .iter_enumerated()
+                .map(|(vnum, vote)| (vnum, &vote.routers[0].flags)),
+        )?;
+
+        println!("output");
+        println!("    known   {:?}", plain_preamble.known_flags);
+        println!("    router  {:?}", output);
+
+        for one in cases {
+            assert_eq!(
+                output.contains_incl_unknown(&f_name(one))?.then_some(()),
+                f_outcome(one),
+                "{:?}",
+                one,
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn protocols() {
+        use tor_protover::Protocols;
+
+        let p = |s| Protocols::from_str_c_compatible(s).unwrap();
+
+        let inputs = [
+            p("Link=1 counting=2-6 req=1 rec=1 neither=1"), // majority, first
+            p("Link=1 counting=2-6 req=1 rec=1 neither=1"),
+            p("Link=1"),
+        ];
+
+        compute_test(
+            inputs.len(),
+            4,
+            |vnum, vote| {
+                vote.routers.truncate(1);
+                vote.routers[0].protos = inputs[vnum].clone();
+                Ok(())
+            },
+            |(plain, md)| {
+                assert_eq!(plain.routers[0].protos, inputs[0].clone());
+                assert_eq!(md.routers[0].protos, inputs[0].clone());
+                Ok(())
+            },
+        );
     }
 }

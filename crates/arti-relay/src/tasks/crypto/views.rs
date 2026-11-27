@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use std::borrow::Borrow;
+use std::sync::Arc;
 
 use tor_keymgr::{KeyMgr, KeySpecifierPattern};
 use tor_relay_crypto::{
@@ -179,7 +180,7 @@ impl<K: Borrow<KeyMgr>> FullKeyView<K> {
         let valid_until = self
             .keys_valid_until
             .link_ed
-            .ok_or(anyhow::anyhow!("No link authentication key"))?;
+            .ok_or_else(|| anyhow::anyhow!("No link authentication key"))?;
         self.keymgr
             .borrow()
             .get(&RelayLinkSigningKeypairSpecifier::new(valid_until))?
@@ -191,13 +192,13 @@ impl<K: Borrow<KeyMgr>> FullKeyView<K> {
         let valid_until = self
             .keys_valid_until
             .ntor_latest
-            .ok_or(anyhow::anyhow!("No latest ntor key"))?;
+            .ok_or_else(|| anyhow::anyhow!("No latest ntor key"))?;
         let latest = self
             .keymgr
             .borrow()
             .get(&RelayNtorKeypairSpecifier::new(valid_until))?
             .context("Missing latest ntor key")?;
-        let mut keys = RelayNtorKeys::new(latest);
+        let mut keys = RelayNtorKeys::new(Arc::new(latest));
 
         // Might not have a previous all the time.
         if let Some(valid_until) = self.keys_valid_until.ntor_previous {
@@ -206,7 +207,7 @@ impl<K: Borrow<KeyMgr>> FullKeyView<K> {
                 .borrow()
                 .get(&RelayNtorKeypairSpecifier::new(valid_until))?
                 .context("Missing previous ntor key")?;
-            keys = keys.with_previous(previous);
+            keys = keys.with_previous(Arc::new(previous));
         }
         Ok(keys)
     }
@@ -216,7 +217,7 @@ impl<K: Borrow<KeyMgr>> FullKeyView<K> {
         let valid_until = self
             .keys_valid_until
             .relaysign_ed
-            .ok_or(anyhow::anyhow!("No relay signing key"))?;
+            .ok_or_else(|| anyhow::anyhow!("No relay signing key"))?;
         self.keymgr
             .borrow()
             .get(&RelaySigningKeypairSpecifier::new(valid_until))?
@@ -228,7 +229,7 @@ impl<K: Borrow<KeyMgr>> FullKeyView<K> {
         let valid_until = self
             .keys_valid_until
             .relaysign_ed
-            .ok_or(anyhow::anyhow!("No relay signing key"))?;
+            .ok_or_else(|| anyhow::anyhow!("No relay signing key"))?;
         let (_key, cert) = self
             .keymgr
             .borrow()
